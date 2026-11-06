@@ -1,0 +1,115 @@
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: keycloak-warden
+  namespace: keycloak
+  annotations:
+    # Optional: triggers a rollout when Stakater Reloader is installed.
+    reloader.stakater.com/auto: "true"
+spec:
+  # Warden uses one SQLite database; do not run multiple replicas against it.
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: keycloak-warden
+      app.kubernetes.io/component: keycloak-warden
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: keycloak-warden
+        app.kubernetes.io/component: keycloak-warden
+    spec:
+      securityContext:
+        # The distroless image runs as 65532:0 and has group-writable directories.
+        fsGroup: 0
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: keycloak-warden
+          # Pin a released image that includes the serve flags below.
+          image: ghcr.io/gi8lino/keycloak-warden:v0.0.1
+          imagePullPolicy: IfNotPresent
+          args:
+            - serve
+            - --config=/config/warden.yaml
+            - --database=/data/warden.db
+            - --listen-address=:8080
+            - --management-listen-address=:8081
+            - --metrics
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 0
+          env:
+            - name: WARDEN__SNITCH_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-snitch
+                  key: KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_SECRET
+            - name: WARDEN__ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-warden
+                  key: WARDEN__ADMIN_TOKEN
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+            - name: management
+              containerPort: 8081
+              protocol: TCP
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: management
+            periodSeconds: 2
+            timeoutSeconds: 2
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: management
+            periodSeconds: 30
+            timeoutSeconds: 2
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: data
+              mountPath: /data
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: config
+          secret:
+            secretName: keycloak-warden
+            items:
+              - key: warden.yaml
+                path: warden.yaml
+        - name: data
+          persistentVolumeClaim:
+            claimName: keycloak-warden-data
+        - name: tmp
+          emptyDir: {}

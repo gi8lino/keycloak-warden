@@ -8,83 +8,38 @@ Manual IP bans are also supported through an authenticated API and CLI.
 
 ## Quick Start — Kubernetes
 
-Warden runs alongside Keycloak in the same Kubernetes namespace, using a persistent SQLite database.
+Warden runs alongside Keycloak in the same Kubernetes namespace, using a persistent SQLite database. The example manifests are in [`examples/kubernetes/`](examples/kubernetes/README.md).
 
-### 1. Configure Warden
+### Cloudflare API token
 
-Copy the example configuration:
+Create a custom API token in the [Cloudflare dashboard](https://dash.cloudflare.com/profile/api-tokens) with the following settings:
 
-```bash
-cp examples/warden.yaml warden.yaml
-```
+- **Token name:** `keycloak-warden`
+- **Permission:** Account → Account Firewall Access Rules → Edit
+- **Account resources:** Include → Specific account → Your Cloudflare account
 
-Configure the detection rule and enable the destinations you want to use:
+Copy the token into the Cloudflare target's `secret` field in `warden.yaml` and set `zone-id` to the zone you want to protect.
 
-```yaml
-rule:
-  threshold: 5
-  window: 1m
-  ban: 15m
+Warden uses the Cloudflare IP Access Rules API to create, inspect, and remove IP blocks. No DNS or general account administration permissions are required.
 
-targets:
-  edge:
-    enabled: true
-    provider: cloudflare
-    zone-id: "YOUR_CLOUDFLARE_ZONE_ID"
-    secret: "YOUR_CLOUDFLARE_API_TOKEN"
-```
+**Security:** Keep the token private and provide it through a Kubernetes Secret in production. The token can modify IP Access Rules for its authorized account.
 
-This blocks an IP for 15 minutes after five failed login attempts within one minute.
+### Configure Warden and credentials
 
-Without an enabled destination, Warden records decisions but does not enforce them externally.
+Copy [`examples/kubernetes/secret.example.yaml`](examples/kubernetes/secret.example.yaml) outside the repository and replace all placeholders. It contains the detection rule, Cloudflare target, Snitch shared secret, and Warden administrator token. Keep actual tokens out of Git.
 
-### 2. Create Kubernetes Secrets
-
-Generate two secrets:
+Create the Secrets first and deploy the workload:
 
 ```bash
-# shared-secret
-openssl rand -hex 32
-# admin-token
-openssl rand -hex 32
+cp examples/kubernetes/secret.example.yaml /tmp/keycloak-warden-secrets.yaml
+chmod 600 /tmp/keycloak-warden-secrets.yaml
+# Edit the template and replace all placeholders.
+kubectl apply -f /tmp/keycloak-warden-secrets.yaml
+kubectl apply -k examples/kubernetes
+kubectl -n keycloak rollout status deployment/keycloak-warden
 ```
 
-Save them in `warden.env`:
-
-```dotenv
-WARDEN__SNITCH_SECRET=<shared-secret>
-WARDEN__ADMIN_TOKEN=<admin-token>
-```
-
-Create the Kubernetes Secrets in the existing Keycloak namespace:
-
-```bash
-kubectl -n keycloak create secret generic warden-config \
-  --from-file=warden.yaml
-
-kubectl -n keycloak create secret generic warden-credentials \
-  --from-env-file=warden.env
-```
-
-The Snitch secret must be shared with Keycloak. The administrator token is used only for Warden's manual-ban API.
-
-Keep these files private and do not commit them to Git.
-
-### 3. Deploy Warden
-
-This repository does not currently include Kubernetes manifests. Configure your Deployment and Service with:
-
-- One Warden replica with persistent SQLite storage
-- Application port `8080`
-- Management port `8081` for health and readiness probes, and optional Prometheus metrics
-- The configuration and credentials from Kubernetes Secrets
-
-Check that Warden is running:
-
-```bash
-kubectl -n keycloak get pods
-kubectl -n keycloak logs deployment/warden
-```
+The example runs **one replica** with a `ReadWriteOnce` PersistentVolumeClaim, a dedicated application Service on port `8080`, and unexposed management port `8081` for `/healthz`, `/readyz`, and optional `/metrics`. Set the correct image tag and storage class for your cluster before deploying. See the [Kubernetes instructions](examples/kubernetes/README.md) for details, including sharing the Snitch signing key with Keycloak.
 
 ## Connect Keycloak Snitch
 
@@ -98,11 +53,11 @@ Warden requires the [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch
 Add these settings to the Keycloak deployment:
 
 ```dotenv
-KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL=http://warden:8080/events
+KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL=http://keycloak-warden:8080/events
 KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_SECRET=<same-shared-secret-as-warden>
 ```
 
-The URL uses Kubernetes service discovery because Keycloak and Warden run in the same namespace. The shared secret can be referenced from the same Kubernetes Secret.
+The URL uses Kubernetes service discovery because Keycloak and Warden run in the same namespace. The `keycloak-snitch` Secret can be referenced by Keycloak and Warden; see the Kubernetes example for the `secretKeyRef` mapping.
 
 Warden verifies event signatures before processing login failures.
 
@@ -113,7 +68,7 @@ Warden also supports manually blocking and unblocking IP addresses.
 ### Ban IP addresses
 
 ```bash
-kubectl -n keycloak exec deployment/warden -- \
+kubectl -n keycloak exec deployment/keycloak-warden -- \
   /keycloak-warden ban 203.0.113.42 198.51.100.10 \
   --duration 1h \
   --reason "Suspicious activity"
@@ -122,7 +77,7 @@ kubectl -n keycloak exec deployment/warden -- \
 ### Unban IP addresses
 
 ```bash
-kubectl -n keycloak exec deployment/warden -- \
+kubectl -n keycloak exec deployment/keycloak-warden -- \
   /keycloak-warden unban 203.0.113.42 198.51.100.10
 ```
 
