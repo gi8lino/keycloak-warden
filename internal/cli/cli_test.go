@@ -17,7 +17,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 func TestRun(t *testing.T) {
@@ -287,7 +287,7 @@ func TestRun(t *testing.T) {
 			} `yaml:"results"`
 		}
 
-		require.NoError(t, yaml.Unmarshal(stdout.Bytes(), &result))
+		require.NoError(t, yaml.Load(stdout.Bytes(), &result))
 		assert.Equal(t, "unban", result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		require.Len(t, result.Results, 1)

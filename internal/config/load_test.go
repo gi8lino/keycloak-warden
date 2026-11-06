@@ -69,6 +69,14 @@ targets:
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
+	t.Run("rejects duplicate nested keys", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := Load(writeConfig(t, "targets:\n  ops:\n    enabled: true\n    enabled: false\n"))
+
+		require.ErrorContains(t, err, "invalid Warden YAML")
+	})
+
 	t.Run("rejects multiple documents", func(t *testing.T) {
 		t.Parallel()
 

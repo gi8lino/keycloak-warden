@@ -7,7 +7,7 @@ import (
 	"os"
 	"time"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 )
@@ -47,13 +47,15 @@ func Load(path string) (Config, error) {
 	defer file.Close() // nolint:errcheck
 
 	var raw document
-	decoder := yaml.NewDecoder(file)
-	decoder.KnownFields(true)
-	if err := decoder.Decode(&raw); err != nil {
+	loader, err := yaml.NewLoader(file, yaml.WithKnownFields(), yaml.WithUniqueKeys())
+	if err != nil {
+		return Config{}, errors.New("invalid Warden YAML: cannot initialize loader")
+	}
+	if err := loader.Load(&raw); err != nil {
 		return Config{}, errors.New("invalid Warden YAML: check field names, types and duplicates")
 	}
 
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
+	if err := loader.Load(new(any)); !errors.Is(err, io.EOF) {
 		return Config{}, errors.New("expected one YAML document")
 	}
 

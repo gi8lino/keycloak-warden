@@ -9,7 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 // fakePrintable supplies a text representation independent of JSON formatting.
@@ -56,7 +56,7 @@ func TestNew(t *testing.T) {
 		require.NoError(t, New(ptr(FormatYAML), &output)(fakePrintable{Name: "203.0.113.10"}))
 		var result map[string]any
 
-		require.NoError(t, yaml.Unmarshal(output.Bytes(), &result))
+		require.NoError(t, yaml.Load(output.Bytes(), &result))
 		assert.Equal(t, "203.0.113.10", result["ipAddress"])
 	})
 
@@ -91,6 +91,14 @@ func TestNew(t *testing.T) {
 		require.ErrorContains(t, err, "text output is not supported")
 	})
 
+	t.Run("propagates yaml write errors", func(t *testing.T) {
+		t.Parallel()
+
+		err := New(ptr(FormatYAML), failingWriter{})(fakePrintable{Name: "203.0.113.10"})
+
+		require.ErrorContains(t, err, "write failed")
+	})
+
 	t.Run("propagates text write errors", func(t *testing.T) {
 		t.Parallel()
 
@@ -115,7 +123,7 @@ func TestYAMLIntegerPrecision(t *testing.T) {
 	require.NoError(t, New(ptr(FormatYAML), &output)(input))
 	var decoded map[string]int64
 
-	require.NoError(t, yaml.Unmarshal(output.Bytes(), &decoded))
+	require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 	assert.Equal(t, input, decoded)
 }
 

@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"io"
 
-	"go.yaml.in/yaml/v3"
+	"go.yaml.in/yaml/v4"
 )
 
 const (
@@ -52,10 +52,17 @@ func New(format *string, writer io.Writer) Encoder {
 				return err
 			}
 			var normalized yaml.Node
-			if err := yaml.Unmarshal(data, &normalized); err != nil {
+			if err := yaml.Load(data, &normalized); err != nil {
 				return err
 			}
-			return yaml.NewEncoder(writer).Encode(&normalized)
+			dumper, err := yaml.NewDumper(writer, yaml.WithV3Defaults())
+			if err != nil {
+				return err
+			}
+			if err := dumper.Dump(&normalized); err != nil {
+				return err
+			}
+			return dumper.Close()
 		default:
 			return fmt.Errorf("unsupported output format %q", *format)
 		}
