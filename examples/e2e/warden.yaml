@@ -1,0 +1,13 @@
+# Deliberately low threshold for end-to-end testing.
+rule:
+  threshold: 2
+  window: 1m
+  ban: 15m
+
+targets:
+  receiver:
+    enabled: true
+    provider: webhook
+    # Receiver shares Warden's network namespace (loopback HTTP is allowed).
+    url: http://127.0.0.1:8090/webhook
+    secret: development-outbound-secret

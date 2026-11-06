@@ -1,0 +1,16 @@
+rule:
+  threshold: 5
+  window: 1m
+  ban: 15m
+
+targets:
+  ops:
+    enabled: false
+    provider: webhook
+    url: https://receiver.example/events
+    secret: replace-with-outbound-signing-secret
+  edge:
+    enabled: false
+    provider: cloudflare
+    zone-id: "00000000000000000000000000000000"
+    secret: replace-with-zone-token

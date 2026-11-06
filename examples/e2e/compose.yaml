@@ -1,0 +1,59 @@
+# Development only. The receiver shares Warden's network namespace so its
+# webhook can use loopback HTTP without relaxing Warden's production URL policy.
+services:
+  warden:
+    build:
+      context: ../..
+    ports:
+      - "127.0.0.1:${E2E_WARDEN_PORT:-18081}:8080"
+      - "127.0.0.1:${E2E_MANAGEMENT_PORT:-18082}:8081"
+      - "127.0.0.1:${E2E_RECEIVER_PORT:-18090}:8090"
+    volumes:
+      - state:/data
+      - ./warden.yaml:/config/warden.yaml:ro
+    environment:
+      WARDEN__SNITCH_SECRET: development-snitch-secret
+      WARDEN__ADMIN_TOKEN: development-admin-token
+    command:
+      - serve
+      - --config=/config/warden.yaml
+      - --database=/data/warden.db
+      - --listen-address=:8080
+      - --management-listen-address=:8081
+      - --route-prefix=/warden
+      - --access-log
+      - --metrics
+
+  receiver:
+    build:
+      context: ./receiver
+    network_mode: service:warden
+    depends_on:
+      warden:
+        condition: service_started
+    environment:
+      LISTEN_ADDR: :8090
+
+  keycloak:
+    build:
+      context: .
+      dockerfile: Dockerfile.keycloak
+      args:
+        SNITCH_VERSION: ${SNITCH_RELEASE:-0.0.3}
+    command: ["start-dev", "--import-realm"]
+    ports:
+      - "127.0.0.1:${E2E_KC_PORT:-18080}:8080"
+    volumes:
+      - ./realm:/opt/keycloak/data/import:ro
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: dev-admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: dev-admin-password
+      KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL: http://warden:8080/warden/events
+      KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_SECRET: development-snitch-secret
+      KC_SPI_EVENTS_LISTENER__SNITCH__EVENT_TYPES: LOGIN_ERROR
+    depends_on:
+      receiver:
+        condition: service_started
+
+volumes:
+  state:

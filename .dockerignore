@@ -1,0 +1,12 @@
+.git
+.projectatlas
+bin/
+!/bin/dev-tools.mk
+build
+dist
+.dev-ports.json
+.dev-ports.json.lock
+warden.yaml
+*.db*
+coverage.out
+coverage.html

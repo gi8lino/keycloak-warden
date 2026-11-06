@@ -1,0 +1,61 @@
+---
+name: Unit Tests
+
+on:
+  workflow_call:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "cmd/**"
+      - "internal/**"
+      - "test/**"
+      - "examples/**"
+      - "go.mod"
+      - "go.sum"
+      - "Makefile"
+      - "Dockerfile"
+      - "Dockerfile.goreleaser"
+      - ".dockerignore"
+      - ".goreleaser.yaml"
+      - ".github/workflows/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Build, lint and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download dependencies and development tools
+        run: make download
+
+      - name: Verify module manifests
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Format, lint and race-test
+        run: make verify
+
+      - name: Build Warden
+        run: make build
+
+      - name: Check GoReleaser configuration
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: latest
+          args: check

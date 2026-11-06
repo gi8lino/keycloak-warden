@@ -1,0 +1,21 @@
+.projectatlas
+/bin/*
+!/bin/dev-tools.mk
+/build/
+/dist/
+*.db
+*.db-shm
+*.db-wal
+
+# Saved local development ports.
+/.dev-ports.json
+/.dev-ports.json.lock
+
+# Local deployment configuration may contain signing secrets.
+/warden.yaml
+
+/coverage.out
+/coverage.html
+
+# Downloaded Snitch release JARs for the local E2E Compose stack.
+/examples/e2e/snitch/*.jar
