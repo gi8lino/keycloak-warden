@@ -84,6 +84,7 @@ func Run(
 		"management_listen", managementListen,
 		"route_prefix", routePrefix,
 		"metrics_enabled", metricsEnabled,
+		"access_log_enabled", accessLog,
 		"destinations", names,
 	)
 

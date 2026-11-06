@@ -32,7 +32,16 @@ func newApplication(config Config) http.Handler {
 	}
 
 	if config.AccessLog {
-		middlewares = append(middlewares, httpkitmiddleware.AccessLogWithErrorReference(config.Logger))
+		middlewares = append(middlewares, httpkitmiddleware.AccessLog(
+			config.Logger,
+			httpkitmiddleware.WithAccessLogFields(
+				httpkitmiddleware.LogMethod,
+				httpkitmiddleware.LogPath,
+				httpkitmiddleware.LogStatus,
+				httpkitmiddleware.LogDuration,
+				httpkitmiddleware.LogErrorReference,
+			),
+		))
 	}
 
 	middlewares = append(middlewares, middleware.RecoverPanics(config.Logger))

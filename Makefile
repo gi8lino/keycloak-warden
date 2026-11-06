@@ -43,7 +43,7 @@ LDFLAGS ?= -s -w -X main.Version=$(BUILD_VERSION)
 
 ## Local Development
 
-CONFIG ?= examples/warden.yaml
+CONFIG ?= examples/kubernetes/warden.yaml
 WARDEN_ASSIGNED_PORT ?= $(call dev-port,app)
 WARDEN_MANAGEMENT_ASSIGNED_PORT ?= $(call dev-port,management)
 LISTEN_ADDRESS ?= 127.0.0.1:$(WARDEN_ASSIGNED_PORT)

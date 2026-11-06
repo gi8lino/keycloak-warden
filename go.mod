@@ -4,7 +4,7 @@ go 1.27.3
 
 require (
 	github.com/containeroo/appkit v0.7.0
-	github.com/containeroo/httpkit v0.0.3
+	github.com/containeroo/httpkit v0.1.1
 	github.com/containeroo/tinyflags v0.8.0
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.25.0

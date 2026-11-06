@@ -1,6 +1,7 @@
 package server_test
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"log/slog"
@@ -37,6 +38,55 @@ func (ready readiness) Ping(context.Context) error {
 		return assert.AnError
 	}
 	return nil
+}
+
+// TestAccessLogFields confirms that only application requests emit selected access-log fields.
+func TestAccessLogFields(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, nil))
+	handlers := server.New(server.Config{
+		AccessLog: true,
+		Logger:    logger,
+		Secret:    "secret",
+		Processor: noopProcessor{},
+		Readiness: readiness(true),
+	})
+
+	// Missing content type is rejected before authentication; only the path is logged.
+	rec := httptest.NewRecorder()
+	handlers.Application.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/events?private=secret", nil))
+	require.Equal(t, http.StatusUnsupportedMediaType, rec.Code)
+
+	logged := logs.String()
+	assert.Contains(t, logged, `"event":"request_complete"`)
+	assert.Contains(t, logged, `"method":"POST"`)
+	assert.Contains(t, logged, `"path":"/events"`)
+	assert.Contains(t, logged, `"status":415`)
+	assert.Contains(t, logged, `"duration":`)
+	assert.NotContains(t, logged, "private=secret")
+	assert.NotContains(t, logged, `"error_reference":`)
+
+	// Health probes are served by a separate, unlogged management handler.
+	before := logs.Len()
+	health := httptest.NewRecorder()
+	handlers.Management.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	require.Equal(t, http.StatusOK, health.Code)
+	assert.Equal(t, before, logs.Len())
+
+	// The access-log option remains opt-in for the application.
+	logs.Reset()
+	disabled := server.New(server.Config{
+		Logger:    logger,
+		Secret:    "secret",
+		Processor: noopProcessor{},
+		Readiness: readiness(true),
+	})
+	missing := httptest.NewRecorder()
+	disabled.Application.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, "/not-found", nil))
+	require.Equal(t, http.StatusNotFound, missing.Code)
+	assert.Empty(t, logs.String())
 }
 
 func TestNew(t *testing.T) {

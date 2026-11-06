@@ -56,6 +56,8 @@ func Register(root *tinyflags.Command, stdout io.Writer, version string) {
 		Value()
 	accessLog := command.Bool("access-log", false, "Enable HTTP request logging").
 		Value()
+	debug := command.Bool("debug", false, "Enable detailed diagnostic logs").
+		Value()
 
 	metricsEnabled := command.Bool("metrics", false, "Expose Prometheus metrics on the management listener").
 		Value()
@@ -66,7 +68,12 @@ func Register(root *tinyflags.Command, stdout io.Writer, version string) {
 			return err
 		}
 
-		logger := appkitlogging.Setup(*logFormat, false, stdout)
+		logger := appkitlogging.Setup(*logFormat, *debug, stdout)
+		logger.Debug(
+			"configuration loaded",
+			"path", *path,
+			"targets", len(cfg.Targets),
+		)
 
 		return Run(
 			ctx,

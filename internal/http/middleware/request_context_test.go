@@ -29,13 +29,20 @@ func TestRequestFailureCorrelation(t *testing.T) {
 			httpkitmiddleware.Chain(
 				handler,
 				RequestContext(),
-				httpkitmiddleware.AccessLogWithErrorReference(logger),
+				httpkitmiddleware.AccessLog(logger, httpkitmiddleware.WithAccessLogFields(
+					httpkitmiddleware.LogMethod,
+					httpkitmiddleware.LogPath,
+					httpkitmiddleware.LogStatus,
+					httpkitmiddleware.LogDuration,
+					httpkitmiddleware.LogErrorReference,
+				)),
 				RecoverPanics(logger),
 			).ServeHTTP(response, httptest.NewRequest("GET", "/pages/example?secret=hidden", nil))
 			require.Equal(t, 500, response.Code)
 			assert.NotContains(t, response.Body.String(), "private diagnostic")
 			assert.Contains(t, logs.String(), `"method":"GET"`)
 			assert.Contains(t, logs.String(), `"path":"/pages/example"`)
+			assert.Contains(t, logs.String(), `"status":500`)
 			assert.NotContains(t, logs.String(), "hidden")
 			assert.Equal(t, 2, bytes.Count(logs.Bytes(), []byte(`"error_reference":`)))
 			assert.Contains(t, logs.String(), "private diagnostic")

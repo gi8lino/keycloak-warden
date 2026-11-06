@@ -118,6 +118,12 @@ func dispatch(ctx context.Context, q Queue, destinations map[string]Provider, lo
 		"destination", job.Destination,
 	)
 
+	log.Debug(
+		"delivering decision",
+		"ip", job.Decision.IP,
+		"active", job.Decision.Active,
+	)
+
 	provider, ok := destinations[job.Destination]
 	if !ok {
 		log.Error("destination missing from configuration")

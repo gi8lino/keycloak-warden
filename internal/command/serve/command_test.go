@@ -73,3 +73,15 @@ func TestLogFormatEnvironment(t *testing.T) {
 	t.Setenv("WARDEN__LOG_FORMAT", "text")
 	assert.Contains(t, startupLog(t), "level=INFO")
 }
+
+func TestDebugLogging(t *testing.T) {
+	t.Parallel()
+	line := startupLog(t, "--debug", "--log-format=text")
+	assert.Contains(t, line, "level=DEBUG")
+	assert.Contains(t, line, `msg="configuration loaded"`)
+}
+
+func TestDebugEnvironment(t *testing.T) {
+	t.Setenv("WARDEN__DEBUG", "true")
+	assert.Contains(t, startupLog(t), `"level":"DEBUG"`)
+}

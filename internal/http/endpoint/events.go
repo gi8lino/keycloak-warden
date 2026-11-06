@@ -38,8 +38,9 @@ func Events(processor EventProcessor, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		_, err := processor.Process(r.Context(), envelope, time.Now())
+		decision, err := processor.Process(r.Context(), envelope, time.Now())
 		if errors.Is(err, ingestion.ErrInvalidEvent) {
+			logger.Debug("security event rejected", "event_type", envelope.Kind, "reason", "invalid_event")
 			httpresponse.Problem(w, http.StatusBadRequest, "Invalid security event.")
 			return
 		}
@@ -50,6 +51,22 @@ func Events(processor EventProcessor, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
+		logger.Debug(
+			"security event processed",
+			"event_id", envelope.ID,
+			"event_type", envelope.Kind,
+			"ip", envelope.IP,
+			"decision_created", decision != nil,
+		)
+		if decision != nil {
+			logger.Info(
+				"automatic ban created",
+				"decision_id", decision.ID,
+				"ip", decision.IP,
+				"failures", decision.Failures,
+				"expires_at", decision.ExpiresAt,
+			)
+		}
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
