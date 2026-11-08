@@ -20,7 +20,6 @@ on:
       - ".dockerignore"
       - ".goreleaser.yaml"
       - ".github/workflows/**"
-      - ".github/actions/**"
   workflow_dispatch:
 
 permissions:
@@ -60,7 +59,11 @@ jobs:
       - name: Build Warden
         run: make build
 
-      - uses: ./.github/actions/setup-goreleaser
+      - name: Set up GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          version: v2.20.0
+          install-only: true
 
       - name: Check GoReleaser configuration
         run: goreleaser check
