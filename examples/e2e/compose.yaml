@@ -22,6 +22,7 @@ services:
       - --management-listen-address=:8081
       - --route-prefix=/warden
       - --access-log
+      - --debug
       - --metrics
 
   receiver:

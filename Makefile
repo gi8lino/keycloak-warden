@@ -20,6 +20,9 @@ E2E_KC_PORT ?= 18080
 E2E_WARDEN_PORT ?= 18081
 E2E_MANAGEMENT_PORT ?= 18082
 E2E_RECEIVER_PORT ?= 18090
+E2E_KEYCLOAK_REALM_FILE := examples/e2e/realm/warden-e2e.json
+E2E_KEYCLOAK_REALM := $(shell sed -n 's/^[[:space:]]*"realm"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $(E2E_KEYCLOAK_REALM_FILE))
+E2E_KEYCLOAK_URL := http://127.0.0.1:$(E2E_KC_PORT)/realms/$(E2E_KEYCLOAK_REALM)/account/
 E2E_COMPOSE := docker compose -p $(E2E_PROJECT) -f examples/e2e/compose.yaml
 export SNITCH_VERSION SNITCH_RELEASE E2E_PROJECT E2E_KC_PORT E2E_WARDEN_PORT E2E_MANAGEMENT_PORT E2E_RECEIVER_PORT
 
@@ -83,7 +86,9 @@ serve: ports ## Run Warden with assigned ports and YAML rule/target configuratio
 		$(RUN_ARGS)
 
 .PHONY: run
-run: serve ## Alias for serve.
+run: ## Run Warden locally and print the E2E Keycloak account console.
+	@echo "Keycloak: $(E2E_KEYCLOAK_URL)"
+	$(MAKE) serve RUN_ARGS="$(RUN_ARGS)"
 
 .PHONY: clean
 clean: ## Remove built binaries and coverage reports.
@@ -109,6 +114,7 @@ $(SNITCH_JAR):
 .PHONY: e2e-up
 e2e-up: snitch-download ## Build and start Keycloak, Snitch, Warden, and the webhook receiver.
 	$(E2E_COMPOSE) up --build --detach
+	@echo "Keycloak: $(E2E_KEYCLOAK_URL)"
 
 .PHONY: e2e-logs
 e2e-logs: ## Follow the end-to-end stack logs.
