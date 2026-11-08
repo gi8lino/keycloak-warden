@@ -7,3 +7,8 @@ resources:
   - deployment.yaml
   - service.yaml
 # Secrets are intentionally created separately; never apply example placeholders.
+
+configMapGenerator:
+  - name: keycloak-warden-config
+    files:
+      - warden.yaml

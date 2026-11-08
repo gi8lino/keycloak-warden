@@ -13,6 +13,7 @@ services:
       - ./warden.yaml:/config/warden.yaml:ro
     environment:
       WARDEN__SNITCH_SECRET: development-snitch-secret
+      WARDEN_E2E_WEBHOOK_SECRET: development-outbound-secret
       WARDEN__LISTEN_ADDRESS: ":8080"
       WARDEN__ADMIN_TOKEN: development-admin-token
     command:

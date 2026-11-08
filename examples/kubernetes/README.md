@@ -13,9 +13,11 @@ chmod 600 /tmp/keycloak-warden-secrets.yaml
 kubectl apply -f /tmp/keycloak-warden-secrets.yaml
 ```
 
-The template includes Warden's settings, Cloudflare token, administrator token, and the shared Snitch signing key. If Keycloak already manages the `keycloak-snitch` Secret, remove that Secret from your copy instead of overwriting it.
+The template includes the Cloudflare token, administrator token, and the shared Snitch signing key. The non-secret rule and destination settings live in `warden.yaml` and are generated into a ConfigMap by Kustomize. If Keycloak already manages the `keycloak-snitch` Secret, remove that Secret from your copy instead of overwriting it.
 
-For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set the matching Zone ID and token in the copied Secret.
+For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set the matching Zone ID in `warden.yaml`, enable the `edge` target, and set the `CLOUDFLARE_API_TOKEN` in your copied Secret. The target uses `secret: env:CLOUDFLARE_API_TOKEN` to read that variable at startup. Each additional Cloudflare zone/account can have its own named target and secret environment variable.
+
+Warden also accepts `secret: file:/path/to/token` for mounted secret files, and `secret: literal:my:literal` for values beginning with a recognized prefix. Referenced secrets must exist and must not be blank; unsupported prefixes are rejected when the target is enabled. Do not store actual secret values in the ConfigMap.
 
 ## 2. Connect Keycloak Snitch
 
@@ -63,7 +65,7 @@ Unbanning clears both manual and automatic bans for that IP. If you customize th
 - **Keep one replica.** Warden uses a single SQLite database on a persistent volume. Upgrades use `Recreate`, with a short interruption.
 - **Storage:** If your cluster has no default StorageClass, choose one in `persistentvolumeclaim.yaml`.
 - **Route prefix:** If you enable `--route-prefix=/warden`, change Snitch's URL to `http://keycloak-warden:8080/warden/events`. Health and metrics paths stay unchanged.
-- **Changed Secrets?** Restart Warden if your cluster doesn't reload them automatically:
+- **Changed Secrets or ConfigMap?** Warden resolves credentials only at startup. Restart Warden to apply changed values if your cluster doesn't reload them automatically:
 
 ```sh
 kubectl -n keycloak rollout restart deployment/keycloak-warden

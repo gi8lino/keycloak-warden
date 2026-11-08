@@ -2,12 +2,17 @@ package bootstrap
 
 import (
 	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/config"
+	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
+	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
 )
 
 func TestDestinations(t *testing.T) {
@@ -105,4 +110,56 @@ func TestAllowedWebhook(t *testing.T) {
 
 		assert.False(t, allowedWebhook(nil))
 	})
+}
+
+// TestDestinationsSecretResolution verifies independent credentials and strict references.
+func TestDestinationsSecretResolution(t *testing.T) {
+	t.Setenv("WARDEN_TEST_CF_PRIMARY", "primary-token")
+	t.Setenv("WARDEN_TEST_BLANK", "   ")
+	file := filepath.Join(t.TempDir(), "token")
+	require.NoError(t, os.WriteFile(file, []byte(" secondary-token \n"), 0600))
+
+	providers, names, err := Destinations(map[string]config.Target{
+		"primary": {
+			Enabled: true, Provider: config.ProviderCloudflare,
+			ZoneID: strings.Repeat("a", 32), Secret: "env:WARDEN_TEST_CF_PRIMARY",
+		},
+		"secondary": {
+			Enabled: true, Provider: config.ProviderCloudflare,
+			ZoneID: strings.Repeat("b", 32), Secret: "file:" + file,
+		},
+		"notification": {
+			Enabled: true, Provider: config.ProviderWebhook,
+			URL: "https://hooks.example.com/warden", Secret: "literal:custom:secret",
+		},
+		"disabled": {
+			Enabled: false, Provider: config.ProviderCloudflare,
+			Secret: "env:WARDEN_TEST_UNDEFINED",
+		},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"notification", "primary", "secondary"}, names)
+	assert.Equal(t, "primary-token", providers["primary"].(cloudflare.Provider).Token)
+	assert.Equal(t, " secondary-token ", providers["secondary"].(cloudflare.Provider).Token)
+	assert.Equal(t, "custom:secret", providers["notification"].(webhook.Provider).Secret)
+}
+
+// TestDestinationsBadSecretReferences checks fail-fast errors for enabled targets.
+func TestDestinationsBadSecretReferences(t *testing.T) {
+	t.Setenv("WARDEN_TEST_EMPTY", "")
+	t.Setenv("WARDEN_TEST_BLANK", " 	 ")
+	for _, secret := range []string{
+		"", "  ", "env:WARDEN_TEST_EMPTY", "env:WARDEN_TEST_BLANK",
+		"env:WARDEN_TEST_MISSING_193", "evn:WARDEN_TEST_EMPTY",
+	} {
+		t.Run(secret, func(t *testing.T) {
+			_, _, err := Destinations(map[string]config.Target{
+				"edge": {
+					Enabled: true, Provider: config.ProviderCloudflare,
+					ZoneID: strings.Repeat("a", 32), Secret: secret,
+				},
+			})
+			require.ErrorContains(t, err, `target "edge": resolve destination credential`)
+		})
+	}
 }

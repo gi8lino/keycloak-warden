@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containeroo/resolver"
+
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
@@ -28,6 +30,15 @@ func Destinations(targets map[string]config.Target) (providers map[string]action
 		Timeout:       defaultClientTimeout,
 		CheckRedirect: noRedirect,
 	}
+	// Reject missing, empty and misspelled secret references before starting.
+	secrets := resolver.NewDefaultRegistry(
+		resolver.WithEmptyValuePolicy(resolver.RejectBlank),
+		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
+	)
+	// Kubernetes Secret volumes commonly end in a newline. Keep meaningful spaces.
+	secrets.Register("file:", &resolver.KeyValueFileResolver{
+		Whitespace: resolver.FileTrimNewlines,
+	})
 
 	for name, target := range targets {
 		if strings.TrimSpace(name) == "" {
@@ -38,7 +49,7 @@ func Destinations(targets map[string]config.Target) (providers map[string]action
 			continue
 		}
 
-		p, err := build(target, client)
+		p, err := build(target, client, secrets)
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", name, err)
 		}
@@ -62,11 +73,10 @@ func validZoneID(value string) bool {
 }
 
 // build binds a supported provider to its credentials and immutable target.
-func build(d config.Target, client *http.Client) (actions.Provider, error) {
-	secret := d.Secret
-
-	if strings.TrimSpace(secret) == "" {
-		return nil, errors.New("missing destination credential")
+func build(d config.Target, client *http.Client, secrets *resolver.Registry) (actions.Provider, error) {
+	secret, err := secrets.ResolveVariable(d.Secret)
+	if err != nil {
+		return nil, fmt.Errorf("resolve destination credential: %w", err)
 	}
 
 	switch d.Provider {
