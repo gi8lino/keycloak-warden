@@ -15,9 +15,13 @@ kubectl apply -f /tmp/keycloak-warden-secrets.yaml
 
 The template includes the Cloudflare token, administrator token, and the shared Snitch signing key. The non-secret rule and destination settings live in `warden.yaml` and are generated into a ConfigMap by Kustomize. If Keycloak already manages the `keycloak-snitch` Secret, remove that Secret from your copy instead of overwriting it.
 
-For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set the matching Zone ID in `warden.yaml`, enable the `edge` target, and set the `CLOUDFLARE_API_TOKEN` in your copied Secret. The target uses `secret: env:CLOUDFLARE_API_TOKEN` to read that variable at startup. Each additional Cloudflare zone/account can have its own named target and secret environment variable.
+For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set `CLOUDFLARE_ZONE_ID` (32 hexadecimal characters) and `CLOUDFLARE_API_TOKEN` in your copied Kubernetes Secret, then enable the `edge` target in `warden.yaml`. Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Different Cloudflare accounts/zones can be configured as separate named targets with independent credentials.
 
-Warden also accepts `secret: file:/path/to/token` for mounted secret files, and `secret: literal:my:literal` for values beginning with a recognized prefix. Referenced secrets must exist and must not be blank; unsupported prefixes are rejected when the target is enabled. Do not store actual secret values in the ConfigMap.
+The optional `ops` webhook target requires `url` and `signing-secret` (for example, `signing-secret: env:WARDEN_WEBHOOK_SECRET`); HMAC signing is mandatory. The supplied Secret template and Deployment include that variable so you can enable the target later without changing the Pod environment. Warden does not offer arbitrary webhook headers or unsigned delivery.
+
+`zone-id`, `api-token`, and `signing-secret` support literal values, `env:VARIABLE`, `file:/path/to/value`, and other [Resolver](https://github.com/containeroo/resolver) sources. Use `literal:` to preserve values that would otherwise look like references. Every required resolved value must be nonblank, and invalid reference prefixes fail startup for enabled targets. Do not commit real tokens or signing secrets to Git or store them in the ConfigMap.
+
+**Migration:** The former `secret` field is no longer recognized. Use `api-token` for Cloudflare and `signing-secret` for webhooks.
 
 ## 2. Connect Keycloak Snitch
 

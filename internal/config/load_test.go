@@ -35,7 +35,7 @@ targets:
     provider: webhook
     enabled: true
     url: https://example.org/events
-    secret: outbound
+    signing-secret: outbound
 `)
 		cfg, err := Load(path)
 
@@ -43,6 +43,35 @@ targets:
 		assert.Equal(t, 2, cfg.Rule.Threshold)
 		assert.Equal(t, 3*time.Minute, cfg.Rule.Ban)
 		assert.Equal(t, ProviderWebhook, cfg.Targets["ops"].Provider)
+		assert.Equal(t, "outbound", cfg.Targets["ops"].SigningSecret)
+	})
+
+	t.Run("cloudflare target retains resolvable configuration", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := Load(writeConfig(t, `
+rule:
+  threshold: 5
+  window: 1m
+  ban: 15m
+targets:
+  edge:
+    enabled: true
+    provider: cloudflare
+    zone-id: env:CLOUDFLARE_ZONE_ID
+    api-token: env:CLOUDFLARE_API_TOKEN
+`))
+		require.NoError(t, err)
+		assert.Equal(t, ProviderCloudflare, cfg.Targets["edge"].Provider)
+		assert.Equal(t, "env:CLOUDFLARE_ZONE_ID", cfg.Targets["edge"].ZoneID)
+		assert.Equal(t, "env:CLOUDFLARE_API_TOKEN", cfg.Targets["edge"].APIToken)
+	})
+
+	t.Run("rejects legacy generic secret field", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := Load(writeConfig(t, "targets:\n  edge:\n    provider: cloudflare\n    secret: legacy-token\n"))
+		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects unknown fields", func(t *testing.T) {

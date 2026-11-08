@@ -10,4 +10,4 @@ targets:
     provider: webhook
     # Receiver shares Warden's network namespace (loopback HTTP is allowed).
     url: http://127.0.0.1:8090/hmac
-    secret: env:WARDEN_E2E_WEBHOOK_SECRET
+    signing-secret: env:WARDEN_E2E_WEBHOOK_SECRET

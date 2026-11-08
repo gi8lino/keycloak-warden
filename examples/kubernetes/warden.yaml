@@ -8,9 +8,9 @@ targets:
     enabled: false
     provider: webhook
     url: https://receiver.example/events
-    secret: env:WARDEN_WEBHOOK_SECRET
+    signing-secret: env:WARDEN_WEBHOOK_SECRET
   edge:
     enabled: false
     provider: cloudflare
     zone-id: env:CLOUDFLARE_ZONE_ID
-    secret: env:CLOUDFLARE_API_TOKEN
+    api-token: env:CLOUDFLARE_API_TOKEN

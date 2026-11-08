@@ -21,6 +21,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/urlpolicy"
 )
 
+// defaultClientTimeout limits the duration of outbound provider HTTP requests.
 var defaultClientTimeout = 5 * time.Second
 
 // Destinations constructs the enabled providers and returns their stable routing order.
@@ -72,18 +73,20 @@ func validZoneID(value string) bool {
 	return err == nil
 }
 
-// build binds a supported provider to its credentials and immutable target.
-func build(d config.Target, client *http.Client, secrets *resolver.Registry) (actions.Provider, error) {
-	secret, err := secrets.ResolveVariable(d.Secret)
-	if err != nil {
-		return nil, fmt.Errorf("resolve destination credential: %w", err)
-	}
-
+// build validates and constructs the selected target provider.
+func build(d config.Target, client *http.Client, values *resolver.Registry) (actions.Provider, error) {
 	switch d.Provider {
 	case config.ProviderWebhook:
 		u, err := url.Parse(d.URL)
 		if err != nil || !allowedWebhook(u) {
-			return nil, errors.New("expected HTTPS webhook URL (HTTP allowed on loopback)")
+			return nil, errors.New("url: expected HTTPS webhook URL (HTTP allowed on loopback)")
+		}
+		if d.APIToken != "" || d.ZoneID != "" {
+			return nil, errors.New("webhook: api-token and zone-id are only valid for Cloudflare targets")
+		}
+		secret, err := resolveRequired(values, d.SigningSecret, "signing-secret")
+		if err != nil {
+			return nil, err
 		}
 		return webhook.Provider{
 			URL:    d.URL,
@@ -92,20 +95,41 @@ func build(d config.Target, client *http.Client, secrets *resolver.Registry) (ac
 		}, nil
 
 	case config.ProviderCloudflare:
-		if !validZoneID(d.ZoneID) {
-			return nil, errors.New("expected a 32-digit hexadecimal zone ID")
+		if d.URL != "" || d.SigningSecret != "" {
+			return nil, errors.New("cloudflare: url and signing-secret are only valid for webhook targets")
 		}
-		endpoint := "https://api.cloudflare.com/client/v4/zones/" + d.ZoneID + "/firewall/access_rules/rules"
-
+		zoneID, err := resolveRequired(values, d.ZoneID, "zone-id")
+		if err != nil {
+			return nil, err
+		}
+		if !validZoneID(zoneID) {
+			return nil, errors.New("zone-id: expected a 32-character hexadecimal Cloudflare zone ID")
+		}
+		token, err := resolveRequired(values, d.APIToken, "api-token")
+		if err != nil {
+			return nil, err
+		}
 		return cloudflare.Provider{
-			RulesURL: endpoint,
-			Token:    secret,
+			RulesURL: "https://api.cloudflare.com/client/v4/zones/" + zoneID + "/firewall/access_rules/rules",
+			Token:    token,
 			Client:   client,
 		}, nil
 
 	default:
 		return nil, errors.New("unknown provider")
 	}
+}
+
+// resolveRequired resolves a provider setting and rejects missing or blank values.
+func resolveRequired(values *resolver.Registry, reference, field string) (string, error) {
+	value, err := values.ResolveVariable(reference)
+	if err != nil {
+		return "", fmt.Errorf("%s: resolve value: %w", field, err)
+	}
+	if strings.TrimSpace(value) == "" {
+		return "", fmt.Errorf("%s: value must not be blank", field)
+	}
+	return value, nil
 }
 
 // allowedWebhook checks webhook-specific URL restrictions and the shared transport policy.

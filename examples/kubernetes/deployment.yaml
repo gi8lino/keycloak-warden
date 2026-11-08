@@ -61,11 +61,21 @@ spec:
                 secretKeyRef:
                   name: keycloak-warden
                   key: WARDEN__ADMIN_TOKEN
+            - name: CLOUDFLARE_ZONE_ID
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-warden
+                  key: CLOUDFLARE_ZONE_ID
             - name: CLOUDFLARE_API_TOKEN
               valueFrom:
                 secretKeyRef:
                   name: keycloak-warden
                   key: CLOUDFLARE_API_TOKEN
+            - name: WARDEN_WEBHOOK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: keycloak-warden
+                  key: WARDEN_WEBHOOK_SECRET
           ports:
             - name: http
               containerPort: 8080

@@ -31,8 +31,10 @@ type document struct {
 		Provider string `yaml:"provider"`
 		// URL is the configured webhook endpoint.
 		URL string `yaml:"url"`
-		// Secret signs webhook messages or authorizes provider API calls.
-		Secret string `yaml:"secret"`
+		// SigningSecret signs webhook messages.
+		SigningSecret string `yaml:"signing-secret"`
+		// APIToken authorizes Cloudflare API calls.
+		APIToken string `yaml:"api-token"`
 		// ZoneID selects the Cloudflare zone.
 		ZoneID string `yaml:"zone-id"`
 	} `yaml:"targets"`
@@ -80,11 +82,12 @@ func Load(path string) (cfg Config, err error) {
 			return Config{}, errors.New("invalid Warden YAML: unsupported target provider")
 		}
 		cfg.Targets[name] = Target{
-			Enabled:  target.Enabled,
-			Provider: provider,
-			URL:      target.URL,
-			Secret:   target.Secret,
-			ZoneID:   target.ZoneID,
+			Enabled:       target.Enabled,
+			Provider:      provider,
+			URL:           target.URL,
+			SigningSecret: target.SigningSecret,
+			APIToken:      target.APIToken,
+			ZoneID:        target.ZoneID,
 		}
 	}
 	return cfg, nil

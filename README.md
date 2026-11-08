@@ -39,16 +39,20 @@ targets:
   edge-primary:
     enabled: true
     provider: cloudflare
-    zone-id: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-    secret: env:CLOUDFLARE_PRIMARY_TOKEN
+    zone-id: env:CLOUDFLARE_PRIMARY_ZONE_ID
+    api-token: env:CLOUDFLARE_PRIMARY_TOKEN
   edge-secondary:
     enabled: true
     provider: cloudflare
-    zone-id: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    secret: env:CLOUDFLARE_SECONDARY_TOKEN
+    zone-id: env:CLOUDFLARE_SECONDARY_ZONE_ID
+    api-token: env:CLOUDFLARE_SECONDARY_TOKEN
 ```
 
-The `secret` field accepts literal strings or [Resolver](https://github.com/containeroo/resolver) sources: `env:VARIABLE`, `file:/path/to/secret`, `json:`, `yaml:`, `ini:`, and `toml:` references. Use `literal:` if a literal secret starts with a source prefix (for example, `literal:env:not-a-reference`). Empty values, missing environment variables, and unrecognized source prefixes are rejected at startup for enabled targets. Values are resolved once at startup; restart after rotating credentials.
+Cloudflare targets require `zone-id` and `api-token`. Webhook targets require `url` and `signing-secret`; Warden always signs outgoing webhooks with the configured HMAC secret. Custom headers and unsigned delivery are intentionally unsupported.
+
+The `zone-id`, `api-token`, and `signing-secret` fields accept literal values or [Resolver](https://github.com/containeroo/resolver) sources such as `env:VARIABLE` and `file:/path/to/value`. A `literal:` prefix escapes special prefixes (for example, `literal:env:not-a-reference`). Missing or blank values and unrecognized references are rejected at startup for enabled targets. Resolved zone IDs must contain 32 hexadecimal characters. Values are resolved once at startup; restart Warden to load changes.
+
+**Configuration migration:** The old `secret` key is no longer accepted. Rename it to `api-token` for Cloudflare or `signing-secret` for webhooks. The legacy key is deliberately rejected by strict YAML parsing so that mistakes cannot be silently ignored.
 
 For Kubernetes, use a ConfigMap for the rules and destination definitions and Kubernetes Secrets for the credentials. See the Kubernetes example for an end-to-end configuration.
 

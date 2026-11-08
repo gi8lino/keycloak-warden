@@ -11,9 +11,11 @@ type Target struct {
 	Provider ProviderKind
 	// URL is the outbound webhook endpoint.
 	URL string
-	// Secret signs outbound webhooks or authenticates Cloudflare requests.
-	Secret string
-	// ZoneID identifies a Cloudflare zone.
+	// SigningSecret signs outgoing webhook notifications.
+	SigningSecret string
+	// APIToken authorizes Cloudflare API requests.
+	APIToken string
+	// ZoneID identifies a Cloudflare zone and supports resolver references.
 	ZoneID string
 }
 
