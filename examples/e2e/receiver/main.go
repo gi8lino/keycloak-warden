@@ -17,13 +17,14 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/containeroo/httpkit/grace"
 )
 
 const (
 	defaultListenAddress = ":8090"
 	maxBodyBytes         = 64 << 10
 	readHeaderTimeout    = 5 * time.Second
-	shutdownTimeout      = 5 * time.Second
 )
 
 // receiver serializes readable HTTP request traces without interleaving them.
@@ -86,6 +87,7 @@ func (service *receiver) webhook(w http.ResponseWriter, r *http.Request) {
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	service.count++
+
 	output := append([]byte(fmt.Sprintf("\n========== Webhook #%d", service.count)), trace.Bytes()...)
 	if _, err := service.out.Write(output); err != nil {
 		log.Printf("write webhook trace: %v", err)
@@ -96,7 +98,7 @@ func (service *receiver) webhook(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// run serves requests until a shutdown signal is received.
+// run serves requests until shutdown is requested or the listener fails.
 func run() error {
 	address := os.Getenv("LISTEN_ADDR")
 	if address == "" {
@@ -112,26 +114,9 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	stopped := make(chan error, 1)
-	go func() {
-		log.Printf("webhook receiver listening on %s", address)
-		stopped <- server.ListenAndServe()
-	}()
+	log.Printf("webhook receiver listening on %s", address)
 
-	select {
-	case err := <-stopped:
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
-		}
-		return err
-	case <-ctx.Done():
-		shutdown, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
-		defer cancel()
-		if err := server.Shutdown(shutdown); err != nil {
-			return err
-		}
-		return nil
-	}
+	return grace.RunServer(ctx, server, nil)
 }
 
 // main starts the development receiver.
