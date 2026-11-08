@@ -3,28 +3,36 @@ package config
 
 import "github.com/gi8lino/keycloak-warden/internal/application/detection"
 
-// Target describes one named action destination.
-type Target struct {
-	// Enabled selects the destination for detection decisions.
-	Enabled bool
-	// Provider identifies the destination implementation.
-	Provider ProviderKind
-	// URL is the outbound webhook endpoint.
-	URL string
-	// SigningSecret signs outgoing webhook notifications.
-	SigningSecret string
-	// APIToken authorizes Cloudflare API requests.
-	APIToken string
-	// ZoneID identifies a Cloudflare zone and supports resolver references.
-	ZoneID string
+// Targets groups named destinations by their provider type.
+type Targets struct {
+	// Webhook maps names to outbound HTTP webhook destinations.
+	Webhook map[string]WebhookTarget `yaml:"webhook"`
+	// Cloudflare maps names to Cloudflare zones.
+	Cloudflare map[string]CloudflareTarget `yaml:"cloudflare"`
+}
+
+// WebhookTarget configures an HTTP notification destination.
+type WebhookTarget struct {
+	// URL is the resolvable outbound webhook endpoint.
+	URL string `yaml:"url"`
+	// Headers maps literal HTTP header names to resolvable values.
+	Headers map[string]string `yaml:"headers"`
+}
+
+// CloudflareTarget configures one Cloudflare zone destination.
+type CloudflareTarget struct {
+	// APIToken authorizes Cloudflare API requests and supports resolver references.
+	APIToken string `yaml:"api-token"`
+	// ZoneID identifies the Cloudflare zone and supports resolver references.
+	ZoneID string `yaml:"zone-id"`
 }
 
 // Config contains detection and action destination configuration from YAML.
 type Config struct {
 	// Rule configures the failed-login detector.
 	Rule detection.Rule
-	// Targets maps stable destination names to their settings.
-	Targets map[string]Target
+	// Targets groups named destinations by provider.
+	Targets Targets
 }
 
 // Validate checks the detection rule loaded from YAML.

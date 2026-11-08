@@ -4,13 +4,7 @@ rule:
   ban: 15m
 
 targets:
-  ops:
-    enabled: false
-    provider: webhook
-    url: https://receiver.example/events
-    signing-secret: env:WARDEN_WEBHOOK_SECRET
-  edge:
-    enabled: false
-    provider: cloudflare
-    zone-id: env:CLOUDFLARE_ZONE_ID
-    api-token: env:CLOUDFLARE_API_TOKEN
+  cloudflare:
+    edge:
+      zone-id: env:CLOUDFLARE_ZONE_ID
+      api-token: env:CLOUDFLARE_API_TOKEN

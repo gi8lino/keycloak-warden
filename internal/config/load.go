@@ -23,21 +23,8 @@ type document struct {
 		// Ban is the automatic block lifetime in Go duration syntax.
 		Ban string `yaml:"ban"`
 	} `yaml:"rule"`
-	// Targets maps stable destination names to their configuration.
-	Targets map[string]struct {
-		// Enabled selects this target for decision delivery.
-		Enabled bool `yaml:"enabled"`
-		// Provider names the destination implementation.
-		Provider string `yaml:"provider"`
-		// URL is the configured webhook endpoint.
-		URL string `yaml:"url"`
-		// SigningSecret signs webhook messages.
-		SigningSecret string `yaml:"signing-secret"`
-		// APIToken authorizes Cloudflare API calls.
-		APIToken string `yaml:"api-token"`
-		// ZoneID selects the Cloudflare zone.
-		ZoneID string `yaml:"zone-id"`
-	} `yaml:"targets"`
+	// Targets groups named destinations under webhook and cloudflare.
+	Targets Targets `yaml:"targets"`
 }
 
 // Load reads one strict YAML document containing detection rules and action destinations.
@@ -71,26 +58,10 @@ func Load(path string) (cfg Config, err error) {
 		return Config{}, errors.New("invalid Warden YAML: rule.ban must be a duration")
 	}
 
-	cfg = Config{
+	return Config{
 		Rule:    detection.Rule{Threshold: raw.Rule.Threshold, Window: window, Ban: ban},
-		Targets: make(map[string]Target, len(raw.Targets)),
-	}
-
-	for name, target := range raw.Targets {
-		provider := ProviderKind(target.Provider)
-		if target.Provider != "" && !provider.Valid() {
-			return Config{}, errors.New("invalid Warden YAML: unsupported target provider")
-		}
-		cfg.Targets[name] = Target{
-			Enabled:       target.Enabled,
-			Provider:      provider,
-			URL:           target.URL,
-			SigningSecret: target.SigningSecret,
-			APIToken:      target.APIToken,
-			ZoneID:        target.ZoneID,
-		}
-	}
-	return cfg, nil
+		Targets: raw.Targets,
+	}, nil
 }
 
 // duration parses an optional duration; missing values remain zero for rule validation.

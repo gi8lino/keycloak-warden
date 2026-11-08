@@ -1,5 +1,5 @@
 #!/bin/sh
-# Exercise the real Keycloak -> Snitch -> Warden -> Hookglass HMAC receiver path.
+# Exercise the real Keycloak -> Snitch -> Warden -> Hookglass header-verification path.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
@@ -74,7 +74,7 @@ wait_for_webhook() {
   while [ "$attempt" -lt 30 ]; do
     if receiver_logs |
       grep -F 'event=webhook_received' |
-      grep -F 'path=/hmac' |
+      grep -F 'path=/header' |
       grep -F 'verified=true' |
       grep -Fq "\\\"active\\\":$desired"; then
       return 0
@@ -89,12 +89,12 @@ wait_for_webhook() {
 wait_http "$warden_management/readyz" "Warden"
 wait_http "$receiver_url/healthz" "Hookglass"
 
-# Confirm that Hookglass rejects unauthenticated HMAC requests.
+# Confirm that Hookglass rejects requests without the configured header.
 code=$(curl --silent --show-error --max-time 10 \
   --output /dev/null --write-out '%{http_code}' \
-  -X POST --data '{"active":true}' "$receiver_url/hmac")
+  -X POST --data '{"active":true}' "$receiver_url/header")
 if [ "$code" != 401 ]; then
-  printf 'Hookglass /hmac returned HTTP %s (expected 401)\n' "$code" >&2
+  printf 'Hookglass /header returned HTTP %s (expected 401)\n' "$code" >&2
   exit 1
 fi
 
@@ -127,7 +127,7 @@ fi
 printf 'Automatic ban: %s\n' "$ip"
 
 wait_for_webhook true
-printf 'Verified HMAC-signed active-ban webhook\n'
+printf 'Verified header-authenticated active-ban webhook\n'
 
 compose exec -T warden /keycloak-warden unban "$ip" \
   --admin-token development-admin-token \
@@ -144,5 +144,6 @@ if ! curl --silent --fail "$warden_management/metrics" | grep -Fq 'warden_http_r
 fi
 
 success=true
-printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> webhook -> unban -> release webhook.\n'
+printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> release webhook.\n'
 printf 'Inspect Hookglass logs: make e2e-logs\n'
+

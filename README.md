@@ -27,7 +27,7 @@ Press Ctrl+C to stop following the logs, then run `make e2e-down` to stop the st
 
 ## Configuration
 
-Warden reads detection rules and named targets from `warden.yaml`. Different targets may use different Cloudflare zone IDs and API tokens; each enabled target receives the same decision independently and retries failed delivery.
+Warden reads detection rules and provider-grouped, named targets from `warden.yaml`. Each configured target receives the same decision independently and retries failed delivery. To disable a target, remove it from the configuration after ensuring it no longer owns any active bans.
 
 ```yaml
 rule:
@@ -36,25 +36,34 @@ rule:
   ban: 15m
 
 targets:
-  edge-primary:
-    enabled: true
-    provider: cloudflare
-    zone-id: env:CLOUDFLARE_PRIMARY_ZONE_ID
-    api-token: env:CLOUDFLARE_PRIMARY_TOKEN
-  edge-secondary:
-    enabled: true
-    provider: cloudflare
-    zone-id: env:CLOUDFLARE_SECONDARY_ZONE_ID
-    api-token: env:CLOUDFLARE_SECONDARY_TOKEN
+  webhook:
+    edge:
+      url: env:WEBHOOK_URL
+      headers:
+        Authorization: env:WEBHOOK_AUTHORIZATION
+        X-Source: warden
+        X-API-Key: file:/run/secrets/webhook-api-key
+
+  cloudflare:
+    primary:
+      zone-id: env:CLOUDFLARE_PRIMARY_ZONE_ID
+      api-token: env:CLOUDFLARE_PRIMARY_TOKEN
+    secondary:
+      zone-id: env:CLOUDFLARE_SECONDARY_ZONE_ID
+      api-token: env:CLOUDFLARE_SECONDARY_TOKEN
 ```
 
-Cloudflare targets require `zone-id` and `api-token`. Webhook targets require `url` and `signing-secret`; Warden always signs outgoing webhooks with the configured HMAC secret. Custom headers and unsigned delivery are intentionally unsupported.
+The example creates three independent destinations: `webhook.edge`, `cloudflare.primary`, and `cloudflare.secondary`. Provider-qualified names are used in delivery records, logs, and metrics.
 
-The `zone-id`, `api-token`, and `signing-secret` fields accept literal values or [Resolver](https://github.com/containeroo/resolver) sources such as `env:VARIABLE` and `file:/path/to/value`. A `literal:` prefix escapes special prefixes (for example, `literal:env:not-a-reference`). Missing or blank values and unrecognized references are rejected at startup for enabled targets. Resolved zone IDs must contain 32 hexadecimal characters. Values are resolved once at startup; restart Warden to load changes.
+Cloudflare targets require `zone-id` and `api-token` (the zone ID must resolve to 32 hexadecimal characters). Webhook targets require `url`; `headers` are optional. Header names are literal HTTP field names; each value and the URL can use a resolver. Header values must not be blank or contain invalid HTTP control characters. Transport-managed headers such as `Host`, `Content-Length`, and `Content-Type` are not configurable; Warden sends JSON with `Content-Type: application/json`. Webhooks have no built-in signing: configure an `Authorization` or API-key header if required by the receiver.
 
-**Configuration migration:** The old `secret` key is no longer accepted. Rename it to `api-token` for Cloudflare or `signing-secret` for webhooks. The legacy key is deliberately rejected by strict YAML parsing so that mistakes cannot be silently ignored.
+All `url`, `headers` values, `zone-id`, and `api-token` entries accept literal values or [Resolver](https://github.com/containeroo/resolver) sources including `env:VARIABLE` and `file:/path/to/value`. Use `literal:` to escape a special prefix (for example, `literal:env:not-a-reference`). Missing or blank values and unrecognized references cause startup to fail. Values are resolved once at startup; restart Warden after rotating them.
 
-For Kubernetes, use a ConfigMap for the rules and destination definitions and Kubernetes Secrets for the credentials. See the Kubernetes example for an end-to-end configuration.
+Warden requires HTTPS webhook endpoints, except HTTP on explicit loopback hosts (`localhost`, `127.0.0.1`, or `::1`). Redirects are not followed. **Inbound events from Snitch are still authenticated with HMAC signatures**; the optional webhook headers apply only to outbound notifications.
+
+The YAML parser rejects unknown fields, including the removed flat target format, `provider`, `enabled`, and `signing-secret`. There is no compatibility mode.
+
+For Kubernetes, use a ConfigMap for the rules and destination definitions and Kubernetes Secrets for credentials. See the Kubernetes example for an end-to-end configuration.
 
 ## Deploy on Kubernetes
 

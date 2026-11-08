@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,42 +19,55 @@ import (
 func TestDestinations(t *testing.T) {
 	t.Parallel()
 
-	t.Run("only explicitly enabled targets receive decisions", func(t *testing.T) {
+	t.Run("groups use stable provider-qualified names", func(t *testing.T) {
 		t.Parallel()
-
-		providers, names, err := Destinations(map[string]config.Target{
-			"off": {}, "ops": {Provider: config.ProviderWebhook, URL: "https://example.org", SigningSecret: "secret", Enabled: true},
+		providers, names, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"edge": {URL: "https://example.org/a"},
+				"ops":  {URL: "https://example.org/b"},
+			},
+			Cloudflare: map[string]config.CloudflareTarget{
+				"edge": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
+			},
 		})
-
 		require.NoError(t, err)
-		assert.Equal(t, []string{"ops"}, names)
-		assert.Contains(t, providers, "ops")
+		assert.Equal(t, []string{"cloudflare.edge", "webhook.edge", "webhook.ops"}, names)
+		assert.IsType(t, webhook.Provider{}, providers["webhook.edge"])
+		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.edge"])
 	})
 
-	t.Run("enabled target requires credential", func(t *testing.T) {
+	t.Run("supports custom names and dot-separated identifiers", func(t *testing.T) {
 		t.Parallel()
-
-		_, _, err := Destinations(map[string]config.Target{
-			"ops": {Enabled: true, Provider: config.ProviderWebhook, URL: "https://example.org"},
+		providers, names, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"custom-name-a": {URL: "https://example.org/a"},
+				"custom-name-b": {URL: "https://example.org/b"},
+			},
+			Cloudflare: map[string]config.CloudflareTarget{
+				"primary-domain": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
+				"backup-domain":  {ZoneID: strings.Repeat("b", 32), APIToken: "token"},
+			},
 		})
-
-		require.ErrorContains(t, err, "signing-secret")
+		require.NoError(t, err)
+		assert.Equal(t, []string{
+			"cloudflare.backup-domain", "cloudflare.primary-domain",
+			"webhook.custom-name-a", "webhook.custom-name-b",
+		}, names)
+		assert.IsType(t, webhook.Provider{}, providers["webhook.custom-name-a"])
+		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.primary-domain"])
 	})
 
-	t.Run("unknown provider is rejected", func(t *testing.T) {
+	t.Run("rejects invalid target names", func(t *testing.T) {
 		t.Parallel()
-
-		_, _, err := Destinations(map[string]config.Target{
-			"ops": {Enabled: true, Provider: "unknown"},
-		})
-
-		require.ErrorContains(t, err, "unknown provider")
+		for _, name := range []string{"", "  ", " padded", "foo bar", "foo\nbar", "foo/bar"} {
+			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{name: {URL: "https://example.org"}}})
+			require.ErrorContains(t, err, "name")
+		}
 	})
 }
 
 func TestAllowedWebhook(t *testing.T) {
 	t.Parallel()
-
 	tests := []struct {
 		name string
 		url  string
@@ -78,43 +92,53 @@ func TestAllowedWebhook(t *testing.T) {
 	assert.False(t, allowedWebhook(nil))
 }
 
-// TestDestinationsValueResolution verifies independent credentials and resolved zone IDs.
+// TestDestinationsValueResolution verifies resolved URLs, headers, and Cloudflare values.
 func TestDestinationsValueResolution(t *testing.T) {
 	t.Setenv("WARDEN_TEST_CF_PRIMARY_ZONE", strings.Repeat("a", 32))
 	t.Setenv("WARDEN_TEST_CF_PRIMARY_TOKEN", "primary-token")
+	t.Setenv("WARDEN_TEST_WEBHOOK_URL", "https://hooks.example.com/warden")
+	t.Setenv("WARDEN_TEST_WEBHOOK_HEADER", "Bearer secret")
 	zoneFile := filepath.Join(t.TempDir(), "zone-id")
 	secretFile := filepath.Join(t.TempDir(), "token")
+	headerFile := filepath.Join(t.TempDir(), "header")
 	require.NoError(t, os.WriteFile(zoneFile, []byte(strings.Repeat("b", 32)+"\n"), 0o600))
 	require.NoError(t, os.WriteFile(secretFile, []byte(" secondary-token \n"), 0o600))
+	require.NoError(t, os.WriteFile(headerFile, []byte("file-header-value\n"), 0o600))
 
-	providers, names, err := Destinations(map[string]config.Target{
-		"primary": {
-			Enabled: true, Provider: config.ProviderCloudflare,
-			ZoneID: "env:WARDEN_TEST_CF_PRIMARY_ZONE", APIToken: "env:WARDEN_TEST_CF_PRIMARY_TOKEN",
+	providers, names, err := Destinations(config.Targets{
+		Cloudflare: map[string]config.CloudflareTarget{
+			"primary":   {ZoneID: "env:WARDEN_TEST_CF_PRIMARY_ZONE", APIToken: "env:WARDEN_TEST_CF_PRIMARY_TOKEN"},
+			"secondary": {ZoneID: "file:" + zoneFile, APIToken: "file:" + secretFile},
 		},
-		"secondary": {
-			Enabled: true, Provider: config.ProviderCloudflare,
-			ZoneID: "file:" + zoneFile, APIToken: "file:" + secretFile,
-		},
-		"notification": {
-			Enabled: true, Provider: config.ProviderWebhook,
-			URL: "https://hooks.example.com/warden", SigningSecret: "literal:custom:secret",
-		},
-		"disabled": {
-			Enabled: false, Provider: config.ProviderCloudflare,
-			ZoneID: "env:WARDEN_TEST_UNDEFINED_ZONE", APIToken: "env:WARDEN_TEST_UNDEFINED_TOKEN",
+		Webhook: map[string]config.WebhookTarget{
+			"notification": {
+				URL: "env:WARDEN_TEST_WEBHOOK_URL",
+				Headers: map[string]string{
+					"Authorization": "env:WARDEN_TEST_WEBHOOK_HEADER",
+					"X-API-Key":     "file:" + headerFile,
+					"X-Source":      "literal:custom:source",
+				},
+			},
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, []string{"notification", "primary", "secondary"}, names)
-	assert.Equal(t, "primary-token", providers["primary"].(cloudflare.Provider).Token)
-	assert.Contains(t, providers["primary"].(cloudflare.Provider).RulesURL, strings.Repeat("a", 32))
-	assert.Equal(t, " secondary-token ", providers["secondary"].(cloudflare.Provider).Token)
-	assert.Contains(t, providers["secondary"].(cloudflare.Provider).RulesURL, strings.Repeat("b", 32))
-	assert.Equal(t, "custom:secret", providers["notification"].(webhook.Provider).Secret)
+	assert.Equal(t, []string{"cloudflare.primary", "cloudflare.secondary", "webhook.notification"}, names)
+	assert.Equal(t, "primary-token", providers["cloudflare.primary"].(cloudflare.Provider).Token)
+	assert.Contains(t, providers["cloudflare.primary"].(cloudflare.Provider).RulesURL, strings.Repeat("a", 32))
+	assert.Equal(t, " secondary-token ", providers["cloudflare.secondary"].(cloudflare.Provider).Token)
+	assert.Contains(t, providers["cloudflare.secondary"].(cloudflare.Provider).RulesURL, strings.Repeat("b", 32))
+	p := providers["webhook.notification"].(webhook.Provider)
+	assert.Equal(t, "https://hooks.example.com/warden", p.URL)
+	assert.Equal(t, "Bearer secret", p.Headers.Get("Authorization"))
+	assert.Equal(t, "file-header-value", p.Headers.Get("X-API-Key"))
+	assert.Equal(t, "custom:source", p.Headers.Get("X-Source"))
+
+	// Resolved values are snapshots, not dynamically looked up on delivery.
+	t.Setenv("WARDEN_TEST_WEBHOOK_HEADER", "different")
+	assert.Equal(t, "Bearer secret", p.Headers.Get("Authorization"))
 }
 
-// TestDestinationsInvalidReferences verifies strict validation and field-specific errors.
+// TestDestinationsInvalidReferences verifies field-specific errors for every resolvable setting.
 func TestDestinationsInvalidReferences(t *testing.T) {
 	t.Setenv("WARDEN_TEST_EMPTY", "")
 	t.Setenv("WARDEN_TEST_BLANK", " \t ")
@@ -123,25 +147,28 @@ func TestDestinationsInvalidReferences(t *testing.T) {
 		"env:WARDEN_TEST_MISSING_193", "evn:WARDEN_TEST_EMPTY",
 	} {
 		t.Run("api-token/"+reference, func(t *testing.T) {
-			_, _, err := Destinations(map[string]config.Target{
-				"edge": {Enabled: true, Provider: config.ProviderCloudflare,
-					ZoneID: strings.Repeat("a", 32), APIToken: reference},
-			})
-			require.ErrorContains(t, err, `target "edge": api-token:`)
+			_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+				"edge": {ZoneID: strings.Repeat("a", 32), APIToken: reference},
+			}})
+			require.ErrorContains(t, err, `target "cloudflare.edge": api-token:`)
 		})
-		t.Run("signing-secret/"+reference, func(t *testing.T) {
-			_, _, err := Destinations(map[string]config.Target{
-				"receiver": {Enabled: true, Provider: config.ProviderWebhook,
-					URL: "https://example.org/events", SigningSecret: reference},
-			})
-			require.ErrorContains(t, err, `target "receiver": signing-secret:`)
+		t.Run("url/"+reference, func(t *testing.T) {
+			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+				"receiver": {URL: reference},
+			}})
+			require.ErrorContains(t, err, `target "webhook.receiver": url:`)
+		})
+		t.Run("header/"+reference, func(t *testing.T) {
+			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+				"receiver": {URL: "https://example.org/events", Headers: map[string]string{"X-API-Key": reference}},
+			}})
+			require.ErrorContains(t, err, `headers X-API-Key:`)
 		})
 		t.Run("zone-id/"+reference, func(t *testing.T) {
-			_, _, err := Destinations(map[string]config.Target{
-				"edge": {Enabled: true, Provider: config.ProviderCloudflare,
-					ZoneID: reference, APIToken: "literal:valid:token"},
-			})
-			require.ErrorContains(t, err, `target "edge": zone-id:`)
+			_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+				"edge": {ZoneID: reference, APIToken: "literal:valid:token"},
+			}})
+			require.ErrorContains(t, err, `target "cloudflare.edge": zone-id:`)
 		})
 	}
 }
@@ -150,30 +177,51 @@ func TestDestinationsProviderValidation(t *testing.T) {
 	t.Parallel()
 	t.Run("invalid Cloudflare zone ID is reported before token lookup", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := Destinations(map[string]config.Target{
-			"edge": {Enabled: true, Provider: config.ProviderCloudflare,
-				ZoneID: "invalid", APIToken: "env:WARDEN_TEST_UNDEFINED_TOKEN"},
-		})
-		require.ErrorContains(t, err, `zone-id: expected a 32-character hexadecimal`)
+		_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+			"edge": {ZoneID: "invalid", APIToken: "env:WARDEN_TEST_UNDEFINED_TOKEN"},
+		}})
+		require.ErrorContains(t, err, "zone-id: expected a 32-character hexadecimal")
 	})
-	t.Run("webhook credentials remain mandatory", func(t *testing.T) {
+	t.Run("webhook URL must use an allowed transport", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := Destinations(map[string]config.Target{
-			"receiver": {Enabled: true, Provider: config.ProviderWebhook, URL: "https://example.org/events"},
-		})
-		require.ErrorContains(t, err, "signing-secret")
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"receiver": {URL: "http://remote.example/events"},
+		}})
+		require.ErrorContains(t, err, "url: expected HTTPS")
 	})
-	t.Run("rejects provider-incompatible values", func(t *testing.T) {
+}
+
+func TestWebhookHeaderValidation(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"", "X Bad", "X:Bad", "X\nBad", "Host", "host", "Content-Length", "Content-Type", "Connection", "Transfer-Encoding", "Proxy-Authorization"} {
+		t.Run("name/"+name, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+				"edge": {URL: "https://example.org", Headers: map[string]string{name: "valid"}},
+			}})
+			require.ErrorContains(t, err, "headers")
+		})
+	}
+	for _, value := range []string{"evil\r\nX-Test: yes", "\x00bad", "bad\x7f"} {
+		t.Run("value/"+value, func(t *testing.T) {
+			t.Parallel()
+			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+				"edge": {URL: "https://example.org", Headers: map[string]string{"X-API-Key": value}},
+			}})
+			require.ErrorContains(t, err, "invalid HTTP header value")
+		})
+	}
+	t.Run("rejects duplicate header names ignoring case", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := Destinations(map[string]config.Target{
-			"receiver": {Enabled: true, Provider: config.ProviderWebhook,
-				URL: "https://example.org/events", APIToken: "unused", SigningSecret: "valid"},
-		})
-		require.ErrorContains(t, err, "only valid for Cloudflare targets")
-		_, _, err = Destinations(map[string]config.Target{
-			"edge": {Enabled: true, Provider: config.ProviderCloudflare,
-				ZoneID: strings.Repeat("a", 32), APIToken: "valid", SigningSecret: "unused"},
-		})
-		require.ErrorContains(t, err, "only valid for webhook targets")
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"edge": {URL: "https://example.org", Headers: map[string]string{"x-api-key": "a", "X-API-Key": "b"}},
+		}})
+		require.ErrorContains(t, err, "duplicate header name")
+	})
+	t.Run("accepts ordinary token header names", func(t *testing.T) {
+		t.Parallel()
+		assert.NoError(t, validHeaderName("X-API_Key"))
+		assert.True(t, validHeaderValue("Bearer abc\tdef"))
+		assert.Equal(t, http.CanonicalHeaderKey("x-api-key"), "X-Api-Key")
 	})
 }

@@ -71,11 +71,6 @@ spec:
                 secretKeyRef:
                   name: keycloak-warden
                   key: CLOUDFLARE_API_TOKEN
-            - name: WARDEN_WEBHOOK_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: keycloak-warden
-                  key: WARDEN_WEBHOOK_SECRET
           ports:
             - name: http
               containerPort: 8080
@@ -129,3 +124,4 @@ spec:
             claimName: keycloak-warden-data
         - name: tmp
           emptyDir: {}
+

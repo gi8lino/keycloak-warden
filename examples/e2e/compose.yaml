@@ -13,7 +13,8 @@ services:
       - ./warden.yaml:/config/warden.yaml:ro
     environment:
       WARDEN__SNITCH_SECRET: development-snitch-secret
-      WARDEN_E2E_WEBHOOK_SECRET: development-outbound-secret
+      WARDEN_E2E_WEBHOOK_URL: http://127.0.0.1:8090/header
+      WARDEN_E2E_WEBHOOK_KEY: development-outbound-key
       WARDEN__LISTEN_ADDRESS: ":8080"
       WARDEN__ADMIN_TOKEN: development-admin-token
     command:
@@ -26,19 +27,19 @@ services:
       - --metrics
 
   receiver:
-    # Hookglass verifies Warden's signed webhook on the shared loopback network.
+    # Hookglass verifies Warden's outbound API-key header on the shared loopback network.
     image: ghcr.io/gi8lino/hookglass:v0.0.2
     network_mode: service:warden
     depends_on:
       warden:
         condition: service_started
     command:
-      - --config=/config/hmac.yaml
+      - --config=/config/header.yaml
       - --listen-address=:8090
     environment:
-      WEBHOOK_SECRET: development-outbound-secret
+      WEBHOOK_API_KEY: development-outbound-key
     volumes:
-      - ./hmac.yaml:/config/hmac.yaml:ro
+      - ./header.yaml:/config/header.yaml:ro
 
   keycloak:
     build:
@@ -63,3 +64,4 @@ services:
 
 volumes:
   state:
+

@@ -5,9 +5,9 @@ rule:
   ban: 15m
 
 targets:
-  receiver:
-    enabled: true
-    provider: webhook
-    # Receiver shares Warden's network namespace (loopback HTTP is allowed).
-    url: http://127.0.0.1:8090/hmac
-    signing-secret: env:WARDEN_E2E_WEBHOOK_SECRET
+  webhook:
+    receiver:
+      # Receiver shares Warden's network namespace (loopback HTTP is allowed).
+      url: env:WARDEN_E2E_WEBHOOK_URL
+      headers:
+        X-API-Key: env:WARDEN_E2E_WEBHOOK_KEY

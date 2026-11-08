@@ -352,7 +352,7 @@ func TestNewApplication(t *testing.T) {
 		)
 	})
 
-	t.Run("signed events deliver block and subsequent release", func(t *testing.T) {
+	t.Run("signed incoming events deliver block and subsequent release", func(t *testing.T) {
 		t.Parallel()
 
 		received := make(chan decisions.Decision, 4)
@@ -363,7 +363,7 @@ func TestNewApplication(t *testing.T) {
 				return
 			}
 
-			assert.True(t, signing.Valid("outbound", r.Header.Get("X-Warden-Timestamp"), r.Header.Get("X-Warden-Signature"), body, time.Now()))
+			assert.Equal(t, "expected", r.Header.Get("X-API-Key"))
 			var d decisions.Decision
 			if !assert.NoError(t, json.Unmarshal(body, &d)) {
 				w.WriteHeader(http.StatusBadRequest)
@@ -378,7 +378,7 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		defer store.Close() //nolint:errcheck
-		destinations := map[string]actions.Provider{"notify": webhook.Provider{URL: target.URL, Client: target.Client(), Secret: "outbound"}}
+		destinations := map[string]actions.Provider{"notify": webhook.Provider{URL: target.URL, Client: target.Client(), Headers: http.Header{"X-Api-Key": {"expected"}}}}
 		runner := actions.Start(t.Context(), store, destinations, slog.Default())
 		defer runner.Close()
 		body := `{"id":"real-format","timestamp":"2026-11-05T00:00:00Z","schemaVersion":1,"source":"keycloak","type":"LOGIN_ERROR","ipAddress":"203.0.113.8"}`

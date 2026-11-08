@@ -15,13 +15,25 @@ kubectl apply -f /tmp/keycloak-warden-secrets.yaml
 
 The template includes the Cloudflare token, administrator token, and the shared Snitch signing key. The non-secret rule and destination settings live in `warden.yaml` and are generated into a ConfigMap by Kustomize. If Keycloak already manages the `keycloak-snitch` Secret, remove that Secret from your copy instead of overwriting it.
 
-For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set `CLOUDFLARE_ZONE_ID` (32 hexadecimal characters) and `CLOUDFLARE_API_TOKEN` in your copied Kubernetes Secret, then enable the `edge` target in `warden.yaml`. Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Different Cloudflare accounts/zones can be configured as separate named targets with independent credentials.
+For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set `CLOUDFLARE_ZONE_ID` (32 hexadecimal characters) and `CLOUDFLARE_API_TOKEN` in your copied Kubernetes Secret. The example configures `targets.cloudflare.edge`; Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Additional Cloudflare accounts/zones can be configured as separate named targets.
 
-The optional `ops` webhook target requires `url` and `signing-secret` (for example, `signing-secret: env:WARDEN_WEBHOOK_SECRET`); HMAC signing is mandatory. The supplied Secret template and Deployment include that variable so you can enable the target later without changing the Pod environment. Warden does not offer arbitrary webhook headers or unsigned delivery.
+To configure an optional outbound webhook, add an entry under `targets.webhook` in `warden.yaml`:
 
-`zone-id`, `api-token`, and `signing-secret` support literal values, `env:VARIABLE`, `file:/path/to/value`, and other [Resolver](https://github.com/containeroo/resolver) sources. Use `literal:` to preserve values that would otherwise look like references. Every required resolved value must be nonblank, and invalid reference prefixes fail startup for enabled targets. Do not commit real tokens or signing secrets to Git or store them in the ConfigMap.
+```yaml
+targets:
+  webhook:
+    ops:
+      url: env:WARDEN_WEBHOOK_URL
+      headers:
+        Authorization: env:WARDEN_WEBHOOK_AUTHORIZATION
+        X-Source: warden
+```
 
-**Migration:** The former `secret` field is no longer recognized. Use `api-token` for Cloudflare and `signing-secret` for webhooks.
+Merge this `webhook` group into the existing `targets` mapping rather than adding a second root `targets` key. Provide its environment variables through a Kubernetes Secret and `env`/`secretKeyRef` entries in `deployment.yaml`, or use `file:` references to mounted Secret files.
+
+Webhook `url`, every webhook `headers` value, Cloudflare `zone-id`, and `api-token` support literal strings, `env:VARIABLE`, `file:/path/to/value`, and other [Resolver](https://github.com/containeroo/resolver) sources. Use `literal:` to preserve values that would otherwise look like references. Every configured target is active. Required values must resolve to nonblank strings, and invalid references fail startup. Header names are literal and validated, transport-managed headers cannot be overridden, and Warden requires HTTPS webhook URLs except for explicit loopback hosts. Warden does not sign outbound notifications automatically; use headers for receiver authentication.
+
+Do not commit real tokens or credentials to Git or store them in the ConfigMap. **Inbound Snitch event HMAC verification is independent from outbound webhook authentication.** Restart Warden after changing any resolver-backed values.
 
 ## 2. Connect Keycloak Snitch
 
@@ -39,7 +51,7 @@ Install [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch), enable th
   value: LOGIN_ERROR
 ```
 
-Both Keycloak and Warden must use the **same signing key**.
+Both Keycloak and Warden must use the **same Snitch signing key**.
 
 ## 3. Deploy
 
@@ -69,7 +81,7 @@ Unbanning clears both manual and automatic bans for that IP. If you customize th
 - **Keep one replica.** Warden uses a single SQLite database on a persistent volume. Upgrades use `Recreate`, with a short interruption.
 - **Storage:** If your cluster has no default StorageClass, choose one in `persistentvolumeclaim.yaml`.
 - **Route prefix:** If you enable `--route-prefix=/warden`, change Snitch's URL to `http://keycloak-warden:8080/warden/events`. Health and metrics paths stay unchanged.
-- **Changed Secrets or ConfigMap?** Warden resolves credentials only at startup. Restart Warden to apply changed values if your cluster doesn't reload them automatically:
+- **Changed Secrets or ConfigMap?** Warden resolves settings only at startup. Restart Warden to apply changed values if your cluster doesn't reload them automatically:
 
 ```sh
 kubectl -n keycloak rollout restart deployment/keycloak-warden

@@ -1,0 +1,6 @@
+# Verify Warden's configurable outbound webhook header.
+max-body-bytes: 65536
+header:
+  enabled: true
+  name: X-API-Key
+  value-env: WEBHOOK_API_KEY
