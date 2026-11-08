@@ -44,6 +44,7 @@ targets:
 `))
 
 		require.NoError(t, err)
+		require.NoError(t, cfg.Validate())
 		assert.Equal(t, 2, cfg.Rule.Threshold)
 		assert.Equal(t, 3*time.Minute, cfg.Rule.Ban)
 		assert.Equal(t, "env:WEBHOOK_URL", cfg.Targets.Webhook["ops"].URL)
@@ -51,6 +52,24 @@ targets:
 		assert.Equal(t, "warden", cfg.Targets.Webhook["ops"].Headers["X-Source"])
 		assert.Equal(t, "env:CLOUDFLARE_ZONE_ID", cfg.Targets.Cloudflare["primary"].ZoneID)
 		assert.Equal(t, "env:CLOUDFLARE_API_TOKEN", cfg.Targets.Cloudflare["primary"].APIToken)
+	})
+
+	t.Run("loaded configuration validates headers before provider construction", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, `
+rule:
+  threshold: 2
+  window: 1m
+  ban: 3m
+targets:
+  webhook:
+    ops:
+      url: https://example.org
+      headers:
+        CONTENT-TYPE: text/plain
+`))
+		require.NoError(t, err)
+		require.ErrorContains(t, cfg.Validate(), "Content-Type is reserved")
 	})
 
 	t.Run("rejects old flat target format", func(t *testing.T) {

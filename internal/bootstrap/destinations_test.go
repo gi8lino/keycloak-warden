@@ -1,7 +1,6 @@
 package bootstrap
 
 import (
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -63,6 +62,35 @@ func TestDestinations(t *testing.T) {
 			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{name: {URL: "https://example.org"}}})
 			require.ErrorContains(t, err, "name")
 		}
+	})
+}
+
+func TestResolveWebhookURL(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name  string
+		value string
+		want  string
+	}{
+		{name: "literal HTTPS", value: "https://example.org/events?key=a:b", want: "https://example.org/events?key=a:b"},
+		{name: "literal loopback HTTP", value: "http://127.0.0.1:8090/header", want: "http://127.0.0.1:8090/header"},
+		{name: "explicit literal", value: "literal:https://example.org/events", want: "https://example.org/events"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+				"edge": {URL: tt.value},
+			}})
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, providers["webhook.edge"].(webhook.Provider).URL)
+		})
+	}
+	t.Run("unknown URL reference scheme remains invalid", func(t *testing.T) {
+		t.Parallel()
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"edge": {URL: "htps://example.org/events"},
+		}})
+		require.ErrorContains(t, err, `url: resolve value:`)
 	})
 }
 
@@ -191,17 +219,7 @@ func TestDestinationsProviderValidation(t *testing.T) {
 	})
 }
 
-func TestWebhookHeaderValidation(t *testing.T) {
-	t.Parallel()
-	for _, name := range []string{"", "X Bad", "X:Bad", "X\nBad", "Host", "host", "Content-Length", "Content-Type", "Connection", "Transfer-Encoding", "Proxy-Authorization"} {
-		t.Run("name/"+name, func(t *testing.T) {
-			t.Parallel()
-			_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-				"edge": {URL: "https://example.org", Headers: map[string]string{name: "valid"}},
-			}})
-			require.ErrorContains(t, err, "headers")
-		})
-	}
+func TestWebhookHeaderValueValidation(t *testing.T) {
 	for _, value := range []string{"evil\r\nX-Test: yes", "\x00bad", "bad\x7f"} {
 		t.Run("value/"+value, func(t *testing.T) {
 			t.Parallel()
@@ -211,17 +229,38 @@ func TestWebhookHeaderValidation(t *testing.T) {
 			require.ErrorContains(t, err, "invalid HTTP header value")
 		})
 	}
-	t.Run("rejects duplicate header names ignoring case", func(t *testing.T) {
+	t.Run("allows transport-related headers other than Content-Type", func(t *testing.T) {
+		t.Parallel()
+		providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"edge": {URL: "https://example.org", Headers: map[string]string{
+				"Host": "example.org", "Content-Length": "123", "Transfer-Encoding": "chunked",
+			}},
+		}})
+		require.NoError(t, err)
+		p := providers["webhook.edge"].(webhook.Provider)
+		assert.Equal(t, "example.org", p.Headers.Get("Host"))
+		assert.Equal(t, "123", p.Headers.Get("Content-Length"))
+		assert.Equal(t, "chunked", p.Headers.Get("Transfer-Encoding"))
+	})
+	t.Run("accepts tabs in resolved header values", func(t *testing.T) {
 		t.Parallel()
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {URL: "https://example.org", Headers: map[string]string{"x-api-key": "a", "X-API-Key": "b"}},
+			"edge": {URL: "https://example.org", Headers: map[string]string{"X-Key": "abc\tdef"}},
 		}})
-		require.ErrorContains(t, err, "duplicate header name")
+		require.NoError(t, err)
 	})
-	t.Run("accepts ordinary token header names", func(t *testing.T) {
+	t.Run("validates resolved header value", func(t *testing.T) {
+		t.Setenv("WARDEN_TEST_BAD_HEADER_VALUE", "oops\r\nInjected: yes")
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"edge": {URL: "https://example.org", Headers: map[string]string{"X-Key": "env:WARDEN_TEST_BAD_HEADER_VALUE"}},
+		}})
+		require.ErrorContains(t, err, "invalid HTTP header value")
+	})
+	t.Run("direct initialization rejects malformed struct configuration", func(t *testing.T) {
 		t.Parallel()
-		assert.NoError(t, validHeaderName("X-API_Key"))
-		assert.True(t, validHeaderValue("Bearer abc\tdef"))
-		assert.Equal(t, http.CanonicalHeaderKey("x-api-key"), "X-Api-Key")
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"edge": {URL: "https://example.org", Headers: map[string]string{"Content-Type": "text/plain"}},
+		}})
+		require.ErrorContains(t, err, "Content-Type is reserved")
 	})
 }

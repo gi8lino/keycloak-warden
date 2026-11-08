@@ -35,7 +35,10 @@ type Config struct {
 	Targets Targets
 }
 
-// Validate checks the detection rule loaded from YAML.
+// Validate checks the detection rule and structural target configuration.
 func (cfg Config) Validate() error {
-	return cfg.Rule.Validate()
+	if err := cfg.Rule.Validate(); err != nil {
+		return err
+	}
+	return cfg.Targets.Validate()
 }
