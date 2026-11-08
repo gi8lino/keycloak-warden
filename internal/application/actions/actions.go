@@ -119,7 +119,13 @@ func drainReady(
 }
 
 // dispatch records the outcome only for the revision that was attempted.
-func dispatch(ctx context.Context, q Queue, destinations map[string]Provider, logger *slog.Logger, job Job) bool {
+func dispatch(
+	ctx context.Context,
+	q Queue,
+	destinations map[string]Provider,
+	logger *slog.Logger,
+	job Job,
+) bool {
 	log := logger.With(
 		"decision_id", job.Decision.ID,
 		"revision", job.Decision.Revision,

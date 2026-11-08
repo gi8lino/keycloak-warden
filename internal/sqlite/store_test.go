@@ -189,3 +189,61 @@ func TestOpen(t *testing.T) {
 		assert.Empty(t, active)
 	})
 }
+
+func TestDestinationBackoff(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, processor := openStore(t, path, "edge")
+	t.Cleanup(func() { assert.NoError(t, store.Close()) })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	_, err := processor.Process(ctx, failed("one"), now)
+	require.NoError(t, err)
+	_, err = processor.Process(ctx, failed("two"), now)
+	require.NoError(t, err)
+	job, err := store.Next(ctx, now)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.NoError(t, store.Finish(ctx, *job, false, now))
+
+	// A new IP shares the pause, even if the worker restarts.
+	for _, id := range []string{"three", "four"} {
+		event := failed(id)
+		event.IP = "203.0.113.2"
+		_, err = processor.Process(ctx, event, now)
+		require.NoError(t, err)
+	}
+	require.NoError(t, store.Close())
+	store, _ = openStore(t, path, "edge")
+
+	for _, seconds := range []int{10, 20, 40, 80, 160, 300, 300} {
+		due := now.Add(time.Duration(seconds) * time.Second)
+		require.NoError(t, store.Maintain(ctx, due.Add(-time.Millisecond)))
+		pending, err := store.Next(ctx, due.Add(-time.Millisecond))
+		require.NoError(t, err)
+		require.Nil(t, pending)
+		now = due
+		job, err = store.Next(ctx, now)
+		require.NoError(t, err)
+		require.NotNil(t, job)
+		if seconds == 10 {
+			assert.Equal(t, "203.0.113.2", job.Decision.IP)
+		}
+		require.NoError(t, store.Finish(ctx, *job, false, now))
+	}
+	now = now.Add(5 * time.Minute)
+	job, err = store.Next(ctx, now)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.False(t, job.Decision.Active)
+	require.NoError(t, store.Finish(ctx, *job, true, now))
+
+	// The other pending release gets a fresh first retry after the destination recovers.
+	job, err = store.Next(ctx, now)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.NoError(t, store.Finish(ctx, *job, false, now))
+	pending, err := store.Next(ctx, now.Add(10*time.Second))
+	require.NoError(t, err)
+	require.NotNil(t, pending)
+}

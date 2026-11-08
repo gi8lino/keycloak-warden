@@ -29,6 +29,10 @@ Create a [custom Cloudflare API token](https://dash.cloudflare.com/profile/api-t
 
 Set the token and the zone ID in the `warden.yaml` configuration inside your Kubernetes Secret.
 
+## Delivery retries
+
+Warden records a ban locally before sending it to the configured destinations. After a delivery failure, Warden pauses that destination for 10 seconds, then doubles the wait after each consecutive failure up to 5 minutes. The pause applies across IPs and survives restarts. Other destinations continue independently. Once the pause expires, Warden sends the latest pending state, including any unban. A successful delivery resets the delay.
+
 ## Manual bans
 
 Run these commands inside the Warden Pod:
