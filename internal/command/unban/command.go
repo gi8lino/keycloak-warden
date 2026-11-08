@@ -19,7 +19,7 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, encode output.Encod
 	applicationURL := flags.ApplicationURLFlag(command)
 	token := command.String("admin-token", "", "Application API administrator bearer token").
 		Placeholder("SECRET").
-		OverriddenValueMaskFn(tinyflags.MaskFirstLast).
+		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 		Value()
 
 	command.MinPositional(1)

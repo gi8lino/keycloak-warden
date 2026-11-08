@@ -25,7 +25,7 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 		Value()
 	secret := command.String("snitch-secret", "", "Shared key for inbound Snitch signatures").
 		Placeholder("SECRET").
-		OverriddenValueMaskFn(tinyflags.MaskFirstLast).
+		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 		Value()
 	adminToken := command.String(
 		"admin-token",
@@ -33,7 +33,7 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 		"Bearer token enabling manual-ban API routes on the application listener",
 	).
 		Placeholder("SECRET").
-		OverriddenValueMaskFn(tinyflags.MaskFirstLast).
+		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 		Value()
 
 	managementAddr := command.String(
