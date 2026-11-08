@@ -31,7 +31,7 @@ spec:
       containers:
         - name: keycloak-warden
           # Pin a released image that includes the serve flags below.
-          image: ghcr.io/gi8lino/keycloak-warden:v0.0.1
+          image: ghcr.io/gi8lino/keycloak-warden:latest
           imagePullPolicy: IfNotPresent
           args:
             - serve

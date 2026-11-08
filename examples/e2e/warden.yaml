@@ -9,5 +9,5 @@ targets:
     enabled: true
     provider: webhook
     # Receiver shares Warden's network namespace (loopback HTTP is allowed).
-    url: http://127.0.0.1:8090/webhook
+    url: http://127.0.0.1:8090/hmac
     secret: development-outbound-secret

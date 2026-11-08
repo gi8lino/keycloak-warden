@@ -1,5 +1,5 @@
-# Development only. The receiver shares Warden's network namespace so its
-# webhook can use loopback HTTP without relaxing Warden's production URL policy.
+# Development only. Hookglass shares Warden's network namespace so outbound
+# webhook delivery can use loopback without relaxing the Warden URL policy.
 services:
   warden:
     build:
@@ -14,7 +14,6 @@ services:
     environment:
       WARDEN__SNITCH_SECRET: development-snitch-secret
       WARDEN__LISTEN_ADDRESS: ":8080"
-      WARDEN__ROUTE_PREFIX: /warden
       WARDEN__ADMIN_TOKEN: development-admin-token
     command:
       - serve
@@ -26,14 +25,19 @@ services:
       - --metrics
 
   receiver:
-    build:
-      context: ./receiver
+    # Hookglass verifies Warden's signed webhook on the shared loopback network.
+    image: ghcr.io/gi8lino/hookglass:v0.0.2
     network_mode: service:warden
     depends_on:
       warden:
         condition: service_started
+    command:
+      - --config=/config/hmac.yaml
+      - --listen-address=:8090
     environment:
-      LISTEN_ADDR: :8090
+      WEBHOOK_SECRET: development-outbound-secret
+    volumes:
+      - ./hmac.yaml:/config/hmac.yaml:ro
 
   keycloak:
     build:
@@ -49,7 +53,7 @@ services:
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: dev-admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: dev-admin-password
-      KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL: http://warden:8080/warden/events
+      KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL: http://warden:8080/events
       KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_SECRET: development-snitch-secret
       KC_SPI_EVENTS_LISTENER__SNITCH__EVENT_TYPES: LOGIN_ERROR
     depends_on:
