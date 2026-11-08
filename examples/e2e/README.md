@@ -20,12 +20,12 @@ The Snitch JAR is downloaded by `make snitch-download` (also run by `make downlo
 
 ## Endpoints and test users
 
-| Service           | URL                              | Notes                                                  |
-| ----------------- | -------------------------------- | ------------------------------------------------------ |
-| Keycloak          | `http://127.0.0.1:18080`         | `warden-e2e` realm                                     |
-| Warden API        | `http://127.0.0.1:18081/warden`  | Path prefix is enabled                                 |
-| Warden management | `http://127.0.0.1:18082/readyz`  | `/healthz`, `/readyz`, `/metrics` are **not** prefixed |
-| Hookglass         | `http://127.0.0.1:18090/healthz` | Verifies Warden POST `/hmac` signatures                     |
+| Service           | URL                              | Purpose                             |
+| ----------------- | -------------------------------- | ----------------------------------- |
+| Keycloak          | `http://127.0.0.1:18080`         | `warden-e2e` realm                  |
+| Warden events     | `http://127.0.0.1:18081/events`  | Receives signed Snitch events       |
+| Warden management | `http://127.0.0.1:18082/readyz`  | Health, readiness, and metrics      |
+| Hookglass         | `http://127.0.0.1:18090/healthz` | Verifies Warden webhooks at `/hmac` |
 
 Keycloak administrator: `dev-admin` / `dev-admin-password`.
 Test user: `demo` / `dev-password`.
@@ -59,16 +59,16 @@ docker compose -p keycloak-warden-e2e -f examples/e2e/compose.yaml exec warden \
 3. Sends two **real invalid password grants** to Keycloak's token endpoint.
 4. Confirms Snitch's signed events caused Warden to ban the originating IP.
 5. Confirms Hookglass accepted and logged Warden's HMAC-verified active-ban webhook.
-6. Unbans the recorded IP through Warden's authenticated, **prefixed** API.
+6. Unbans the recorded IP through Warden's authenticated API.
 7. Confirms the release webhook, empty active-ban list, and Prometheus metrics.
 
 The stack stays up after a successful test so you can inspect Hookglass's logs. Shut it down with `make e2e-down` or remove its data with `make e2e-reset`.
 
 ## Why Hookglass shares Warden's network
 
-Warden correctly forbids sending unencrypted HTTP webhooks to arbitrary network hosts. This demo keeps that protection intact: Hookglass uses `network_mode: service:warden`, listens on `:8090`, and Warden sends webhooks to `http://127.0.0.1:8090/hmac`. Hookglass loads `hmac.yaml` and checks Warden's `X-Warden-Signature` using `WEBHOOK_SECRET=development-outbound-secret` (the same secret as Warden's webhook target). Snitch still reaches Warden by the normal Compose DNS name, at `http://warden:8080/warden/events`.
+Warden correctly forbids sending unencrypted HTTP webhooks to arbitrary network hosts. This demo keeps that protection intact: Hookglass uses `network_mode: service:warden`, listens on `:8090`, and Warden sends webhooks to `http://127.0.0.1:8090/hmac`. Hookglass loads `hmac.yaml` and checks Warden's `X-Warden-Signature` using `WEBHOOK_SECRET=development-outbound-secret` (the same secret as Warden's webhook target). Snitch still reaches Warden by the normal Compose DNS name, at `http://warden:8080/events`.
 
-Hookglass logs only accepted request bodies and verification status; it intentionally does not log signature headers or secret values. The Compose file pins `ghcr.io/gi8lino/hookglass:0.0.1`; ensure that image tag is published and pullable.
+Hookglass logs only accepted request bodies and verification status; it intentionally does not log signature headers or secret values. The Compose file pins `ghcr.io/gi8lino/hookglass:v0.0.2`; ensure that image tag is published and pullable.
 
 All HTTP ports are bound to host **127.0.0.1** and credentials are deliberately hard-coded for local development. Do not deploy this Compose file to production.
 

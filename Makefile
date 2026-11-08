@@ -86,8 +86,7 @@ serve: ports ## Run Warden with assigned ports and YAML rule/target configuratio
 		$(RUN_ARGS)
 
 .PHONY: run
-run: ## Run Warden locally and print the E2E Keycloak account console.
-	@echo "Keycloak: $(E2E_KEYCLOAK_URL)"
+run: ## Run Warden locally.
 	$(MAKE) serve RUN_ARGS="$(RUN_ARGS)"
 
 .PHONY: clean
@@ -112,7 +111,7 @@ $(SNITCH_JAR):
 	trap - EXIT HUP INT TERM
 
 .PHONY: e2e-up
-e2e-up: snitch-download ## Build and start Keycloak, Snitch, Warden, and the webhook receiver.
+e2e-up: snitch-download ## Build and start Keycloak, Snitch, Warden, and Hookglass.
 	$(E2E_COMPOSE) up --build --detach
 	@echo "Keycloak: $(E2E_KEYCLOAK_URL)"
 
@@ -132,19 +131,17 @@ e2e-reset: ## Stop the stack and delete its dedicated SQLite volume.
 e2e-test: ## Run the real Keycloak -> Snitch -> Warden -> webhook E2E flow.
 	$(MAKE) e2e-reset
 	$(MAKE) e2e-up
-	./examples/e2e/test.sh
+	sh examples/e2e/test.sh
 
 ##@ Testing
 
 .PHONY: test
 test: ## Run Go tests.
 	go test -count=1 -timeout=3m ./...
-	cd examples/e2e/receiver && go test -count=1 ./...
 
 .PHONY: test-race
 test-race: ## Run Go tests with the race detector.
 	go test -race -count=1 -timeout=3m ./...
-	cd examples/e2e/receiver && go test -race -count=1 ./...
 
 .PHONY: cover
 cover: ## Generate and view Go test coverage.
@@ -159,7 +156,7 @@ fmt: ## Format Go source code.
 
 .PHONY: check-format
 check-format: ## Verify Go source formatting and whitespace.
-	@unformatted="$$(gofmt -l cmd internal examples/e2e/receiver)"; \
+	@set -e; unformatted="$$(gofmt -l cmd internal)"; \
 	if [ -n "$$unformatted" ]; then \
 		printf 'Go files need formatting:\n%s\n' "$$unformatted"; \
 		exit 1; \
@@ -171,7 +168,6 @@ check-format: ## Verify Go source formatting and whitespace.
 .PHONY: vet
 vet: ## Run Go static analysis.
 	go vet ./...
-	cd examples/e2e/receiver && go vet ./...
 
 .PHONY: lint
 lint: lint-go ## Run Go linters.

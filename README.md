@@ -21,7 +21,7 @@ make e2e-up
 make e2e-logs
 ```
 
-Open the [demo realm’s account console](http://127.0.0.1:18080/realms/warden-e2e/account/) and sign in as `demo` with a wrong password twice within one minute. Look for a webhook with `"active": true` in the receiver logs. The demo uses a local receiver, so you can try it without a Cloudflare account.
+Open the [demo realm’s account console](http://127.0.0.1:18080/realms/warden-e2e/account/) and sign in as `demo` with a wrong password twice within one minute. Look for a webhook with `"active": true` in the receiver logs. The demo uses Hookglass to verify and log signed webhook deliveries, so you can try it without a Cloudflare account.
 
 Press Ctrl+C to stop following the logs, then run `make e2e-down` to stop the stack. The [Compose guide](examples/e2e/README.md) includes the automated end-to-end test.
 
