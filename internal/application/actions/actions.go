@@ -25,7 +25,13 @@ type Provider interface {
 
 // Queue persists desired changes independently of external delivery.
 type Queue interface {
-	// Maintain expires decisions and prunes old observations.
+	// Changes signals committed changes to delivery work or source expiries.
+	Changes() <-chan struct{}
+	// NextDeadline returns the earliest pending work time or zero when idle.
+	NextDeadline(context.Context) (time.Time, error)
+	// Prune removes observations beyond the retention window.
+	Prune(context.Context, time.Time) error
+	// Maintain expires decision sources.
 	Maintain(context.Context, time.Time) error
 	// Next returns the oldest ready destination job, or nil when idle.
 	Next(context.Context, time.Time) (*Job, error)
@@ -64,31 +70,81 @@ func (r *Runner) Close() {
 	<-r.done
 }
 
-const maintenanceInterval = time.Second
+const (
+	pruneInterval = time.Hour
+	drainBudget   = time.Second
+	storageRetry  = 5 * time.Second
+)
 
-// run maintains decisions periodically and dispatches ready work until cancellation.
-func run(ctx context.Context, q Queue, destinations map[string]Provider, logger *slog.Logger) {
-	ticker := time.NewTicker(maintenanceInterval)
-	defer ticker.Stop()
-
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-			now := time.Now()
-			if err := q.Maintain(ctx, now); err != nil {
+// run checks durable work at startup, then waits for commits or scheduled work.
+func run(
+	ctx context.Context,
+	q Queue,
+	destinations map[string]Provider,
+	logger *slog.Logger,
+) {
+	var nextPrune time.Time
+	for ctx.Err() == nil {
+		now := time.Now()
+		if !now.Before(nextPrune) {
+			if err := q.Prune(ctx, now); err != nil {
 				if ctx.Err() == nil {
 					logger.Error(
-						"decision maintenance failed",
-						"event", "decision_maintenance_failed",
+						"observation cleanup failed",
+						"event", "observation_cleanup_failed",
 						"error", err,
 					)
 				}
-				continue
+				nextPrune = now.Add(storageRetry)
+			} else {
+				nextPrune = now.Add(pruneInterval)
 			}
-			drainReady(ctx, q, destinations, logger, now.Add(maintenanceInterval))
 		}
+		deadline, err := processReady(ctx, q, destinations, logger)
+		if ctx.Err() != nil {
+			return
+		}
+		if err != nil {
+			logger.Error(
+				"delivery worker failed",
+				"event", "delivery_worker_failed",
+				"error", err,
+			)
+			// Ignore notifications during a storage outage to avoid a hot retry loop.
+			waitUntil(ctx, nil, time.Now().Add(storageRetry))
+			continue
+		}
+		if deadline.IsZero() || nextPrune.Before(deadline) {
+			deadline = nextPrune
+		}
+		waitUntil(ctx, q.Changes(), deadline)
+	}
+}
+
+// processReady reconciles expired sources before delivery and computes the next wake time.
+func processReady(
+	ctx context.Context,
+	q Queue,
+	destinations map[string]Provider,
+	logger *slog.Logger,
+) (time.Time, error) {
+	if err := q.Maintain(ctx, time.Now()); err != nil {
+		return time.Time{}, err
+	}
+	if err := drainReady(ctx, q, destinations, logger, time.Now().Add(drainBudget)); err != nil {
+		return time.Time{}, err
+	}
+	return q.NextDeadline(ctx)
+}
+
+// waitUntil sleeps until the deadline, a queued notification, or shutdown.
+func waitUntil(ctx context.Context, changes <-chan struct{}, deadline time.Time) {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+	case <-changes:
+	case <-timer.C:
 	}
 }
 
@@ -99,23 +155,17 @@ func drainReady(
 	destinations map[string]Provider,
 	logger *slog.Logger,
 	deadline time.Time,
-) {
+) error {
 	for ctx.Err() == nil && time.Now().Before(deadline) {
 		job, err := q.Next(ctx, time.Now())
-		if err != nil {
-			if ctx.Err() == nil {
-				logger.Error(
-					"read delivery queue",
-					"event", "delivery_queue_read_failed",
-					"error", err,
-				)
-			}
-			return
+		if err != nil || job == nil {
+			return err
 		}
-		if job == nil || !dispatch(ctx, q, destinations, logger, *job) {
-			return
+		if err := dispatch(ctx, q, destinations, logger, *job); err != nil {
+			return err
 		}
 	}
+	return ctx.Err()
 }
 
 // dispatch records the outcome only for the revision that was attempted.
@@ -125,7 +175,7 @@ func dispatch(
 	destinations map[string]Provider,
 	logger *slog.Logger,
 	job Job,
-) bool {
+) error {
 	log := logger.With(
 		"decision_id", job.Decision.ID,
 		"revision", job.Decision.Revision,
@@ -145,12 +195,16 @@ func dispatch(
 			"destination missing from configuration",
 			"event", "delivery_destination_missing",
 		)
-		return finishJob(ctx, q, job, log, false)
+		return q.Finish(ctx, job, false, time.Now())
 	}
 
 	if err := provider.Apply(ctx, job.Decision); err != nil {
-		log.Warn("delivery failed", "event", "delivery_failed", "error", err)
-		return finishJob(ctx, q, job, log, false)
+		log.Warn(
+			"delivery failed",
+			"event", "delivery_failed",
+			"error", err,
+		)
+		return q.Finish(ctx, job, false, time.Now())
 	}
 
 	log.Info(
@@ -159,18 +213,5 @@ func dispatch(
 		"active", job.Decision.Active,
 	)
 
-	return finishJob(ctx, q, job, log, true)
-}
-
-// finishJob persists the attempted revision outcome before the worker takes another job.
-func finishJob(ctx context.Context, q Queue, job Job, log *slog.Logger, success bool) bool {
-	if err := q.Finish(ctx, job, success, time.Now()); err != nil {
-		log.Error(
-			"persist delivery outcome",
-			"event", "delivery_outcome_write_failed",
-			"error", err,
-		)
-		return false
-	}
-	return true
+	return q.Finish(ctx, job, true, time.Now())
 }

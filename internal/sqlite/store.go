@@ -24,6 +24,8 @@ type Store struct {
 	rule detection.Rule
 	// targets lists the configured destinations for new decisions.
 	targets []string
+	// changes coalesces committed decision changes until the worker observes them.
+	changes chan struct{}
 }
 
 // Open opens or creates the database and runs embedded, versioned migrations.
@@ -73,6 +75,7 @@ PRAGMA foreign_keys = ON;
 		db:      db,
 		rule:    rule,
 		targets: slices.Clone(targets),
+		changes: make(chan struct{}, 1),
 	}, nil
 }
 
@@ -109,8 +112,12 @@ func (s *Store) Transact(ctx context.Context, apply func(ingestion.Transaction) 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := apply(observationTx{tx: tx, targets: s.targets}); err != nil {
+	observation := &observationTx{tx: tx, targets: s.targets}
+	if err := apply(observation); err != nil {
 		return err
+	}
+	if observation.changed {
+		return s.commitDecision(tx)
 	}
 	return tx.Commit()
 }
@@ -120,3 +127,18 @@ func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
 // Close releases the database after HTTP handlers and dispatch have stopped.
 func (s *Store) Close() error { return s.db.Close() }
+
+// Changes signals that a committed decision may have changed the worker's next deadline.
+func (s *Store) Changes() <-chan struct{} { return s.changes }
+
+// commitDecision wakes the worker only after the new state is visible to readers.
+func (s *Store) commitDecision(tx *sql.Tx) error {
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	select {
+	case s.changes <- struct{}{}:
+	default:
+	}
+	return nil
+}

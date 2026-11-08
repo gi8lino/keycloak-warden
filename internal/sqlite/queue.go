@@ -9,7 +9,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 )
 
-// Maintain expires individual ban sources, reconciles their effective decisions, and prunes observations.
+// Maintain expires individual ban sources and reconciles their effective decisions.
 func (s *Store) Maintain(ctx context.Context, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -54,14 +54,17 @@ WHERE expires <= ?
 		}
 	}
 
+	return tx.Commit()
+}
+
+// Prune removes old observations independently of delivery activity.
+func (s *Store) Prune(ctx context.Context, now time.Time) error {
 	retain := max(24*time.Hour, s.rule.Window)
-	if _, err := tx.ExecContext(ctx, `
+	_, err := s.db.ExecContext(ctx, `
 DELETE FROM failures
 WHERE received <= ?
-`, now.Add(-retain).UnixMilli()); err != nil {
-		return err
-	}
-	return tx.Commit()
+`, now.Add(-retain).UnixMilli())
+	return err
 }
 
 // Next loads the oldest pending target using its latest desired decision revision.
@@ -153,4 +156,22 @@ ON CONFLICT (destination) DO UPDATE SET delay_ms = excluded.delay_ms, retry_at =
 	}
 	_, err = tx.ExecContext(ctx, "UPDATE deliveries SET retry_at = ? WHERE ip = ? AND destination = ?", retryAt, job.Decision.IP, job.Destination)
 	return err
+}
+
+// NextDeadline returns the earliest source expiry or eligible delivery time, or zero when idle.
+func (s *Store) NextDeadline(ctx context.Context) (time.Time, error) {
+	var due sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+SELECT MIN(deadline) FROM (
+ SELECT MIN(expires) AS deadline FROM ban_sources
+ UNION ALL
+ SELECT MIN(MAX(q.retry_at, COALESCE(b.retry_at, 0)))
+ FROM deliveries q JOIN decisions d USING (ip)
+ LEFT JOIN destination_backoff b ON b.destination = q.destination
+ WHERE q.acknowledged < d.revision
+)`).Scan(&due)
+	if err != nil || !due.Valid {
+		return time.Time{}, err
+	}
+	return time.UnixMilli(due.Int64), nil
 }

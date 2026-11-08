@@ -16,10 +16,12 @@ type observationTx struct {
 	tx *sql.Tx
 	// targets lists the configured destinations for new decisions.
 	targets []string
+	// changed records whether this transaction scheduled a decision.
+	changed bool
 }
 
 // RecordFailure persists a new occurrence only once per producer and identifier.
-func (o observationTx) RecordFailure(ctx context.Context, event events.Event, now time.Time) (bool, error) {
+func (o *observationTx) RecordFailure(ctx context.Context, event events.Event, now time.Time) (bool, error) {
 	result, err := o.tx.ExecContext(ctx, `
 INSERT INTO failures (source, event_id, ip, received, generation)
 VALUES (?, ?, ?, ?, COALESCE((
@@ -37,7 +39,7 @@ ON CONFLICT DO NOTHING
 }
 
 // CountFailures counts committed observations inside the requested window.
-func (o observationTx) CountFailures(ctx context.Context, ip string, since time.Time) (int, error) {
+func (o *observationTx) CountFailures(ctx context.Context, ip string, since time.Time) (int, error) {
 	var count int
 	err := o.tx.QueryRowContext(ctx, `
 SELECT count(*)
@@ -54,7 +56,7 @@ WHERE ip = ?
 }
 
 // Block extends the automatic reason while preserving any independent manual ban.
-func (o observationTx) Block(
+func (o *observationTx) Block(
 	ctx context.Context,
 	ip string,
 	count int,
@@ -70,5 +72,6 @@ func (o observationTx) Block(
 	if err != nil {
 		return nil, err
 	}
+	o.changed = true
 	return &decision, nil
 }

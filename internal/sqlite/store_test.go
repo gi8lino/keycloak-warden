@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -246,4 +247,69 @@ func TestDestinationBackoff(t *testing.T) {
 	pending, err := store.Next(ctx, now.Add(10*time.Second))
 	require.NoError(t, err)
 	require.NotNil(t, pending)
+}
+
+func TestWorkerSchedule(t *testing.T) {
+	t.Parallel()
+
+	t.Run("only committed decisions wake the worker", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		now := time.Now()
+		store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"), "receiver")
+		defer store.Close() //nolint:errcheck
+		_, err := processor.Process(ctx, failed("one"), now)
+		require.NoError(t, err)
+		rollback := errors.New("rollback")
+		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
+			_, err := tx.Block(ctx, "203.0.113.2", 2, now.Add(time.Hour), now)
+			require.NoError(t, err)
+			return rollback
+		})
+		require.ErrorIs(t, err, rollback)
+		select {
+		case <-store.Changes():
+			t.Fatal("unexpected wake before decision commit")
+		default:
+		}
+		_, err = processor.Process(ctx, failed("two"), now)
+		require.NoError(t, err)
+		select {
+		case <-store.Changes():
+		default:
+			t.Fatal("missing wake after decision commit")
+		}
+	})
+
+	t.Run("restart schedules the earlier of source expiry and destination retry", func(t *testing.T) {
+		t.Parallel()
+		ctx := t.Context()
+		path := filepath.Join(t.TempDir(), "state.db")
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		store, _ := openStore(t, path, "receiver")
+		_, err := store.BanManual(ctx, "203.0.113.1", now.Add(8*time.Second), "test", now)
+		require.NoError(t, err)
+		job, err := store.Next(ctx, now)
+		require.NoError(t, err)
+		require.NotNil(t, job)
+		require.NoError(t, store.Finish(ctx, *job, false, now))
+		require.NoError(t, store.Close())
+		store, _ = openStore(t, path, "receiver")
+		defer store.Close() //nolint:errcheck
+		due, err := store.NextDeadline(ctx)
+		require.NoError(t, err)
+		require.True(t, now.Add(8*time.Second).Equal(due))
+		require.NoError(t, store.Maintain(ctx, due))
+		due, err = store.NextDeadline(ctx)
+		require.NoError(t, err)
+		require.True(t, now.Add(10*time.Second).Equal(due))
+		job, err = store.Next(ctx, due)
+		require.NoError(t, err)
+		require.NotNil(t, job)
+		assert.False(t, job.Decision.Active)
+		require.NoError(t, store.Finish(ctx, *job, true, due))
+		due, err = store.NextDeadline(ctx)
+		require.NoError(t, err)
+		assert.True(t, due.IsZero())
+	})
 }

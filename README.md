@@ -1,74 +1,45 @@
 # Keycloak Warden
 
-Keycloak Warden blocks IP addresses after repeated failed Keycloak logins. [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) sends the login events; Warden can block IPs through **Cloudflare** or notify another service by **webhook**.
+Warden watches for repeated failed logins from the same IP address. [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) sends the login events. You choose how many failures trigger a ban, how long it lasts, and whether Warden blocks the IP through Cloudflare or sends a webhook.
+
+```mermaid
+flowchart TD
+    subgraph K["Keycloak"]
+        E["User events"] -->|Event Listener SPI| S["Snitch plugin"]
+    end
+    S -->|Signed HTTP POST /events| W["Warden"]
+    W -->|Block or unblock an IP| C["Cloudflare"]
+    W -->|Notify on ban or release| H["Webhook receiver"]
+```
+
+## Try it locally
+
+From the repository root, start the Docker Compose demo and follow its logs:
+
+```sh
+make e2e-up
+make e2e-logs
+```
+
+Open the [demo realm’s account console](http://127.0.0.1:18080/realms/warden-e2e/account/) and sign in as `demo` with a wrong password twice within one minute. Look for a webhook with `"active": true` in the receiver logs. The demo uses a local receiver, so you can try it without a Cloudflare account.
+
+Press Ctrl+C to stop following the logs, then run `make e2e-down` to stop the stack. The [Compose guide](examples/e2e/README.md) includes the automated end-to-end test.
 
 ## Deploy on Kubernetes
 
-The [Kubernetes example](examples/kubernetes/README.md) runs Warden alongside Keycloak with a persistent SQLite database.
+Follow the [Kubernetes guide](examples/kubernetes/README.md) to connect Snitch to your realm, configure a destination, and deploy Warden.
 
-1. Set your Warden image version in `examples/kubernetes/deployment.yaml`.
-2. Copy `examples/kubernetes/secret.example.yaml` outside the repository and replace the placeholders.
-3. Create the Secrets and deploy:
+## Check whether Cloudflare applied a ban
 
-```sh
-cp examples/kubernetes/secret.example.yaml /tmp/keycloak-warden-secrets.yaml
-# Edit /tmp/keycloak-warden-secrets.yaml and replace every placeholder.
-kubectl apply -f /tmp/keycloak-warden-secrets.yaml
-kubectl apply -k examples/kubernetes
-kubectl -n keycloak rollout status deployment/keycloak-warden
-```
-
-The [Kubernetes guide](examples/kubernetes/README.md) shows how to share the Snitch signing key with Keycloak. Never commit real credentials.
-
-## Cloudflare API token
-
-Create a [custom Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with:
-
-- **Permission:** Zone → Firewall Services → Edit
-- **Zone Resources:** Include → Specific zone → the zone matching your configured `zone-id`
-
-Set the token and the zone ID in the `warden.yaml` configuration inside your Kubernetes Secret.
-
-## Delivery retries
-
-Warden records a ban locally before sending it to the configured destinations. After a delivery failure, Warden pauses that destination for 10 seconds, then doubles the wait after each consecutive failure up to 5 minutes. The pause applies across IPs and survives restarts. Other destinations continue independently. Once the pause expires, Warden sends the latest pending state, including any unban. A successful delivery resets the delay.
-
-## Manual bans
-
-Run these commands inside the Warden Pod:
+When the CLI prints `Banned`, Warden has recorded the decision. To confirm delivery, check the Warden logs:
 
 ```sh
-kubectl -n keycloak exec deployment/keycloak-warden -- \
-  /keycloak-warden ban 203.0.113.42 --duration 1h --reason "Investigation"
-
-kubectl -n keycloak exec deployment/keycloak-warden -- \
-  /keycloak-warden unban 203.0.113.42
+kubectl -n keycloak logs deployment/keycloak-warden --since=10m
 ```
 
-The global `--listen-address` and `--route-prefix` flags configure the application endpoint for `serve`, `ban`, and `unban`. Set `WARDEN__LISTEN_ADDRESS` and `WARDEN__ROUTE_PREFIX` in the container environment to share them across invocations. Use `--application-url` to target a different endpoint.
+Look for `delivery_completed` with `active: true` for your Cloudflare destination and decision. If you see `delivery_failed`, the error explains why the attempt failed. Warden retries automatically.
 
-Both commands accept multiple IP addresses. Add `--output json` or `--output yaml` for structured output. Unbanning clears both manual and automatic bans for that IP.
-
-## Test locally
-
-The [Docker Compose example](examples/e2e/README.md) runs Keycloak, Snitch, Warden, and a webhook receiver:
-
-```sh
-make e2e-up     # Start the stack
-make e2e-logs   # Watch webhook events
-make e2e-test   # Run the full test (resets E2E data)
-make e2e-down   # Stop the stack
-```
-
-## Development
-
-```sh
-make download
-make test
-make build
-```
-
-Run `make help` to see the other commands.
+To check in Cloudflare, open **Security → Security rules** for the configured zone. Under **IP access rules**, look for the blocked IP and the note `warden:<decision-id>`.
 
 ## License
 

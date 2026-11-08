@@ -38,7 +38,7 @@ func (s *Store) BanManual(
 	if err != nil {
 		return bans.Ban{}, err
 	}
-	return view, tx.Commit()
+	return view, s.commitDecision(tx)
 }
 
 // UnbanAll removes every active source and resets the failed-login count atomically.
@@ -91,7 +91,7 @@ WHERE ip = ?
 	if err != nil {
 		return bans.Ban{}, err
 	}
-	return view, tx.Commit()
+	return view, s.commitDecision(tx)
 }
 
 // ListBans returns all currently active effective bans, with source and delivery details.

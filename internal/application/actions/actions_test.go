@@ -5,7 +5,9 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -16,6 +18,8 @@ import (
 
 // blockingQueue waits for cancellation to test the worker's shutdown ordering.
 type blockingQueue struct {
+	// scriptedQueue supplies idle scheduling behavior.
+	scriptedQueue
 	// started signals that the test worker entered the operation.
 	started chan struct{}
 	// stopped signals that the test worker observed cancellation.
@@ -65,11 +69,32 @@ func TestStart(t *testing.T) {
 
 // scriptedQueue supplies a finite batch of jobs for drainReady.
 type scriptedQueue struct {
+	// changes wakes the test worker on demand.
+	changes chan struct{}
+	// deadlines supplies successive wake times in worker order.
+	deadlines []time.Time
+	// cycles counts reads of the upcoming deadline.
+	cycles atomic.Int32
 	// jobs contains the queued jobs supplied by the test.
 	jobs []*Job
 	// finished records jobs acknowledged by the worker.
 	finished []Job
 }
+
+// Changes returns the test change notification channel.
+func (q *scriptedQueue) Changes() <-chan struct{} { return q.changes }
+
+// NextDeadline counts completed cycles and supplies the test deadline.
+func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
+	cycle := int(q.cycles.Add(1))
+	if cycle > len(q.deadlines) {
+		return time.Time{}, nil
+	}
+	return q.deadlines[cycle-1], nil
+}
+
+// Prune accepts periodic observation cleanup.
+func (q *scriptedQueue) Prune(context.Context, time.Time) error { return nil }
 
 // Maintain is unused by drainReady.
 func (q *scriptedQueue) Maintain(context.Context, time.Time) error { return nil }
@@ -116,7 +141,7 @@ func TestDrainReady(t *testing.T) {
 		}}
 		provider := &acceptProvider{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		drainReady(t.Context(), q, map[string]Provider{"target": provider}, logger, time.Now().Add(time.Second))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Provider{"target": provider}, logger, time.Now().Add(time.Second)))
 
 		assert.Equal(t, 2, provider.applied)
 		assert.Len(t, q.finished, 2)
@@ -127,9 +152,30 @@ func TestDrainReady(t *testing.T) {
 
 		q := &scriptedQueue{jobs: []*Job{{Decision: decisions.Decision{ID: "one"}, Destination: "target"}}}
 		provider := &acceptProvider{}
-		drainReady(t.Context(), q, map[string]Provider{"target": provider}, slog.Default(), time.Now().Add(-time.Second))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Provider{"target": provider}, slog.Default(), time.Now().Add(-time.Second)))
 
 		assert.Zero(t, provider.applied)
 		assert.Empty(t, q.finished)
+	})
+}
+
+func TestWorkerWakeups(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		q := &scriptedQueue{changes: make(chan struct{}, 1), deadlines: []time.Time{{}, time.Now().Add(11 * time.Minute)}}
+		r := Start(t.Context(), q, nil, slog.Default())
+		defer r.Close()
+		synctest.Wait()
+		require.Equal(t, 1, int(q.cycles.Load()))
+		time.Sleep(10 * time.Minute)
+		synctest.Wait()
+		require.Equal(t, 1, int(q.cycles.Load()))
+
+		q.changes <- struct{}{}
+		synctest.Wait()
+		require.Equal(t, 2, int(q.cycles.Load()))
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		require.Equal(t, 3, int(q.cycles.Load()))
 	})
 }
