@@ -159,9 +159,9 @@ ON CONFLICT (destination) DO UPDATE SET delay_ms = excluded.delay_ms, retry_at =
 }
 
 // NextDeadline returns the earliest source expiry or eligible delivery time, or zero when idle.
-func (s *Store) NextDeadline(ctx context.Context) (time.Time, error) {
+func (s *Store) NextDeadline(ctx context.Context) (deadline time.Time, err error) {
 	var due sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `
+	err = s.db.QueryRowContext(ctx, `
 SELECT MIN(deadline) FROM (
  SELECT MIN(expires) AS deadline FROM ban_sources
  UNION ALL

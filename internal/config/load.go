@@ -39,7 +39,7 @@ type document struct {
 }
 
 // Load reads one strict YAML document containing detection rules and action destinations.
-func Load(path string) (Config, error) {
+func Load(path string) (cfg Config, err error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return Config{}, err
@@ -69,7 +69,7 @@ func Load(path string) (Config, error) {
 		return Config{}, errors.New("invalid Warden YAML: rule.ban must be a duration")
 	}
 
-	cfg := Config{
+	cfg = Config{
 		Rule:    detection.Rule{Threshold: raw.Rule.Threshold, Window: window, Ban: ban},
 		Targets: make(map[string]Target, len(raw.Targets)),
 	}

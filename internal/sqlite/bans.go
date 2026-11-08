@@ -110,7 +110,7 @@ func (s *Store) ListBans(ctx context.Context, now time.Time) ([]bans.Ban, error)
 }
 
 // listBans reads active decisions and their sources in a consistent transaction.
-func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Ban, error) {
+func listBans(ctx context.Context, tx *sql.Tx, now time.Time) (list []bans.Ban, err error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT id
 FROM decisions
@@ -137,7 +137,7 @@ ORDER BY ip
 		return nil, err
 	}
 
-	list := make([]bans.Ban, 0, len(ids))
+	list = make([]bans.Ban, 0, len(ids))
 	for _, id := range ids {
 		view, err := readBan(ctx, tx, id, now)
 		if err != nil {
@@ -163,10 +163,10 @@ func (s *Store) GetBan(ctx context.Context, id string, now time.Time) (bans.Ban,
 }
 
 // readBan loads one effective state and its reason and delivery records from a transaction.
-func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Ban, error) {
-	view := bans.Ban{Sources: []bans.Source{}, Deliveries: []decisions.Acknowledgement{}}
+func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (view bans.Ban, err error) {
+	view = bans.Ban{Sources: []bans.Source{}, Deliveries: []decisions.Acknowledgement{}}
 	var expires int64
-	err := tx.QueryRowContext(ctx, `
+	err = tx.QueryRowContext(ctx, `
 SELECT id, revision, ip, active, expires, failures
 FROM decisions
 WHERE id = ?

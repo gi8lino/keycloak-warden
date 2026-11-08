@@ -9,6 +9,15 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
+const (
+	// pruneInterval defines how often expired records are cleaned up.
+	pruneInterval = time.Hour
+	// drainBudget limits how long the worker processes pending actions per cycle.
+	drainBudget = time.Second
+	// storageRetry defines the delay before retrying a failed storage operation.
+	storageRetry = 5 * time.Second
+)
+
 // Job associates a decision revision with one configured destination.
 type Job struct {
 	// Decision is the state to reconcile.
@@ -48,7 +57,12 @@ type Runner struct {
 }
 
 // Start launches the action worker and returns a runner that must be closed before its queue.
-func Start(parent context.Context, q Queue, destinations map[string]Provider, logger *slog.Logger) *Runner {
+func Start(
+	parent context.Context,
+	q Queue,
+	destinations map[string]Provider,
+	logger *slog.Logger,
+) *Runner {
 	ctx, cancel := context.WithCancel(parent)
 	runner := &Runner{
 		cancel: cancel,
@@ -70,13 +84,7 @@ func (r *Runner) Close() {
 	<-r.done
 }
 
-const (
-	pruneInterval = time.Hour
-	drainBudget   = time.Second
-	storageRetry  = 5 * time.Second
-)
-
-// run checks durable work at startup, then waits for commits or scheduled work.
+// run processes durable work and waits for changes or scheduled deadlines.
 func run(
 	ctx context.Context,
 	q Queue,
@@ -84,71 +92,75 @@ func run(
 	logger *slog.Logger,
 ) {
 	var nextPrune time.Time
+
 	for ctx.Err() == nil {
-		now := time.Now()
-		if !now.Before(nextPrune) {
-			if err := q.Prune(ctx, now); err != nil {
-				if ctx.Err() == nil {
-					logger.Error(
-						"observation cleanup failed",
-						"event", "observation_cleanup_failed",
-						"error", err,
-					)
-				}
-				nextPrune = now.Add(storageRetry)
-			} else {
-				nextPrune = now.Add(pruneInterval)
-			}
-		}
+		nextPrune = pruneIfDue(ctx, q, logger, nextPrune)
+
 		deadline, err := processReady(ctx, q, destinations, logger)
 		if ctx.Err() != nil {
 			return
 		}
+
 		if err != nil {
-			logger.Error(
-				"delivery worker failed",
+			logger.Error("delivery worker failed",
 				"event", "delivery_worker_failed",
 				"error", err,
 			)
-			// Ignore notifications during a storage outage to avoid a hot retry loop.
+
+			// Avoid a hot retry loop during storage outages.
 			waitUntil(ctx, nil, time.Now().Add(storageRetry))
 			continue
 		}
-		if deadline.IsZero() || nextPrune.Before(deadline) {
-			deadline = nextPrune
-		}
-		waitUntil(ctx, q.Changes(), deadline)
+
+		waitUntil(ctx, q.Changes(), earliestDeadline(deadline, nextPrune))
 	}
 }
 
-// processReady reconciles expired sources before delivery and computes the next wake time.
+// pruneIfDue removes expired observations when due and returns the next cleanup deadline.
+func pruneIfDue(
+	ctx context.Context,
+	q Queue,
+	logger *slog.Logger,
+	nextPrune time.Time,
+) (nextDeadline time.Time) {
+	now := time.Now()
+	if now.Before(nextPrune) {
+		return nextPrune
+	}
+
+	if err := q.Prune(ctx, now); err != nil {
+		if ctx.Err() == nil {
+			logger.Error(
+				"observation cleanup failed",
+				"event", "observation_cleanup_failed",
+				"error", err,
+			)
+		}
+		return now.Add(storageRetry)
+	}
+
+	return now.Add(pruneInterval)
+}
+
+// processReady expires decision sources, delivers ready jobs, and finds the next deadline.
 func processReady(
 	ctx context.Context,
 	q Queue,
 	destinations map[string]Provider,
 	logger *slog.Logger,
-) (time.Time, error) {
+) (nextDeadline time.Time, err error) {
 	if err := q.Maintain(ctx, time.Now()); err != nil {
 		return time.Time{}, err
 	}
+
 	if err := drainReady(ctx, q, destinations, logger, time.Now().Add(drainBudget)); err != nil {
 		return time.Time{}, err
 	}
+
 	return q.NextDeadline(ctx)
 }
 
-// waitUntil sleeps until the deadline, a queued notification, or shutdown.
-func waitUntil(ctx context.Context, changes <-chan struct{}, deadline time.Time) {
-	timer := time.NewTimer(time.Until(deadline))
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-	case <-changes:
-	case <-timer.C:
-	}
-}
-
-// drainReady dispatches pending jobs for one bounded maintenance interval.
+// drainReady dispatches pending jobs within a bounded processing interval.
 func drainReady(
 	ctx context.Context,
 	q Queue,
@@ -161,11 +173,33 @@ func drainReady(
 		if err != nil || job == nil {
 			return err
 		}
+
 		if err := dispatch(ctx, q, destinations, logger, *job); err != nil {
 			return err
 		}
 	}
+
 	return ctx.Err()
+}
+
+// earliestDeadline returns the first nonzero deadline, or the earlier of two.
+func earliestDeadline(a, b time.Time) time.Time {
+	if a.IsZero() || (!b.IsZero() && b.Before(a)) {
+		return b
+	}
+	return a
+}
+
+// waitUntil sleeps until the deadline, a queued notification, or shutdown.
+func waitUntil(ctx context.Context, changes <-chan struct{}, deadline time.Time) {
+	timer := time.NewTimer(time.Until(deadline))
+	defer timer.Stop()
+
+	select {
+	case <-ctx.Done():
+	case <-changes:
+	case <-timer.C:
+	}
 }
 
 // dispatch records the outcome only for the revision that was attempted.

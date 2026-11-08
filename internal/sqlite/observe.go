@@ -21,7 +21,7 @@ type observationTx struct {
 }
 
 // RecordFailure persists a new occurrence only once per producer and identifier.
-func (o *observationTx) RecordFailure(ctx context.Context, event events.Event, now time.Time) (bool, error) {
+func (o *observationTx) RecordFailure(ctx context.Context, event events.Event, now time.Time) (inserted bool, err error) {
 	result, err := o.tx.ExecContext(ctx, `
 INSERT INTO failures (source, event_id, ip, received, generation)
 VALUES (?, ?, ?, ?, COALESCE((
@@ -39,9 +39,8 @@ ON CONFLICT DO NOTHING
 }
 
 // CountFailures counts committed observations inside the requested window.
-func (o *observationTx) CountFailures(ctx context.Context, ip string, since time.Time) (int, error) {
-	var count int
-	err := o.tx.QueryRowContext(ctx, `
+func (o *observationTx) CountFailures(ctx context.Context, ip string, since time.Time) (count int, err error) {
+	err = o.tx.QueryRowContext(ctx, `
 SELECT count(*)
 FROM failures
 WHERE ip = ?

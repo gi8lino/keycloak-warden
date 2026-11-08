@@ -51,7 +51,7 @@ func New(repository Repository, rule detection.Rule) (*Service, error) {
 }
 
 // Process validates one envelope and records a qualifying failure atomically.
-func (s *Service) Process(ctx context.Context, envelope events.Envelope, now time.Time) (*decisions.Decision, error) {
+func (s *Service) Process(ctx context.Context, envelope events.Envelope, now time.Time) (decision *decisions.Decision, err error) {
 	event, err := normalize(envelope)
 	if err != nil {
 		return nil, err
@@ -60,7 +60,6 @@ func (s *Service) Process(ctx context.Context, envelope events.Envelope, now tim
 		return nil, nil
 	}
 
-	var decision *decisions.Decision
 	err = s.repository.Transact(ctx, func(tx Transaction) error {
 		inserted, err := tx.RecordFailure(ctx, event, now)
 		if err != nil || !inserted {
@@ -80,7 +79,7 @@ func (s *Service) Process(ctx context.Context, envelope events.Envelope, now tim
 }
 
 // normalize validates the producer contract without trusting HTTP headers.
-func normalize(p events.Envelope) (events.Event, error) {
+func normalize(p events.Envelope) (event events.Event, err error) {
 	if p.Version != 1 || p.Source != "keycloak" {
 		return events.Event{}, ErrInvalidEvent
 	}
@@ -88,7 +87,7 @@ func normalize(p events.Envelope) (events.Event, error) {
 		return events.Event{}, ErrInvalidEvent
 	}
 
-	event := events.Event{ID: p.ID, Source: p.Source, Kind: p.Kind}
+	event = events.Event{ID: p.ID, Source: p.Source, Kind: p.Kind}
 	if p.IP != "" {
 		ip, err := ipaddress.ParseUnicast(p.IP)
 		if err != nil {

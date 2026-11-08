@@ -22,8 +22,8 @@ import (
 var defaultClientTimeout = 5 * time.Second
 
 // Destinations constructs the enabled providers and returns their stable routing order.
-func Destinations(targets map[string]config.Target) (map[string]actions.Provider, []string, error) {
-	providers := make(map[string]actions.Provider)
+func Destinations(targets map[string]config.Target) (providers map[string]actions.Provider, names []string, err error) {
+	providers = make(map[string]actions.Provider)
 	client := &http.Client{
 		Timeout:       defaultClientTimeout,
 		CheckRedirect: noRedirect,

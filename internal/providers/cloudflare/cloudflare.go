@@ -110,14 +110,13 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 }
 
 // find matches exact ownership, mode and address even when the API filters are broader.
-func (p Provider) find(ctx context.Context, want rule) ([]string, error) {
+func (p Provider) find(ctx context.Context, want rule) (ids []string, err error) {
 	query := url.Values{
 		"notes":               {want.Notes},
 		"configuration.value": {want.Configuration.Value},
 		"match":               {"all"},
 	}
 
-	var ids []string
 	for page := 1; ; page++ {
 		query.Set("page", fmt.Sprint(page))
 		resp, err := p.call(ctx, http.MethodGet, p.RulesURL+"?"+query.Encode(), nil)
@@ -148,8 +147,7 @@ func (r rule) matches(want rule) bool {
 }
 
 // call sends a bounded API request without exposing credentials or remote error bodies to logs.
-func (p Provider) call(ctx context.Context, method, endpoint string, body any) (response, error) {
-	var out response
+func (p Provider) call(ctx context.Context, method, endpoint string, body any) (out response, err error) {
 	var reader io.Reader
 	if body != nil {
 		data, err := json.Marshal(body)

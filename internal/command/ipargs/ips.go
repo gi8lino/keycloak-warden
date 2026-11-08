@@ -15,12 +15,12 @@ func Validate(value string) error {
 }
 
 // Unique validates all inputs before returning canonical, deduplicated IP addresses.
-func Unique(values []string) ([]string, error) {
+func Unique(values []string) (addresses []string, err error) {
 	if len(values) == 0 {
 		return nil, errors.New("at least one IP address is required")
 	}
 
-	addresses := make([]string, 0, len(values))
+	addresses = make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))
 
 	for _, value := range values {

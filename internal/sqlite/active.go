@@ -22,8 +22,8 @@ func openReader(path string) (*sql.DB, error) {
 }
 
 // Inspect returns a consistent view of a decision and its pending deliveries.
-func Inspect(ctx context.Context, path, id string) (decisions.Inspection, error) {
-	view := decisions.Inspection{Deliveries: []decisions.Acknowledgement{}}
+func Inspect(ctx context.Context, path, id string) (view decisions.Inspection, err error) {
+	view = decisions.Inspection{Deliveries: []decisions.Acknowledgement{}}
 
 	db, err := openReader(path)
 	if err != nil {

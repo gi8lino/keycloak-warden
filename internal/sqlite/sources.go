@@ -47,7 +47,7 @@ func reconcileDecision(
 	now time.Time,
 	targets []string,
 	failures *int,
-) (decisions.Decision, error) {
+) (decision decisions.Decision, err error) {
 	var effectiveUntil int64
 	if err := tx.QueryRowContext(ctx, `
 SELECT COALESCE(MAX(expires), 0)
@@ -59,7 +59,7 @@ WHERE ip = ? AND expires > ?
 
 	var previousExpires int64
 	var previousInactive bool
-	decision := decisions.Decision{IP: ip}
+	decision = decisions.Decision{IP: ip}
 	if err := tx.QueryRowContext(ctx, `
 SELECT id, revision, expires, failures, NOT active
 FROM decisions

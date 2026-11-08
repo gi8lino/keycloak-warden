@@ -61,8 +61,8 @@ func ValidateURL(address string) error {
 }
 
 // parseApplicationURL validates a URL and its optional application route prefix.
-func parseApplicationURL(address string) (*url.URL, error) {
-	parsed, err := url.Parse(address)
+func parseApplicationURL(address string) (parsed *url.URL, err error) {
+	parsed, err = url.Parse(address)
 	if err != nil {
 		return nil, fmt.Errorf("invalid application-url: %w", err)
 	}
