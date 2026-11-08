@@ -53,18 +53,14 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - uses: ./.github/actions/setup-goreleaser
+
       - name: Build local snapshot without publishing
         if: github.event_name == 'workflow_dispatch' && !startsWith(github.ref, 'refs/tags/')
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: latest
-          args: release --snapshot --clean
+        run: goreleaser release --snapshot --clean
 
       - name: Publish tag and container images
         if: startsWith(github.ref, 'refs/tags/')
-        uses: goreleaser/goreleaser-action@v7
-        with:
-          version: latest
-          args: release --clean
+        run: goreleaser release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

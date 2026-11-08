@@ -1,0 +1,19 @@
+name: Set up GoReleaser
+description: Install the pinned Linux runner binary through the GitHub release API.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        # renovate: datasource=github-releases depName=goreleaser/goreleaser
+        GORELEASER_VERSION: v2.20.0
+      run: |
+        set -euo pipefail
+        cd "$(mktemp -d)"
+        archive=goreleaser_Linux_x86_64.tar.gz
+        gh release download "$GORELEASER_VERSION" -R goreleaser/goreleaser -p "$archive" -p checksums.txt
+        awk -v file="$archive" '$2 == file { print }' checksums.txt | sha256sum --check --strict -
+        tar -xzf "$archive" goreleaser
+        install -Dm755 goreleaser "$RUNNER_TEMP/warden-tools/goreleaser"
+        echo "$RUNNER_TEMP/warden-tools" >> "$GITHUB_PATH"
