@@ -76,6 +76,17 @@ func TestProviderApply(t *testing.T) {
 		assert.Len(t, rules, 1)
 	})
 
+	t.Run("forbidden response includes the numeric Cloudflare code", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":10000,"message":"private detail"}]}`))
+		}))
+		defer server.Close()
+		p := Provider{RulesURL: server.URL, Client: server.Client()}
+		require.EqualError(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1"}), "Cloudflare HTTP 403 (code 10000)")
+	})
+
 	t.Run("API failure is retryable", func(t *testing.T) {
 		t.Parallel()
 

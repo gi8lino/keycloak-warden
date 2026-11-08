@@ -24,8 +24,8 @@ The [Kubernetes guide](examples/kubernetes/README.md) shows how to share the Sni
 
 Create a [custom Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) with:
 
-- **Permission:** Account → Account Firewall Access Rules → Edit
-- **Resources:** Your Cloudflare account
+- **Permission:** Zone → Firewall Services → Edit
+- **Zone Resources:** Include → Specific zone → the zone matching your configured `zone-id`
 
 Set the token and the zone ID in the `warden.yaml` configuration inside your Kubernetes Secret.
 

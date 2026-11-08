@@ -45,10 +45,18 @@ type rule struct {
 	Configuration filter `json:"configuration"`
 }
 
+// apiError contains the numeric identifier of a Cloudflare error.
+type apiError struct {
+	// Code identifies the cause reported by the API.
+	Code int `json:"code"`
+}
+
 // response contains Cloudflare's application status and operation-specific result.
 type response struct {
 	// Success distinguishes acknowledged operations from API errors.
 	Success bool `json:"success"`
+	// Errors lists the API errors returned for a rejected request.
+	Errors []apiError `json:"errors"`
 	// Result contains rules for a list operation.
 	Result json.RawMessage `json:"result"`
 	// Info describes the pagination of a list response.
@@ -164,18 +172,24 @@ func (p Provider) call(ctx context.Context, method, endpoint string, body any) (
 	}
 	defer resp.Body.Close() // nolint:errcheck
 
-	if !isSuccessfulStatus(resp.StatusCode) {
-		return out, fmt.Errorf("Cloudflare HTTP %d", resp.StatusCode) //nolint:staticcheck
+	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
+	if decodeErr != nil && isSuccessfulStatus(resp.StatusCode) {
+		return out, decodeErr
 	}
-
-	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out); err != nil {
-		return out, err
-	}
-
-	if !out.Success {
-		return out, errors.New("Cloudflare rejected request") //nolint:staticcheck
+	if !isSuccessfulStatus(resp.StatusCode) || !out.Success {
+		return out, out.rejection(resp.StatusCode)
 	}
 	return out, nil
+}
+
+// rejection reports the HTTP status and first available Cloudflare code.
+func (r response) rejection(status int) error {
+	for _, detail := range r.Errors {
+		if detail.Code != 0 {
+			return fmt.Errorf("Cloudflare HTTP %d (code %d)", status, detail.Code) //nolint:staticcheck
+		}
+	}
+	return fmt.Errorf("Cloudflare HTTP %d", status) //nolint:staticcheck
 }
 
 // isSuccessfulStatus reports whether the HTTP status is in the 2xx range.
