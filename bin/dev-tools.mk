@@ -11,6 +11,14 @@ GITHUB_RELEASE_INSTALL := $(DEV_TOOLS_BIN)/github-release-install
 
 dev-tools-module = $(DEV_TOOLS_BIN)/dev-tools-$(1).mk
 
+# GitHub's release URL can time out while its release asset API is available.
+define fetch-dev-asset
+curl --fail --silent --show-error --location --retry 2 \
+	"https://github.com/gi8lino/dev-tools/releases/download/$(DEV_TOOLS_VERSION)/$(1)" \
+	-o "$$tmp" || gh release download "$(DEV_TOOLS_VERSION)" --repo gi8lino/dev-tools \
+	--pattern "$(1)" --output - > "$$tmp"
+endef
+
 # Download a release file atomically.
 define download-dev-file
 @set -eu; \
@@ -21,9 +29,7 @@ fi; \
 tmp="$(2).tmp"; \
 trap 'rm -f "$$tmp"' EXIT INT TERM; \
 printf '%s\n' "Downloading gi8lino/dev-tools $(DEV_TOOLS_VERSION) $(1)"; \
-curl --fail --silent --show-error --location \
-	"https://github.com/gi8lino/dev-tools/releases/download/$(DEV_TOOLS_VERSION)/$(1)" \
-	-o "$$tmp"; \
+$(call fetch-dev-asset,$(1)); \
 mv "$$tmp" "$(2)"; \
 trap - EXIT INT TERM
 endef
@@ -38,9 +44,7 @@ fi; \
 tmp="$(2).tmp"; \
 trap 'rm -f "$$tmp"' EXIT INT TERM; \
 printf '%s\n' "Downloading gi8lino/dev-tools $(DEV_TOOLS_VERSION) $(1)"; \
-curl --fail --silent --show-error --location \
-	"https://github.com/gi8lino/dev-tools/releases/download/$(DEV_TOOLS_VERSION)/$(1)" \
-	-o "$$tmp"; \
+$(call fetch-dev-asset,$(1)); \
 chmod +x "$$tmp"; \
 mv "$$tmp" "$(2)"; \
 trap - EXIT INT TERM
