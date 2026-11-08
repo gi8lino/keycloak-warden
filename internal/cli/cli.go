@@ -10,6 +10,7 @@ import (
 	"github.com/containeroo/tinyflags"
 
 	"github.com/gi8lino/keycloak-warden/internal/command/ban"
+	"github.com/gi8lino/keycloak-warden/internal/command/endpoint"
 	"github.com/gi8lino/keycloak-warden/internal/command/inspect"
 	"github.com/gi8lino/keycloak-warden/internal/command/listactive"
 	"github.com/gi8lino/keycloak-warden/internal/command/serve"
@@ -32,11 +33,12 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 	// Bind the flag value; the encoder reads it when a command runs, after parsing.
 	encode := output.New(format, stdout)
 
-	serve.Register(root, stdout, version)
+	flags := endpoint.Register(root)
+	serve.Register(root, flags, stdout, version)
 	listactive.Register(root, encode)
 	inspect.Register(root, encode)
-	ban.Register(root, encode)
-	unban.Register(root, encode)
+	ban.Register(root, flags, encode)
+	unban.Register(root, flags, encode)
 
 	runner, err := root.ParseRunner(args)
 	if err != nil {

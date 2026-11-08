@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/containeroo/tinyflags"
+	"github.com/gi8lino/keycloak-warden/internal/command/endpoint"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -28,7 +29,7 @@ func startupLog(t *testing.T, args ...string) string {
 	var output bytes.Buffer
 	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
 	root.EnvPrefix("WARDEN_")
-	Register(root, &output, "test")
+	Register(root, endpoint.Register(root), &output, "test")
 	commandArgs := []string{
 		"serve", "--config", path, "--database", filepath.Join(dir, "warden.db"),
 		"--listen-address", strings.TrimPrefix(occupied.URL, "http://"),
@@ -63,7 +64,7 @@ func TestLogFormat(t *testing.T) {
 	t.Run("unsupported format fails parsing", func(t *testing.T) {
 		t.Parallel()
 		root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
-		Register(root, &bytes.Buffer{}, "test")
+		Register(root, endpoint.Register(root), &bytes.Buffer{}, "test")
 		_, err := root.ParseRunner([]string{"serve", "--log-format", "xml"})
 		require.Error(t, err)
 	})

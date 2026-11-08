@@ -5,14 +5,15 @@ import (
 	"io"
 
 	appkitlogging "github.com/containeroo/appkit/logging"
-	"github.com/containeroo/httpkit/prefix"
+
 	"github.com/containeroo/tinyflags"
+	"github.com/gi8lino/keycloak-warden/internal/command/endpoint"
 
 	"github.com/gi8lino/keycloak-warden/internal/config"
 )
 
 // Register adds the serve command and its operational flags to the command tree.
-func Register(root *tinyflags.Command, stdout io.Writer, version string) {
+func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, version string) {
 	command := root.Command("serve", "Start authenticated event ingestion and action delivery")
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
@@ -35,13 +36,6 @@ func Register(root *tinyflags.Command, stdout io.Writer, version string) {
 		OverriddenValueMaskFn(tinyflags.MaskFirstLast).
 		Value()
 
-	routePrefix := command.String("route-prefix", "", "URL path prefix under which the application is served").
-		Validate(prefix.ValidateRoutePrefix).
-		Finalize(prefix.NormalizeRoutePrefix).
-		Value()
-	listenAddr := command.String("listen-address", "127.0.0.1:8080", "Public event listener address").
-		Placeholder("ADDR").
-		Value()
 	managementAddr := command.String(
 		"management-listen-address",
 		"127.0.0.1:8081",
@@ -83,8 +77,8 @@ func Register(root *tinyflags.Command, stdout io.Writer, version string) {
 		return Run(
 			ctx,
 			cfg,
-			*routePrefix,
-			*listenAddr,
+			*flags.RoutePrefix,
+			*flags.ListenAddress,
 			*managementAddr,
 			*database,
 			*secret,

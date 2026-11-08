@@ -13,14 +13,14 @@ services:
       - ./warden.yaml:/config/warden.yaml:ro
     environment:
       WARDEN__SNITCH_SECRET: development-snitch-secret
+      WARDEN__LISTEN_ADDRESS: ":8080"
+      WARDEN__ROUTE_PREFIX: /warden
       WARDEN__ADMIN_TOKEN: development-admin-token
     command:
       - serve
       - --config=/config/warden.yaml
       - --database=/data/warden.db
-      - --listen-address=:8080
       - --management-listen-address=:8081
-      - --route-prefix=/warden
       - --access-log
       - --debug
       - --metrics

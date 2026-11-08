@@ -34,6 +34,8 @@ func TestRun(t *testing.T) {
 		assert.Contains(t, stderr.String(), "unban")
 		assert.Contains(t, stderr.String(), "list-active")
 		assert.Contains(t, stderr.String(), "inspect")
+		assert.Contains(t, stderr.String(), "--listen-address")
+		assert.Contains(t, stderr.String(), "--route-prefix")
 	})
 
 	t.Run("serve help contains operational flags", func(t *testing.T) {
@@ -45,8 +47,6 @@ func TestRun(t *testing.T) {
 		assert.Contains(t, stdout.String(), "--snitch-secret")
 		assert.Contains(t, stdout.String(), "--admin-token")
 		assert.NotContains(t, stdout.String(), "--management-token")
-		assert.Contains(t, stdout.String(), "--listen-address")
-		assert.Contains(t, stdout.String(), "--route-prefix")
 		assert.Contains(t, stdout.String(), "--access-log")
 		assert.Contains(t, stdout.String(), "--metrics")
 		assert.Contains(t, stdout.String(), "--management-listen-address")

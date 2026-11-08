@@ -121,7 +121,6 @@ printf 'Verified signed active-ban webhook\n'
 
 compose exec -T warden /keycloak-warden unban "$ip" \
   --admin-token development-admin-token \
-  --application-url http://127.0.0.1:8080/warden \
   --output json
 
 wait_for_webhook false

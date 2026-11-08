@@ -41,6 +41,8 @@ kubectl -n keycloak exec deployment/keycloak-warden -- \
   /keycloak-warden unban 203.0.113.42
 ```
 
+The global `--listen-address` and `--route-prefix` flags configure the application endpoint for `serve`, `ban`, and `unban`. Set `WARDEN__LISTEN_ADDRESS` and `WARDEN__ROUTE_PREFIX` in the container environment to share them across invocations. Use `--application-url` to target a different endpoint.
+
 Both commands accept multiple IP addresses. Add `--output json` or `--output yaml` for structured output. Unbanning clears both manual and automatic bans for that IP.
 
 ## Test locally
