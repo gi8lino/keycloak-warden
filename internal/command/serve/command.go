@@ -18,7 +18,8 @@ func Register(root *tinyflags.Command, stdout io.Writer, version string) {
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
 
 	path := command.String("config", "warden.yaml", "YAML detection rules and action destinations").
-		Placeholder("FILE").Value()
+		Placeholder("FILE").
+		Value()
 	database := command.String("database", "warden.db", "SQLite database file").
 		Value()
 	secret := command.String("snitch-secret", "", "Shared key for inbound Snitch signatures").
@@ -69,11 +70,15 @@ func Register(root *tinyflags.Command, stdout io.Writer, version string) {
 		}
 
 		logger := appkitlogging.Setup(*logFormat, *debug, stdout)
-		logger.Debug(
-			"configuration loaded",
-			"path", *path,
-			"targets", len(cfg.Targets),
+		logger.Debug("configuration loaded", "event", "configuration_loaded", "path", *path)
+		logger.Info(
+			"starting Keycloak Warden",
+			"event", "app_starting",
+			"version", version,
 		)
+		if len(command.Overrides()) > 0 {
+			logger.Info("CLI Overrides", "event", "cli_overrides", "overrides", command.Overrides().Values())
+		}
 
 		return Run(
 			ctx,

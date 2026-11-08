@@ -46,7 +46,7 @@ func TestLogFormat(t *testing.T) {
 		t.Parallel()
 		line := startupLog(t, "--log-format=text")
 		assert.Contains(t, line, "level=INFO")
-		assert.Contains(t, line, `msg="starting Warden"`)
+		assert.Contains(t, line, `event=app_starting`)
 		assert.False(t, json.Valid([]byte(line)))
 	})
 	t.Run("JSON is the default", func(t *testing.T) {
@@ -54,7 +54,7 @@ func TestLogFormat(t *testing.T) {
 		line := startupLog(t)
 		var record map[string]any
 		require.NoError(t, json.Unmarshal([]byte(line), &record))
-		assert.Equal(t, "starting Warden", record["msg"])
+		assert.Equal(t, "app_starting", record["event"])
 	})
 	t.Run("short flag selects JSON", func(t *testing.T) {
 		t.Parallel()

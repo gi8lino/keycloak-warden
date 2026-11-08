@@ -78,16 +78,6 @@ func Run(
 	runner := actions.Start(ctx, store, destinations, logger)
 	defer runner.Close()
 
-	logger.Info(
-		"starting Warden",
-		"application_listen", listen,
-		"management_listen", managementListen,
-		"route_prefix", routePrefix,
-		"metrics_enabled", metricsEnabled,
-		"access_log_enabled", accessLog,
-		"destinations", names,
-	)
-
 	return httpserver.Run(
 		ctx,
 		listen,

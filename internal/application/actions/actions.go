@@ -79,7 +79,11 @@ func run(ctx context.Context, q Queue, destinations map[string]Provider, logger 
 			now := time.Now()
 			if err := q.Maintain(ctx, now); err != nil {
 				if ctx.Err() == nil {
-					logger.Error("decision maintenance failed", "error", err)
+					logger.Error(
+						"decision maintenance failed",
+						"event", "decision_maintenance_failed",
+						"error", err,
+					)
 				}
 				continue
 			}
@@ -100,7 +104,11 @@ func drainReady(
 		job, err := q.Next(ctx, time.Now())
 		if err != nil {
 			if ctx.Err() == nil {
-				logger.Error("read delivery queue", "error", err)
+				logger.Error(
+					"read delivery queue",
+					"event", "delivery_queue_read_failed",
+					"error", err,
+				)
 			}
 			return
 		}
@@ -120,22 +128,30 @@ func dispatch(ctx context.Context, q Queue, destinations map[string]Provider, lo
 
 	log.Debug(
 		"delivering decision",
+		"event", "delivery_starting",
 		"ip", job.Decision.IP,
 		"active", job.Decision.Active,
 	)
 
 	provider, ok := destinations[job.Destination]
 	if !ok {
-		log.Error("destination missing from configuration")
+		log.Error(
+			"destination missing from configuration",
+			"event", "delivery_destination_missing",
+		)
 		return finishJob(ctx, q, job, log, false)
 	}
 
 	if err := provider.Apply(ctx, job.Decision); err != nil {
-		log.Warn("delivery failed", "error", err)
+		log.Warn("delivery failed", "event", "delivery_failed", "error", err)
 		return finishJob(ctx, q, job, log, false)
 	}
 
-	log.Info("delivery completed", "active", job.Decision.Active)
+	log.Info(
+		"delivery completed",
+		"event", "delivery_completed",
+		"active", job.Decision.Active,
+	)
 
 	return finishJob(ctx, q, job, log, true)
 }
@@ -143,7 +159,11 @@ func dispatch(ctx context.Context, q Queue, destinations map[string]Provider, lo
 // finishJob persists the attempted revision outcome before the worker takes another job.
 func finishJob(ctx context.Context, q Queue, job Job, log *slog.Logger, success bool) bool {
 	if err := q.Finish(ctx, job, success, time.Now()); err != nil {
-		log.Error("persist delivery outcome", "error", err)
+		log.Error(
+			"persist delivery outcome",
+			"event", "delivery_outcome_write_failed",
+			"error", err,
+		)
 		return false
 	}
 	return true

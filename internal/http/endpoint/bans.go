@@ -85,6 +85,7 @@ func CreateBan(service BanService, logger *slog.Logger) http.HandlerFunc {
 
 		logger.Info(
 			"manual ban requested",
+			"event", "manual_ban_requested",
 			"decision_id", view.Decision.ID,
 			"ip", view.Decision.IP,
 			"expires_at", view.Decision.ExpiresAt,
@@ -124,6 +125,7 @@ func DeleteBan(service BanService, logger *slog.Logger) http.HandlerFunc {
 		}
 		logger.Info(
 			"ban sources removed",
+			"event", "ban_sources_removed",
 			"decision_id", view.Decision.ID,
 			"ip", view.Decision.IP,
 			"remains_blocked", view.Decision.Active,
@@ -143,7 +145,11 @@ func writeBanError(w http.ResponseWriter, logger *slog.Logger, err error) bool {
 	case errors.Is(err, bans.ErrNotFound):
 		httpresponse.Problem(w, http.StatusNotFound, "Manual ban or decision not found.")
 	default:
-		logger.Error("manual ban operation failed", "error", err)
+		logger.Error(
+			"manual ban operation failed",
+			"event", "manual_ban_operation_failed",
+			"error", err,
+		)
 		httpresponse.Problem(w, http.StatusServiceUnavailable, "Administrative operation unavailable.")
 	}
 	return true
