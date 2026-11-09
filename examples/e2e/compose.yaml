@@ -12,9 +12,11 @@ services:
       - state:/data
       - ./warden.yaml:/config/warden.yaml:ro
     environment:
-      WARDEN__SNITCH_SECRET: development-snitch-secret
+      # Variable for compose.yaml
       WARDEN_E2E_WEBHOOK_URL: http://127.0.0.1:8090/header
       WARDEN_E2E_WEBHOOK_KEY: development-outbound-key
+      # Variable for warden itself
+      WARDEN__SNITCH_SECRET: development-snitch-secret
       WARDEN__LISTEN_ADDRESS: ":8080"
       WARDEN__ADMIN_TOKEN: development-admin-token
     command:
@@ -46,13 +48,14 @@ services:
       context: .
       dockerfile: Dockerfile.keycloak
       args:
-        SNITCH_VERSION: ${SNITCH_RELEASE:-0.0.3}
+        SNITCH_VERSION: ${SNITCH_RELEASE:-0.2.0}
     command: ["start-dev", "--import-realm"]
     ports:
       - "127.0.0.1:${E2E_KC_PORT:-18080}:8080"
     volumes:
       - ./realm:/opt/keycloak/data/import:ro
     environment:
+      # Keycloak variables
       KC_BOOTSTRAP_ADMIN_USERNAME: dev-admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: dev-admin-password
       KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL: http://warden:8080/events
@@ -64,4 +67,3 @@ services:
 
 volumes:
   state:
-
