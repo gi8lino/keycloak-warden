@@ -93,8 +93,8 @@ func TestRunnerWait(t *testing.T) {
 		select {
 		case <-runner.Done():
 			require.FailNow(t, "worker exited without cancellation")
-		case <-waitResult:
-			require.FailNow(t, "Wait returned before worker stopped")
+		case err := <-waitResult:
+			require.FailNow(t, "Wait returned before worker stopped", "returned error: %v", err)
 		default:
 		}
 		require.NoError(t, runner.Close())
