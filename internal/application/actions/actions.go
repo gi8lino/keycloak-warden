@@ -107,6 +107,7 @@ func run(
 ) error {
 	var nextPrune time.Time
 
+	// Keep processing until the context is cancelled or its deadline expires.
 	for ctx.Err() == nil {
 		nextPrune = pruneIfDue(ctx, q, logger, nextPrune)
 
@@ -140,6 +141,8 @@ func pruneIfDue(
 	nextPrune time.Time,
 ) (nextDeadline time.Time) {
 	now := time.Now()
+
+	// Skip cleanup until the next scheduled deadline.
 	if now.Before(nextPrune) {
 		return nextPrune
 	}
@@ -152,9 +155,12 @@ func pruneIfDue(
 				"error", err,
 			)
 		}
+
+		// Retry sooner after a failure instead of waiting for the normal interval.
 		return now.Add(storageRetry)
 	}
 
+	// Schedule the next periodic cleanup after a successful run.
 	return now.Add(pruneInterval)
 }
 
@@ -184,9 +190,16 @@ func drainReady(
 	logger *slog.Logger,
 	deadline time.Time,
 ) error {
-	for ctx.Err() == nil && time.Now().Before(deadline) {
+	// Process jobs until shutdown or the processing time budget is exhausted.
+	for time.Now().Before(deadline) {
+		if err := ctx.Err(); err != nil {
+			// Stop processing if the context was cancelled or its deadline expired.
+			return err
+		}
+
 		job, err := q.Next(ctx, time.Now())
 		if err != nil || job == nil {
+			// Stop when fetching fails or no more jobs are ready.
 			return err
 		}
 
@@ -195,7 +208,7 @@ func drainReady(
 		}
 	}
 
-	return ctx.Err()
+	return nil
 }
 
 // earliestDeadline returns the first nonzero deadline, or the earlier of two.
