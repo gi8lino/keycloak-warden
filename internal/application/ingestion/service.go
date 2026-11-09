@@ -56,6 +56,7 @@ func (s *Service) Process(ctx context.Context, envelope events.Envelope, now tim
 	if err != nil {
 		return nil, err
 	}
+
 	if !s.rule.Matches(event) {
 		return nil, nil
 	}
@@ -84,11 +85,17 @@ func normalize(p events.Envelope) (event events.Event, err error) {
 	if p.Version != 1 || p.Source != "keycloak" {
 		return events.Event{}, ErrInvalidEvent
 	}
+
 	if !hasRequiredEventFields(p) {
 		return events.Event{}, ErrInvalidEvent
 	}
 
-	event = events.Event{ID: p.ID, Source: p.Source, Kind: p.Kind}
+	event = events.Event{
+		ID:     p.ID,
+		Source: p.Source,
+		Kind:   p.Kind,
+	}
+
 	if p.IP != "" {
 		ip, err := ipaddress.ParseUnicast(p.IP)
 		if err != nil {
@@ -96,6 +103,7 @@ func normalize(p events.Envelope) (event events.Event, err error) {
 		}
 		event.IP = ip.Unmap()
 	}
+
 	return event, nil
 }
 

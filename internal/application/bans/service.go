@@ -92,18 +92,41 @@ func New(repository Repository) (*Service, error) {
 
 // Ban validates the request, normalizes its address and extends its manual source.
 func (s *Service) Ban(ctx context.Context, request Request, now time.Time) (Ban, error) {
+	ip, reason, err := validateBanRequest(request)
+	if err != nil {
+		return Ban{}, err
+	}
+
+	return s.repository.BanManual(ctx, ip, now.Add(request.Duration), reason, now)
+}
+
+// validateBanRequest validates and normalizes a manual ban request.
+func validateBanRequest(request Request) (string, string, error) {
 	ip, err := ipaddress.ParseUnicast(strings.TrimSpace(request.IP))
 	if err != nil {
-		return Ban{}, fmt.Errorf("%w: ipAddress must be a single unicast address", ErrInvalid)
+		return "", "", fmt.Errorf("%w: ipAddress must be a single unicast address", ErrInvalid)
 	}
-	if request.Duration < MinDuration || request.Duration > MaxDuration {
-		return Ban{}, fmt.Errorf("%w: duration must be between %s and %s", ErrInvalid, MinDuration, MaxDuration)
+
+	if !validDuration(request.Duration, MinDuration, MaxDuration) {
+		return "", "", fmt.Errorf("%w: duration must be between %s and %s", ErrInvalid, MinDuration, MaxDuration)
 	}
+
 	reason := strings.TrimSpace(request.Reason)
-	if reason == "" || len(reason) > MaxReasonLength {
-		return Ban{}, fmt.Errorf("%w: reason must contain 1–%d bytes", ErrInvalid, MaxReasonLength)
+	if !validReason(reason, MaxReasonLength) {
+		return "", "", fmt.Errorf("%w: reason must contain 1–%d bytes", ErrInvalid, MaxReasonLength)
 	}
-	return s.repository.BanManual(ctx, ip.Unmap().String(), now.Add(request.Duration), reason, now)
+
+	return ip.Unmap().String(), reason, nil
+}
+
+// validDuration reports whether a duration is within the inclusive bounds.
+func validDuration(d, min, max time.Duration) bool {
+	return d >= min && d <= max
+}
+
+// validReason reports whether a reason has a valid byte length.
+func validReason(reason string, max int) bool {
+	return len(reason) > 0 && len(reason) <= max
 }
 
 // Unban clears every active source and resets detection for the specified decision.
@@ -111,6 +134,7 @@ func (s *Service) Unban(ctx context.Context, id string, now time.Time) (Ban, err
 	if strings.TrimSpace(id) == "" {
 		return Ban{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
+
 	return s.repository.UnbanAll(ctx, id, now)
 }
 
@@ -124,5 +148,6 @@ func (s *Service) Get(ctx context.Context, id string, now time.Time) (Ban, error
 	if strings.TrimSpace(id) == "" {
 		return Ban{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
+
 	return s.repository.GetBan(ctx, id, now)
 }

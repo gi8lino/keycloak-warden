@@ -23,9 +23,11 @@ func (r Rule) Validate() error {
 	if !r.hasValidThreshold() {
 		return errors.New("threshold must be positive")
 	}
+
 	if !r.hasValidDurations() {
 		return errors.New("window and ban must be at least one second")
 	}
+
 	return nil
 }
 
