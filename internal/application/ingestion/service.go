@@ -75,6 +75,7 @@ func (s *Service) Process(ctx context.Context, envelope events.Envelope, now tim
 		decision, err = tx.Block(ctx, ip, count, now.Add(s.rule.Ban), now)
 		return err
 	})
+
 	return decision, err
 }
 

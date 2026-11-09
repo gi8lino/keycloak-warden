@@ -38,7 +38,7 @@ ON CONFLICT DO NOTHING
 	return count > 0, err
 }
 
-// CountFailures counts committed observations inside the requested window.
+// CountFailures counts observations visible within the current transaction.
 func (o *observationTx) CountFailures(ctx context.Context, ip string, since time.Time) (count int, err error) {
 	err = o.tx.QueryRowContext(ctx, `
 SELECT count(*)

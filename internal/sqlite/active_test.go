@@ -18,7 +18,7 @@ import (
 func TestInspect(t *testing.T) {
 	t.Parallel()
 
-	t.Run("single decision inspection remains supported", func(t *testing.T) {
+	t.Run("inspects a single decision", func(t *testing.T) {
 		t.Parallel()
 
 		path := filepath.Join(t.TempDir(), "warden.db")
@@ -32,10 +32,11 @@ func TestInspect(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, decision)
 
-		view, err := sqlite.Inspect(t.Context(), path, decision.ID)
+		views, err := sqlite.InspectMany(t.Context(), path, []string{decision.ID})
 		require.NoError(t, err)
-		assert.Equal(t, *decision, view.Decision)
-		assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 0}}, view.Deliveries)
+		require.Len(t, views, 1)
+		assert.Equal(t, *decision, views[0].Decision)
+		assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 0}}, views[0].Deliveries)
 	})
 }
 
@@ -76,6 +77,16 @@ func TestInspectMany(t *testing.T) {
 		assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 0}}, views[0].Deliveries)
 		assert.Equal(t, *first, views[1].Decision)
 		assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 1}}, views[1].Deliveries)
+
+		// The online ban readers must return the same decision and delivery data.
+		firstBan, err := store.GetBan(ctx, first.ID, now)
+		require.NoError(t, err)
+		assert.Equal(t, views[1].Decision, firstBan.Decision)
+		assert.Equal(t, views[1].Deliveries, firstBan.Deliveries)
+		secondBan, err := store.GetBan(ctx, second.ID, now.Add(time.Second))
+		require.NoError(t, err)
+		assert.Equal(t, views[0].Decision, secondBan.Decision)
+		assert.Equal(t, views[0].Deliveries, secondBan.Deliveries)
 	})
 
 	t.Run("missing decision reports its ID without partial results", func(t *testing.T) {

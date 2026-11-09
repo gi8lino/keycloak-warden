@@ -22,15 +22,6 @@ func openReader(path string) (*sql.DB, error) {
 	return sql.Open("sqlite", location.String())
 }
 
-// Inspect returns a consistent view of a decision and its pending deliveries.
-func Inspect(ctx context.Context, path, id string) (decisions.Inspection, error) {
-	views, err := InspectMany(ctx, path, []string{id})
-	if err != nil {
-		return decisions.Inspection{}, err
-	}
-	return views[0], nil
-}
-
 // InspectMany returns the requested decisions and deliveries from one read-only transaction.
 func InspectMany(ctx context.Context, path string, ids []string) ([]decisions.Inspection, error) {
 	db, err := openReader(path)
@@ -60,51 +51,19 @@ func InspectMany(ctx context.Context, path string, ids []string) ([]decisions.In
 	return views, nil
 }
 
-// inspectTx reads a decision and its deliveries within an existing transaction.
+// inspectTx reads one decision and its deliveries within an existing transaction.
 func inspectTx(ctx context.Context, tx *sql.Tx, id string) (decisions.Inspection, error) {
-	view := decisions.Inspection{Deliveries: []decisions.Acknowledgement{}}
-
-	decision := &view.Decision
-	var expires int64
-	err := tx.QueryRowContext(ctx, `
-SELECT id, revision, ip, active, expires, failures
-FROM decisions
-WHERE id = ?
-`, id).Scan(&decision.ID, &decision.Revision, &decision.IP, &decision.Active, &expires, &decision.Failures)
+	decision, err := readDecision(ctx, tx, id)
 	if err != nil {
-		return view, err
+		return decisions.Inspection{}, err
 	}
-	decision.ExpiresAt = time.UnixMilli(expires).UTC()
 
-	rows, err := tx.QueryContext(ctx, `
-SELECT destination, acknowledged
-FROM deliveries
-WHERE ip = ?
-ORDER BY destination
-`, decision.IP)
+	deliveries, err := readDeliveries(ctx, tx, decision.IP)
 	if err != nil {
-		return view, err
+		return decisions.Inspection{}, err
 	}
 
-	for rows.Next() {
-		var ack decisions.Acknowledgement
-		if err := rows.Scan(&ack.Destination, &ack.Revision); err != nil {
-			_ = rows.Close()
-			return view, err
-		}
-		view.Deliveries = append(view.Deliveries, ack)
-	}
-
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return view, err
-	}
-
-	if err := rows.Close(); err != nil {
-		return view, err
-	}
-
-	return view, nil
+	return decisions.Inspection{Decision: decision, Deliveries: deliveries}, nil
 }
 
 // ListActiveBans reads active blocks with their automatic and manual sources.

@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
 // BanManual creates or extends one manual source and queues the resulting effective state.
@@ -162,77 +161,25 @@ func (s *Store) GetBan(ctx context.Context, id string, now time.Time) (bans.Ban,
 	return view, tx.Commit()
 }
 
-// readBan loads one effective state and its reason and delivery records from a transaction.
-func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (view bans.Ban, err error) {
-	view = bans.Ban{Sources: []bans.Source{}, Deliveries: []decisions.Acknowledgement{}}
-	var expires int64
-	err = tx.QueryRowContext(ctx, `
-SELECT id, revision, ip, active, expires, failures
-FROM decisions
-WHERE id = ?
-`, id).Scan(
-		&view.Decision.ID,
-		&view.Decision.Revision,
-		&view.Decision.IP,
-		&view.Decision.Active,
-		&expires,
-		&view.Decision.Failures,
-	)
+// readBan loads a decision, its active sources and deliveries from one transaction.
+func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Ban, error) {
+	decision, err := readDecision(ctx, tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return bans.Ban{}, bans.ErrNotFound
 	}
 	if err != nil {
 		return bans.Ban{}, err
 	}
-	view.Decision.ExpiresAt = time.UnixMilli(expires).UTC()
 
-	rows, err := tx.QueryContext(ctx, `
-SELECT kind, expires, reason
-FROM ban_sources
-WHERE ip = ? AND expires > ?
-ORDER BY kind
-`, view.Decision.IP, now.UnixMilli())
+	sources, err := readBanSources(ctx, tx, decision.IP, now)
 	if err != nil {
 		return bans.Ban{}, err
 	}
-	for rows.Next() {
-		var source bans.Source
-		var until int64
-		if err := rows.Scan(&source.Kind, &until, &source.Reason); err != nil {
-			_ = rows.Close()
-			return bans.Ban{}, err
-		}
-		source.ExpiresAt = time.UnixMilli(until).UTC()
-		view.Sources = append(view.Sources, source)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return bans.Ban{}, err
-	}
-	if err := rows.Close(); err != nil {
-		return bans.Ban{}, err
-	}
 
-	rows, err = tx.QueryContext(ctx, `
-SELECT destination, acknowledged
-FROM deliveries
-WHERE ip = ?
-ORDER BY destination
-`, view.Decision.IP)
+	deliveries, err := readDeliveries(ctx, tx, decision.IP)
 	if err != nil {
 		return bans.Ban{}, err
 	}
-	for rows.Next() {
-		var ack decisions.Acknowledgement
-		if err := rows.Scan(&ack.Destination, &ack.Revision); err != nil {
-			_ = rows.Close()
-			return bans.Ban{}, err
-		}
-		view.Deliveries = append(view.Deliveries, ack)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return bans.Ban{}, err
-	}
-	return view, rows.Close()
+
+	return bans.Ban{Decision: decision, Sources: sources, Deliveries: deliveries}, nil
 }

@@ -155,14 +155,15 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, active, 1)
 		assert.Equal(t, extended, &active[0].Decision)
-		view, err := sqlite.Inspect(ctx, path, extended.ID)
+		views, err := sqlite.InspectMany(ctx, path, []string{extended.ID})
 
 		require.NoError(t, err)
-		assert.Equal(t, *extended, view.Decision)
+		require.Len(t, views, 1)
+		assert.Equal(t, *extended, views[0].Decision)
 		assert.Equal(
 			t,
 			[]decisions.Acknowledgement{{Destination: "a", Revision: 1}, {Destination: "b", Revision: 1}},
-			view.Deliveries,
+			views[0].Deliveries,
 		)
 
 		now = extended.ExpiresAt
