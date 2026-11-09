@@ -40,10 +40,12 @@ func New(address, token string) (*Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("admin-token is required")
 	}
+
 	parsed, err := parseApplicationURL(address)
 	if err != nil {
 		return nil, err
 	}
+
 	return &Client{
 		url:   parsed,
 		token: token,
@@ -78,7 +80,9 @@ func parseApplicationURL(address string) (parsed *url.URL, err error) {
 	if err := prefix.ValidateRoutePrefix(parsed.Path); err != nil {
 		return nil, fmt.Errorf("invalid application-url route prefix: %w", err)
 	}
+
 	parsed.Path = prefix.NormalizeRoutePrefix(parsed.Path)
+
 	return parsed, nil
 }
 
@@ -159,7 +163,12 @@ func (c *Client) request(ctx context.Context, method, path string, payload any) 
 }
 
 // do performs an authenticated administrative request with bounded JSON response decoding.
-func (c *Client) do(ctx context.Context, method, path string, payload any, target any) error {
+func (c *Client) do(
+	ctx context.Context,
+	method, path string,
+	payload any,
+	target any,
+) error {
 	var body io.Reader
 
 	if payload != nil {

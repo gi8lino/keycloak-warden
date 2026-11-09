@@ -54,13 +54,14 @@ func (targets Targets) Validate() error {
 			return fmt.Errorf("target %q: api-token: value must not be blank", id)
 		}
 	}
+
 	return nil
 }
 
-// validateTargetName rejects blank names and unsafe destination name characters.
+// validateTargetName rejects empty names, whitespace and control characters.
 func validateTargetName(name string) error {
-	if name == "" || strings.Contains(name, "/") {
-		return errors.New("name must not be empty or contain a slash")
+	if name == "" {
+		return errors.New("name must not be empty")
 	}
 
 	for _, r := range name {
@@ -68,6 +69,7 @@ func validateTargetName(name string) error {
 			return errors.New("name must not contain whitespace or control characters")
 		}
 	}
+
 	return nil
 }
 

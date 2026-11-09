@@ -40,6 +40,7 @@ func Load(path string) (cfg Config, err error) {
 	if err != nil {
 		return Config{}, errors.New("invalid Warden YAML: cannot initialize loader")
 	}
+
 	if err := loader.Load(&raw); err != nil {
 		return Config{}, errors.New("invalid Warden YAML: check field names, types and duplicates")
 	}
@@ -59,7 +60,11 @@ func Load(path string) (cfg Config, err error) {
 	}
 
 	return Config{
-		Rule:    detection.Rule{Threshold: raw.Rule.Threshold, Window: window, Ban: ban},
+		Rule: detection.Rule{
+			Threshold: raw.Rule.Threshold,
+			Window:    window,
+			Ban:       ban,
+		},
 		Targets: raw.Targets,
 	}, nil
 }
