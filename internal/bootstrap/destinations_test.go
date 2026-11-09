@@ -90,7 +90,7 @@ func TestResolveWebhookURL(t *testing.T) {
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"edge": {URL: "htps://example.org/events"},
 		}})
-		require.ErrorContains(t, err, `url: resolve value:`)
+		require.ErrorContains(t, err, `url: resolver: not found`)
 	})
 }
 

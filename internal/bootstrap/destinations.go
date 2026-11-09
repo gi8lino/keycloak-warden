@@ -41,6 +41,7 @@ func Destinations(targets config.Targets) (providers map[string]actions.Provider
 		resolver.WithEmptyValuePolicy(resolver.RejectBlank),
 		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
 	)
+
 	// Kubernetes Secret volumes commonly end in a newline. Keep meaningful spaces.
 	values.Register("file:", &resolver.KeyValueFileResolver{Whitespace: resolver.FileTrimNewlines})
 
@@ -71,6 +72,7 @@ func validZoneID(value string) bool {
 	if len(value) != 32 {
 		return false
 	}
+
 	_, err := hex.DecodeString(value)
 	return err == nil
 }
@@ -94,13 +96,16 @@ func buildWebhook(
 	headers := make(http.Header, len(target.Headers))
 	for name, reference := range target.Headers {
 		canonical := http.CanonicalHeaderKey(name)
-		value, err := resolveRequired(values, reference, "headers "+name)
+
+		value, err := values.ResolveVariable(reference)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("headers %s: %w", name, err)
 		}
+
 		if !validHeaderValue(value) {
 			return nil, fmt.Errorf("headers %q: invalid HTTP header value", name)
 		}
+
 		headers.Set(canonical, value)
 	}
 
@@ -117,18 +122,18 @@ func buildCloudflare(
 	client *http.Client,
 	values *resolver.Registry,
 ) (actions.Provider, error) {
-	zoneID, err := resolveRequired(values, target.ZoneID, "zone-id")
+	zoneID, err := values.ResolveVariable(target.ZoneID)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("zone-id: %w", err)
 	}
 
 	if !validZoneID(zoneID) {
 		return nil, errors.New("zone-id: expected a 32-character hexadecimal Cloudflare zone ID")
 	}
 
-	token, err := resolveRequired(values, target.APIToken, "api-token")
+	token, err := values.ResolveVariable(target.APIToken)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("api-token: %w", err)
 	}
 
 	return cloudflare.Provider{
@@ -144,18 +149,10 @@ func resolveWebhookURL(values *resolver.Registry, reference string) (string, err
 		// HTTP(S) URL schemes are not resolver schemes; treat them as literals.
 		reference = "literal:" + reference
 	}
-	return resolveRequired(values, reference, "url")
-}
 
-// resolveRequired resolves a provider setting and rejects missing or blank values.
-func resolveRequired(values *resolver.Registry, reference, field string) (string, error) {
 	value, err := values.ResolveVariable(reference)
 	if err != nil {
-		return "", fmt.Errorf("%s: resolve value: %w", field, err)
-	}
-
-	if strings.TrimSpace(value) == "" {
-		return "", fmt.Errorf("%s: value must not be blank", field)
+		return "", fmt.Errorf("url: %w", err)
 	}
 
 	return value, nil
@@ -168,6 +165,7 @@ func validHeaderValue(value string) bool {
 			return false
 		}
 	}
+
 	return true
 }
 
