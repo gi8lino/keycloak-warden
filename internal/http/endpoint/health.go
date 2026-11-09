@@ -19,13 +19,26 @@ func Health() http.HandlerFunc {
 	}
 }
 
-// Ready checks the required persistent store on the management listener.
-func Ready(prober ReadinessProber) http.HandlerFunc {
+// Ready reports whether the database and action worker are operational.
+func Ready(prober ReadinessProber, workerDone <-chan struct{}) http.HandlerFunc {
+	if workerDone == nil {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "Action worker unavailable.")
+		}
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-workerDone:
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "Action worker unavailable.")
+			return
+		default:
+		}
+
 		if err := prober.Ping(r.Context()); err != nil {
 			httpresponse.Problem(w, http.StatusServiceUnavailable, "Database unavailable.")
 			return
 		}
+
 		httpresponse.Respond(w, http.StatusOK, map[string]string{"status": "ok"})
 	}
 }

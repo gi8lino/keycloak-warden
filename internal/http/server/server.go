@@ -31,6 +31,8 @@ type Config struct {
 	Processor endpoint.EventProcessor
 	// Readiness checks availability of the persistent store.
 	Readiness endpoint.ReadinessProber
+	// WorkerDone closes when the action worker stops; nil means the worker is unavailable.
+	WorkerDone <-chan struct{}
 }
 
 // New constructs two independent handler trees with separate listener lifetimes.

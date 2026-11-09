@@ -14,7 +14,7 @@ import (
 func newManagement(config Config) http.Handler {
 	routes := appkithttpserver.ManagementRoutes{
 		Health:    endpoint.Health(),
-		Readiness: endpoint.Ready(config.Readiness),
+		Readiness: endpoint.Ready(config.Readiness, config.WorkerDone),
 	}
 	if config.MetricsEnabled {
 		routes.Metrics = config.Metrics.Metrics()

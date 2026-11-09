@@ -20,11 +20,15 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 
 	path := command.String("config", "warden.yaml", "YAML detection rules and action destinations").
 		Placeholder("FILE").
+		NotBlank().
 		Value()
 	database := command.String("database", "warden.db", "SQLite database file").
+		NotBlank().
 		Value()
 	secret := command.String("snitch-secret", "", "Shared key for inbound Snitch signatures").
 		Placeholder("SECRET").
+		Required().
+		NotBlank().
 		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 		Value()
 	adminToken := command.String(
@@ -39,9 +43,10 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 	managementAddr := command.String(
 		"management-listen-address",
 		"127.0.0.1:8081",
-		"Management listener address; empty disables it",
+		"Management HTTP listen address",
 	).
 		Placeholder("ADDR").
+		NotBlank().
 		Value()
 
 	logFormat := tinyflags.Enum(command.FlagSet, "log-format", appkitlogging.LogFormatJSON, "Log output format",
@@ -64,14 +69,22 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 		}
 
 		logger := appkitlogging.Setup(*logFormat, *debug, stdout)
-		logger.Debug("configuration loaded", "event", "configuration_loaded", "path", *path)
+		logger.Debug(
+			"configuration loaded",
+			"event", "configuration_loaded",
+			"path", *path,
+		)
 		logger.Info(
 			"starting Keycloak Warden",
 			"event", "app_starting",
 			"version", version,
 		)
 		if len(command.Overrides()) > 0 {
-			logger.Info("CLI Overrides", "event", "cli_overrides", "overrides", command.Overrides().Values())
+			logger.Info(
+				"CLI Overrides",
+				"event", "cli_overrides",
+				"overrides", command.Overrides().Values(),
+			)
 		}
 
 		return Run(

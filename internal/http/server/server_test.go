@@ -94,10 +94,11 @@ func TestNew(t *testing.T) {
 
 	newHandlers := func(ready bool) (http.Handler, http.Handler) {
 		h := server.New(server.Config{
-			Secret:    "secret",
-			Logger:    slog.Default(),
-			Processor: noopProcessor{},
-			Readiness: readiness(ready),
+			Secret:     "secret",
+			Logger:     slog.Default(),
+			Processor:  noopProcessor{},
+			Readiness:  readiness(ready),
+			WorkerDone: make(chan struct{}),
 		})
 		return h.Application, h.Management
 	}
@@ -119,6 +120,44 @@ func TestNew(t *testing.T) {
 		management.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 
 		assert.Equal(t, http.StatusOK, rec.Code)
+	})
+
+	t.Run("management reports stopped action worker", func(t *testing.T) {
+		t.Parallel()
+
+		done := make(chan struct{})
+		handlers := server.New(server.Config{
+			Logger:     slog.Default(),
+			Readiness:  readiness(true),
+			WorkerDone: done,
+		})
+
+		ready := httptest.NewRecorder()
+		handlers.Management.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		require.Equal(t, http.StatusOK, ready.Code)
+
+		close(done)
+		ready = httptest.NewRecorder()
+		handlers.Management.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		assert.Equal(t, http.StatusServiceUnavailable, ready.Code)
+		assert.Contains(t, ready.Body.String(), "Action worker unavailable")
+
+		live := httptest.NewRecorder()
+		handlers.Management.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+		assert.Equal(t, http.StatusOK, live.Code)
+	})
+
+	t.Run("management rejects missing action worker", func(t *testing.T) {
+		t.Parallel()
+
+		handlers := server.New(server.Config{
+			Logger:    slog.Default(),
+			Readiness: readiness(true),
+		})
+		ready := httptest.NewRecorder()
+		handlers.Management.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		assert.Equal(t, http.StatusServiceUnavailable, ready.Code)
+		assert.Contains(t, ready.Body.String(), "Action worker unavailable")
 	})
 
 	t.Run("management rejects ingestion", func(t *testing.T) {

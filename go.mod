@@ -6,7 +6,7 @@ require (
 	github.com/containeroo/appkit v0.7.0
 	github.com/containeroo/httpkit v0.1.1
 	github.com/containeroo/resolver v0.4.0
-	github.com/containeroo/tinyflags v0.9.0
+	github.com/containeroo/tinyflags v0.10.0
 	github.com/google/uuid v1.6.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/stretchr/testify v1.12.1

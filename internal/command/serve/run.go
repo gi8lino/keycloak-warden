@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"strings"
 
 	"github.com/containeroo/appkit/httpserver"
 	"github.com/containeroo/httpkit/grace"
@@ -28,9 +27,6 @@ func Run(
 	accessLog, metricsEnabled bool,
 	version string,
 ) error {
-	if err := validateRuntime(listen, managementListen, database, secret, metricsEnabled); err != nil {
-		return err
-	}
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -59,6 +55,10 @@ func Run(
 		destinations[name] = registry.InstrumentProvider(name, destination)
 	}
 
+	ctx, stop := grace.SignalContext(parent)
+	defer stop()
+
+	runner := actions.Start(ctx, store, destinations, logger)
 	handlers := server.New(server.Config{
 		AccessLog:      accessLog,
 		MetricsEnabled: metricsEnabled,
@@ -70,15 +70,11 @@ func Run(
 		Logger:         logger,
 		Processor:      processor,
 		Readiness:      store,
+		WorkerDone:     runner.Done(),
 	})
 
-	ctx, stop := grace.SignalContext(parent)
-	defer stop()
-
-	runner := actions.Start(ctx, store, destinations, logger)
-	defer runner.Close()
-
-	return httpserver.Run(
+	// The server owns the blocking lifecycle; stop the worker before closing SQLite.
+	err = httpserver.Run(
 		ctx,
 		listen,
 		managementListen,
@@ -86,25 +82,6 @@ func Run(
 		logger.With("server", "application"),
 		logger.With("server", "management"),
 	)
-}
 
-// validateRuntime checks flags required to serve traffic and persist state.
-func validateRuntime(listen, managementListen, database, secret string, metricsEnabled bool) error {
-	if strings.TrimSpace(database) == "" {
-		return errors.New("database is required")
-	}
-
-	if strings.TrimSpace(secret) == "" {
-		return errors.New("snitch-secret is required")
-	}
-
-	if strings.TrimSpace(listen) == "" {
-		return errors.New("listen-address is required")
-	}
-
-	if metricsEnabled && strings.TrimSpace(managementListen) == "" {
-		return errors.New("metrics require a management-listen-address")
-	}
-
-	return nil
+	return errors.Join(err, runner.Close())
 }

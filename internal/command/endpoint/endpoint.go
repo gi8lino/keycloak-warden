@@ -23,6 +23,7 @@ type Flags struct {
 func Register(root *tinyflags.Command) Flags {
 	return Flags{
 		ListenAddress: root.Globals().String("listen-address", "127.0.0.1:8080", "Application listener address").
+			NotBlank().
 			Placeholder("ADDR").
 			Value(),
 		RoutePrefix: root.Globals().String("route-prefix", "", "Application API route prefix").

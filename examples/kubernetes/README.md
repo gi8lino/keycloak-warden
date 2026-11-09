@@ -62,7 +62,7 @@ kubectl apply -k examples/kubernetes
 kubectl -n keycloak rollout status deployment/keycloak-warden
 ```
 
-The Service exposes Warden at `http://keycloak-warden:8080`. Health checks and optional Prometheus metrics use port `8081` on the Pod, not the application Service.
+The Service exposes Warden at `http://keycloak-warden:8080`. Health checks and optional Prometheus metrics use port `8081` on the Pod, not the application Service. `/readyz` requires both a responsive SQLite database and a running action worker; ordinary retryable delivery errors do not make it unready.
 
 ## Manual bans
 

@@ -23,12 +23,13 @@ import (
 func TestRun(t *testing.T) {
 	t.Parallel()
 
-	t.Run("root help lists commands", func(t *testing.T) {
+	t.Run("missing command prints root help and returns error", func(t *testing.T) {
 		t.Parallel()
 
 		var stderr bytes.Buffer
 
-		require.NoError(t, Run(t.Context(), nil, "test", io.Discard, &stderr))
+		err := Run(t.Context(), nil, "test", io.Discard, &stderr)
+		require.ErrorContains(t, err, "requires a subcommand")
 		assert.Contains(t, stderr.String(), "serve")
 		assert.Contains(t, stderr.String(), "ban")
 		assert.Contains(t, stderr.String(), "unban")
@@ -106,6 +107,7 @@ func TestRun(t *testing.T) {
 		err := Run(t.Context(), []string{
 			"serve",
 			"--config", missing,
+			"--snitch-secret", "test-secret",
 		}, "test", io.Discard, &stderr)
 
 		require.ErrorContains(t, err, "missing.yaml")
@@ -126,6 +128,7 @@ func TestRun(t *testing.T) {
 		err := Run(t.Context(), []string{
 			"serve",
 			"--config", path,
+			"--snitch-secret", "test-secret",
 		}, "test", io.Discard, &stderr)
 
 		require.ErrorContains(t, err, "invalid Warden YAML")
@@ -142,12 +145,11 @@ func TestRun(t *testing.T) {
 			"serve",
 			"--config", path,
 			"--listen-address", "127.0.0.1:8081",
-			"--management-listen-address", "",
 			"--database", "warden.db",
 			"--snitch-secret", "",
 		}, "test", io.Discard, &stderr)
 
-		require.ErrorContains(t, err, "snitch-secret is required")
+		require.ErrorContains(t, err, "snitch-secret")
 	})
 
 	t.Run("ban flags stay command scoped", func(t *testing.T) {

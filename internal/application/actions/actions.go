@@ -54,6 +54,8 @@ type Runner struct {
 	cancel context.CancelFunc
 	// done closes when the background worker has released its queue.
 	done chan struct{}
+	// err is written before done closes and read only after completion.
+	err error
 }
 
 // Start launches the action worker and returns a runner that must be closed before its queue.
@@ -71,17 +73,29 @@ func Start(
 
 	go func() {
 		defer close(runner.done)
-		run(ctx, q, destinations, logger)
+		defer cancel()
+		runner.err = run(ctx, q, destinations, logger)
 	}()
 
 	return runner
 }
 
-// Close cancels the action worker and waits for it to stop using the queue.
-// It is safe to call Close more than once.
-func (r *Runner) Close() {
-	r.cancel()
+// Done closes when the worker has stopped and its terminal error is available.
+func (r *Runner) Done() <-chan struct{} {
+	return r.done
+}
+
+// Wait blocks until the worker stops and returns its terminal error.
+func (r *Runner) Wait() error {
 	<-r.done
+	return r.err
+}
+
+// Close cancels the action worker, waits for it and returns its terminal error.
+// It is safe to call Close more than once.
+func (r *Runner) Close() error {
+	r.cancel()
+	return r.Wait()
 }
 
 // run processes durable work and waits for changes or scheduled deadlines.
@@ -90,7 +104,7 @@ func run(
 	q Queue,
 	destinations map[string]Provider,
 	logger *slog.Logger,
-) {
+) error {
 	var nextPrune time.Time
 
 	for ctx.Err() == nil {
@@ -98,11 +112,11 @@ func run(
 
 		deadline, err := processReady(ctx, q, destinations, logger)
 		if ctx.Err() != nil {
-			return
+			return nil
 		}
 
 		if err != nil {
-			logger.Error("delivery worker failed",
+			logger.Warn("delivery worker failed",
 				"event", "delivery_worker_failed",
 				"error", err,
 			)
@@ -114,6 +128,8 @@ func run(
 
 		waitUntil(ctx, q.Changes(), earliestDeadline(deadline, nextPrune))
 	}
+
+	return nil
 }
 
 // pruneIfDue removes expired observations when due and returns the next cleanup deadline.
@@ -130,7 +146,7 @@ func pruneIfDue(
 
 	if err := q.Prune(ctx, now); err != nil {
 		if ctx.Err() == nil {
-			logger.Error(
+			logger.Warn(
 				"observation cleanup failed",
 				"event", "observation_cleanup_failed",
 				"error", err,

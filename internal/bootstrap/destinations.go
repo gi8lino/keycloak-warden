@@ -29,11 +29,14 @@ func Destinations(targets config.Targets) (providers map[string]actions.Provider
 	if err := targets.Validate(); err != nil {
 		return nil, nil, err
 	}
+
 	providers = make(map[string]actions.Provider, len(targets.Webhook)+len(targets.Cloudflare))
+
 	client := &http.Client{
 		Timeout:       defaultClientTimeout,
 		CheckRedirect: noRedirect,
 	}
+
 	values := resolver.NewDefaultRegistry(
 		resolver.WithEmptyValuePolicy(resolver.RejectBlank),
 		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),

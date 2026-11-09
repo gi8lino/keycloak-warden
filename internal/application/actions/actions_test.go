@@ -2,6 +2,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"sync"
@@ -48,22 +49,67 @@ func TestStart(t *testing.T) {
 
 		q := &blockingQueue{started: make(chan struct{}), stopped: make(chan struct{})}
 		runner := Start(t.Context(), q, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
-		defer runner.Close()
+		defer func() { require.NoError(t, runner.Close()) }()
 		select {
 		case <-q.started:
 		case <-time.After(3 * time.Second):
 			require.FailNow(t, "worker did not start maintenance")
 		}
 		var closes sync.WaitGroup
+		closeErrors := make(chan error, 2)
 		for range 2 {
-			closes.Go(runner.Close)
+			closes.Go(func() { closeErrors <- runner.Close() })
 		}
 		closes.Wait()
+		close(closeErrors)
+		for err := range closeErrors {
+			require.NoError(t, err)
+		}
+		require.NoError(t, runner.Wait())
+		select {
+		case <-runner.Done():
+		default:
+			require.FailNow(t, "Done did not close after Close returned")
+		}
 		select {
 		case <-q.stopped:
 		default:
 			require.FailNow(t, "Close returned while worker still used the queue")
 		}
+	})
+}
+
+func TestRunnerWait(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wait blocks until completion", func(t *testing.T) {
+		t.Parallel()
+		q := &blockingQueue{started: make(chan struct{}), stopped: make(chan struct{})}
+		runner := Start(t.Context(), q, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		defer func() { require.NoError(t, runner.Close()) }()
+		<-q.started
+		waitResult := make(chan error, 1)
+		go func() { waitResult <- runner.Wait() }()
+		select {
+		case <-runner.Done():
+			require.FailNow(t, "worker exited without cancellation")
+		case <-waitResult:
+			require.FailNow(t, "Wait returned before worker stopped")
+		default:
+		}
+		require.NoError(t, runner.Close())
+		require.NoError(t, <-waitResult)
+	})
+
+	t.Run("reports terminal errors to every waiter", func(t *testing.T) {
+		t.Parallel()
+		terminalErr := errors.New("terminal failure")
+		finished := make(chan struct{})
+		runner := &Runner{done: finished}
+		runner.err = terminalErr
+		close(finished)
+		require.ErrorIs(t, runner.Wait(), terminalErr)
+		require.ErrorIs(t, runner.Wait(), terminalErr)
 	})
 }
 
@@ -164,7 +210,7 @@ func TestWorkerWakeups(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := &scriptedQueue{changes: make(chan struct{}, 1), deadlines: []time.Time{{}, time.Now().Add(11 * time.Minute)}}
 		r := Start(t.Context(), q, nil, slog.Default())
-		defer r.Close()
+		defer func() { require.NoError(t, r.Close()) }()
 		synctest.Wait()
 		require.Equal(t, 1, int(q.cycles.Load()))
 		time.Sleep(10 * time.Minute)

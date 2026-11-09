@@ -380,7 +380,7 @@ func TestNewApplication(t *testing.T) {
 		defer store.Close() //nolint:errcheck
 		destinations := map[string]actions.Provider{"notify": webhook.Provider{URL: target.URL, Client: target.Client(), Headers: http.Header{"X-Api-Key": {"expected"}}}}
 		runner := actions.Start(t.Context(), store, destinations, slog.Default())
-		defer runner.Close()
+		defer func() { require.NoError(t, runner.Close()) }()
 		body := `{"id":"real-format","timestamp":"2026-11-05T00:00:00Z","schemaVersion":1,"source":"keycloak","type":"LOGIN_ERROR","ipAddress":"203.0.113.8"}`
 		req := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body))
 		ts := strconv.FormatInt(time.Now().Unix(), 10)
