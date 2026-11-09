@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
 // BanManual creates or extends one manual source and queues the resulting effective state.
@@ -108,43 +109,122 @@ func (s *Store) ListBans(ctx context.Context, now time.Time) ([]bans.Ban, error)
 	return list, tx.Commit()
 }
 
-// listBans reads active decisions and their sources in a consistent transaction.
-func listBans(ctx context.Context, tx *sql.Tx, now time.Time) (list []bans.Ban, err error) {
+// listBans loads active decisions, sources and acknowledgements with three queries.
+// All three queries share the caller's read-only transaction and snapshot.
+func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Ban, error) {
+	list, byIP, err := readActiveBans(ctx, tx, now)
+	if err != nil || len(list) == 0 {
+		return list, err
+	}
+
+	if err := appendActiveSources(ctx, tx, list, byIP, now); err != nil {
+		return nil, err
+	}
+	if err := appendActiveDeliveries(ctx, tx, list, byIP, now); err != nil {
+		return nil, err
+	}
+	return list, nil
+}
+
+// readActiveBans selects active decisions in IP order and indexes their positions.
+func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Ban, map[string]int, error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT id
+SELECT id, revision, ip, active, expires, failures
 FROM decisions
 WHERE active = 1 AND expires > ?
 ORDER BY ip
 `, now.UnixMilli())
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	var ids []string
+
+	list := []bans.Ban{}
+	byIP := make(map[string]int)
 	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			_ = rows.Close()
-			return nil, err
+		view := bans.Ban{
+			Sources:    []bans.Source{},
+			Deliveries: []decisions.Acknowledgement{},
 		}
-		ids = append(ids, id)
+		var expires int64
+		if err := rows.Scan(
+			&view.Decision.ID, &view.Decision.Revision, &view.Decision.IP,
+			&view.Decision.Active, &expires, &view.Decision.Failures,
+		); err != nil {
+			_ = rows.Close()
+			return nil, nil, err
+		}
+		view.Decision.ExpiresAt = time.UnixMilli(expires).UTC()
+		byIP[view.Decision.IP] = len(list)
+		list = append(list, view)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
-		return nil, err
+		return nil, nil, err
 	}
 	if err := rows.Close(); err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+	return list, byIP, nil
+}
+
+// appendActiveSources attaches unexpired sources to the selected active decisions.
+func appendActiveSources(ctx context.Context, tx *sql.Tx, list []bans.Ban, byIP map[string]int, now time.Time) error {
+	rows, err := tx.QueryContext(ctx, `
+SELECT s.ip, s.kind, s.expires, s.reason
+FROM ban_sources AS s
+JOIN decisions AS d ON d.ip = s.ip
+WHERE d.active = 1 AND d.expires > ? AND s.expires > ?
+ORDER BY s.ip, s.kind
+`, now.UnixMilli(), now.UnixMilli())
+	if err != nil {
+		return err
 	}
 
-	list = make([]bans.Ban, 0, len(ids))
-	for _, id := range ids {
-		view, err := readBan(ctx, tx, id, now)
-		if err != nil {
-			return nil, err
+	for rows.Next() {
+		var ip string
+		var source bans.Source
+		var expires int64
+		if err := rows.Scan(&ip, &source.Kind, &expires, &source.Reason); err != nil {
+			_ = rows.Close()
+			return err
 		}
-		list = append(list, view)
+		source.ExpiresAt = time.UnixMilli(expires).UTC()
+		list[byIP[ip]].Sources = append(list[byIP[ip]].Sources, source)
 	}
-	return list, nil
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	return rows.Close()
+}
+
+// appendActiveDeliveries attaches destination acknowledgements in destination order.
+func appendActiveDeliveries(ctx context.Context, tx *sql.Tx, list []bans.Ban, byIP map[string]int, now time.Time) error {
+	rows, err := tx.QueryContext(ctx, `
+SELECT q.ip, q.destination, q.acknowledged
+FROM deliveries AS q
+JOIN decisions AS d ON d.ip = q.ip
+WHERE d.active = 1 AND d.expires > ?
+ORDER BY q.ip, q.destination
+`, now.UnixMilli())
+	if err != nil {
+		return err
+	}
+
+	for rows.Next() {
+		var ip string
+		var ack decisions.Acknowledgement
+		if err := rows.Scan(&ip, &ack.Destination, &ack.Revision); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		list[byIP[ip]].Deliveries = append(list[byIP[ip]].Deliveries, ack)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	return rows.Close()
 }
 
 // GetBan returns the persisted decision and all currently active sources.

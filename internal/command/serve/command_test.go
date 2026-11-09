@@ -21,7 +21,7 @@ func startupLog(t *testing.T, args ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "warden.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("rule:\n  threshold: 2\n  window: 1m\n  ban: 1m\n"), 0o600))
+	require.NoError(t, os.WriteFile(path, []byte("rule:\n  threshold: 2\n  window: 1m\n  ban: 1m\ntargets:\n  webhook:\n    local:\n      url: http://127.0.0.1:8090/hook\n"), 0o600))
 
 	occupied := httptest.NewServer(http.NotFoundHandler())
 	defer occupied.Close()

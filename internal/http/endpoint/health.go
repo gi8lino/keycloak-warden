@@ -26,6 +26,11 @@ func Ready(prober ReadinessProber, workerDone <-chan struct{}) http.HandlerFunc 
 			httpresponse.Problem(w, http.StatusServiceUnavailable, "Action worker unavailable.")
 		}
 	}
+	if prober == nil {
+		return func(w http.ResponseWriter, _ *http.Request) {
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "Database unavailable.")
+		}
+	}
 	return func(w http.ResponseWriter, r *http.Request) {
 		select {
 		case <-workerDone:

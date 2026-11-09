@@ -76,6 +76,14 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 		return err
 	}
 
+	var databaseVersion int64
+	if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(version), 0) FROM schema_migrations").Scan(&databaseVersion); err != nil {
+		return err
+	}
+	if supportedVersion := planned[len(planned)-1].version; databaseVersion > int64(supportedVersion) {
+		return fmt.Errorf("database schema version %d is newer than supported version %d", databaseVersion, supportedVersion)
+	}
+
 	for _, item := range planned {
 		var applied bool
 		if err := tx.QueryRowContext(ctx, `

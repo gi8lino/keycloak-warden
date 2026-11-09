@@ -111,6 +111,18 @@ func (s *Store) Finish(ctx context.Context, job actions.Job, success bool, now t
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	if !success {
+		// A newer decision may have been committed while the provider was called.
+		// Never delay that revision because delivery of an older one failed.
+		var revision int64
+		if err := tx.QueryRowContext(ctx, "SELECT revision FROM decisions WHERE ip = ?", job.Decision.IP).Scan(&revision); err != nil {
+			return err
+		}
+		if revision != job.Decision.Revision {
+			return tx.Commit()
+		}
+	}
+
 	if success {
 		err = acknowledgeDelivery(ctx, tx, job)
 	} else {

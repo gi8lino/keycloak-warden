@@ -63,7 +63,7 @@ Use `warden --help` to see the available commands, or `warden <command> --help` 
 
 ## Configuration
 
-Warden reads detection rules and provider-grouped, named targets from `warden.yaml`. Each configured target receives the same decision independently and retries failed delivery. To disable a target, remove it from the configuration after ensuring it no longer owns any active bans.
+Warden reads detection rules and provider-grouped, named targets from `warden.yaml`. At least one webhook or Cloudflare target is required; Warden does not run in monitoring-only mode. Each configured target receives the same decision independently and retries failed delivery. To disable a target, remove it from the configuration after ensuring it no longer owns any active bans. Do not remove the final target.
 
 ```yaml
 rule:

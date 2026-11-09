@@ -40,12 +40,10 @@ func New(address, token string) (*Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("admin-token is required")
 	}
-
 	parsed, err := parseApplicationURL(address)
 	if err != nil {
 		return nil, err
 	}
-
 	return &Client{
 		url:   parsed,
 		token: token,
@@ -80,9 +78,7 @@ func parseApplicationURL(address string) (parsed *url.URL, err error) {
 	if err := prefix.ValidateRoutePrefix(parsed.Path); err != nil {
 		return nil, fmt.Errorf("invalid application-url route prefix: %w", err)
 	}
-
 	parsed.Path = prefix.NormalizeRoutePrefix(parsed.Path)
-
 	return parsed, nil
 }
 
@@ -203,7 +199,17 @@ func (c *Client) do(
 		return fmt.Errorf("application HTTP %d: %s", res.StatusCode, strings.TrimSpace(string(message)))
 	}
 
-	if err := json.NewDecoder(io.LimitReader(res.Body, maxAdminResponseBytes)).Decode(target); err != nil {
+	// Read one byte beyond the limit so an oversized response is never accepted.
+	data, err := io.ReadAll(io.LimitReader(res.Body, maxAdminResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("read application response: %w", err)
+	}
+	if len(data) > maxAdminResponseBytes {
+		return fmt.Errorf("application response exceeds %d bytes", maxAdminResponseBytes)
+	}
+
+	// Unmarshal rejects trailing JSON documents and any non-whitespace suffix.
+	if err := json.Unmarshal(data, target); err != nil {
 		return fmt.Errorf("decode application response: %w", err)
 	}
 

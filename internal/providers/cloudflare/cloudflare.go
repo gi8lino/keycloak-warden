@@ -15,6 +15,9 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
+// maxRulePages bounds the number of Cloudflare list requests in one reconciliation.
+const maxRulePages = 100
+
 // Provider manages blocks in one Cloudflare zone.
 type Provider struct {
 	// RulesURL points to the zone's IP Access rules endpoint.
@@ -117,7 +120,7 @@ func (p Provider) find(ctx context.Context, want rule) (ids []string, err error)
 		"match":               {"all"},
 	}
 
-	for page := 1; ; page++ {
+	for page := 1; page <= maxRulePages; page++ {
 		query.Set("page", fmt.Sprint(page))
 		resp, err := p.call(ctx, http.MethodGet, p.RulesURL+"?"+query.Encode(), nil)
 		if err != nil {
@@ -135,10 +138,16 @@ func (p Provider) find(ctx context.Context, want rule) (ids []string, err error)
 			}
 		}
 
+		if resp.Info.Pages < 0 || resp.Info.Pages > maxRulePages {
+			return nil, fmt.Errorf("Cloudflare pagination exceeds supported bounds: %d pages", resp.Info.Pages) // nolint:staticcheck
+		}
+		// Cloudflare can omit pagination metadata for a single-page result.
 		if page >= resp.Info.Pages {
 			return ids, nil
 		}
 	}
+
+	return nil, fmt.Errorf("Cloudflare pagination exceeded %d pages", maxRulePages) // nolint:staticcheck
 }
 
 // matches checks all remote ownership and addressing fields before allowing deletion.

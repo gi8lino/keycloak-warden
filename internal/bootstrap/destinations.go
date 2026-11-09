@@ -41,20 +41,19 @@ func Destinations(targets config.Targets) (providers map[string]actions.Provider
 		resolver.WithEmptyValuePolicy(resolver.RejectBlank),
 		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
 	)
-
 	// Kubernetes Secret volumes commonly end in a newline. Keep meaningful spaces.
 	values.Register("file:", &resolver.KeyValueFileResolver{Whitespace: resolver.FileTrimNewlines})
 
-	for name, target := range targets.Webhook {
-		provider, err := buildWebhook(target, client, values)
+	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
+		provider, err := buildWebhook(targets.Webhook[name], client, values)
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", "webhook."+name, err)
 		}
 		providers["webhook."+name] = provider
 	}
 
-	for name, target := range targets.Cloudflare {
-		provider, err := buildCloudflare(target, client, values)
+	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
+		provider, err := buildCloudflare(targets.Cloudflare[name], client, values)
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", "cloudflare."+name, err)
 		}
@@ -72,7 +71,6 @@ func validZoneID(value string) bool {
 	if len(value) != 32 {
 		return false
 	}
-
 	_, err := hex.DecodeString(value)
 	return err == nil
 }
@@ -94,18 +92,16 @@ func buildWebhook(
 	}
 
 	headers := make(http.Header, len(target.Headers))
-	for name, reference := range target.Headers {
+	for _, name := range slices.Sorted(maps.Keys(target.Headers)) {
+		reference := target.Headers[name]
 		canonical := http.CanonicalHeaderKey(name)
-
 		value, err := values.ResolveVariable(reference)
 		if err != nil {
 			return nil, fmt.Errorf("headers %s: %w", name, err)
 		}
-
 		if !validHeaderValue(value) {
 			return nil, fmt.Errorf("headers %q: invalid HTTP header value", name)
 		}
-
 		headers.Set(canonical, value)
 	}
 
@@ -149,7 +145,6 @@ func resolveWebhookURL(values *resolver.Registry, reference string) (string, err
 		// HTTP(S) URL schemes are not resolver schemes; treat them as literals.
 		reference = "literal:" + reference
 	}
-
 	value, err := values.ResolveVariable(reference)
 	if err != nil {
 		return "", fmt.Errorf("url: %w", err)
@@ -165,7 +160,6 @@ func validHeaderValue(value string) bool {
 			return false
 		}
 	}
-
 	return true
 }
 

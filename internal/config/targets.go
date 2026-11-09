@@ -3,14 +3,22 @@ package config
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"net/http"
+	"slices"
 	"strings"
 	"unicode"
 )
 
 // Validate checks target names, required fields and webhook header names.
 func (targets Targets) Validate() error {
-	for name, target := range targets.Webhook {
+	if len(targets.Webhook)+len(targets.Cloudflare) == 0 {
+		return errors.New("at least one webhook or cloudflare target is required")
+	}
+
+	// Sort map keys to select the same first validation error every time.
+	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
+		target := targets.Webhook[name]
 		id := "webhook." + name
 
 		if err := validateTargetName(name); err != nil {
@@ -22,7 +30,8 @@ func (targets Targets) Validate() error {
 		}
 
 		seen := make(map[string]struct{}, len(target.Headers))
-		for header, reference := range target.Headers {
+		for _, header := range slices.Sorted(maps.Keys(target.Headers)) {
+			reference := target.Headers[header]
 			if err := validateHeaderName(header); err != nil {
 				return fmt.Errorf("target %q: headers %q: %w", id, header, err)
 			}
@@ -39,7 +48,8 @@ func (targets Targets) Validate() error {
 		}
 	}
 
-	for name, target := range targets.Cloudflare {
+	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
+		target := targets.Cloudflare[name]
 		id := "cloudflare." + name
 
 		if err := validateTargetName(name); err != nil {
@@ -54,7 +64,6 @@ func (targets Targets) Validate() error {
 			return fmt.Errorf("target %q: api-token: value must not be blank", id)
 		}
 	}
-
 	return nil
 }
 
@@ -69,7 +78,6 @@ func validateTargetName(name string) error {
 			return errors.New("name must not contain whitespace or control characters")
 		}
 	}
-
 	return nil
 }
 

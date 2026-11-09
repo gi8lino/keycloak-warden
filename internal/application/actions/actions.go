@@ -12,7 +12,7 @@ import (
 const (
 	// pruneInterval defines how often expired records are cleaned up.
 	pruneInterval = time.Hour
-	// drainBudget limits how long the worker processes pending actions per cycle.
+	// drainBudget limits when a cycle may start another job; in-flight deliveries may finish later.
 	drainBudget = time.Second
 	// storageRetry defines the delay before retrying a failed storage operation.
 	storageRetry = 5 * time.Second
@@ -107,7 +107,6 @@ func run(
 ) error {
 	var nextPrune time.Time
 
-	// Keep processing until the context is cancelled or its deadline expires.
 	for ctx.Err() == nil {
 		nextPrune = pruneIfDue(ctx, q, logger, nextPrune)
 
@@ -141,8 +140,6 @@ func pruneIfDue(
 	nextPrune time.Time,
 ) (nextDeadline time.Time) {
 	now := time.Now()
-
-	// Skip cleanup until the next scheduled deadline.
 	if now.Before(nextPrune) {
 		return nextPrune
 	}
@@ -155,12 +152,9 @@ func pruneIfDue(
 				"error", err,
 			)
 		}
-
-		// Retry sooner after a failure instead of waiting for the normal interval.
 		return now.Add(storageRetry)
 	}
 
-	// Schedule the next periodic cleanup after a successful run.
 	return now.Add(pruneInterval)
 }
 
@@ -182,7 +176,7 @@ func processReady(
 	return q.NextDeadline(ctx)
 }
 
-// drainReady dispatches pending jobs within a bounded processing interval.
+// drainReady starts jobs within a soft time budget; it does not interrupt in-flight delivery.
 func drainReady(
 	ctx context.Context,
 	q Queue,
@@ -190,7 +184,6 @@ func drainReady(
 	logger *slog.Logger,
 	deadline time.Time,
 ) error {
-	// Process jobs until shutdown or the processing time budget is exhausted.
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
 			// Stop processing if the context was cancelled or its deadline expired.
@@ -208,7 +201,7 @@ func drainReady(
 		}
 	}
 
-	return nil
+	return ctx.Err()
 }
 
 // earliestDeadline returns the first nonzero deadline, or the earlier of two.
