@@ -32,12 +32,14 @@ func TestConfigValidate(t *testing.T) {
 
 	t.Run("rejects invalid target headers before initialization", func(t *testing.T) {
 		t.Parallel()
+
 		cfg := Config{
 			Rule: detection.Rule{Threshold: 5, Window: time.Minute, Ban: 15 * time.Minute},
 			Targets: Targets{Webhook: map[string]WebhookTarget{
 				"ops": {URL: "https://example.org", Headers: map[string]string{"Content-Type": "text/plain"}},
 			}},
 		}
+
 		require.ErrorContains(t, cfg.Validate(), "Content-Type is reserved")
 	})
 }
@@ -47,6 +49,7 @@ func TestTargetsValidate(t *testing.T) {
 
 	t.Run("allows arbitrary valid HTTP headers except Content-Type", func(t *testing.T) {
 		t.Parallel()
+
 		targets := Targets{Webhook: map[string]WebhookTarget{
 			"ops": {URL: "env:WEBHOOK_URL", Headers: map[string]string{
 				"Authorization":       "env:WEBHOOK_AUTH",
@@ -57,63 +60,188 @@ func TestTargetsValidate(t *testing.T) {
 				"X-API_Key":           "literal:custom:value",
 			}},
 		}}
+
 		require.NoError(t, targets.Validate())
 	})
 
-	for _, name := range []string{"", "X Bad", "X:Bad", "X\nBad", "Content-Type", "content-type", "CONTENT-TYPE"} {
-		t.Run("rejects invalid or reserved header "+name, func(t *testing.T) {
-			t.Parallel()
-			targets := Targets{Webhook: map[string]WebhookTarget{
-				"ops": {URL: "https://example.org", Headers: map[string]string{name: "value"}},
-			}}
-			require.ErrorContains(t, targets.Validate(), "headers")
-		})
+	// Each invalid header name has an independent test.
+	rejectHeaderName := func(t *testing.T, name string) {
+		t.Helper()
+
+		targets := Targets{Webhook: map[string]WebhookTarget{
+			"ops": {URL: "https://example.org", Headers: map[string]string{name: "value"}},
+		}}
+
+		require.ErrorContains(t, targets.Validate(), "headers")
 	}
+
+	t.Run("rejects empty header name", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "")
+	})
+
+	t.Run("rejects header name containing spaces", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "X Bad")
+	})
+
+	t.Run("rejects header name containing a colon", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "X:Bad")
+	})
+
+	t.Run("rejects header name containing a newline", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "X\nBad")
+	})
+
+	t.Run("rejects reserved Content-Type header", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "Content-Type")
+	})
+
+	t.Run("rejects lowercase content-type header", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "content-type")
+	})
+
+	t.Run("rejects uppercase CONTENT-TYPE header", func(t *testing.T) {
+		t.Parallel()
+		rejectHeaderName(t, "CONTENT-TYPE")
+	})
 
 	t.Run("reserves Content-Type explicitly", func(t *testing.T) {
 		t.Parallel()
+
 		targets := Targets{Webhook: map[string]WebhookTarget{
 			"ops": {URL: "https://example.org", Headers: map[string]string{"cOnTeNt-TyPe": "text/plain"}},
 		}}
+
 		require.ErrorContains(t, targets.Validate(), "Content-Type is reserved")
 	})
 
 	t.Run("rejects duplicate header names case-insensitively", func(t *testing.T) {
 		t.Parallel()
+
 		targets := Targets{Webhook: map[string]WebhookTarget{
-			"ops": {URL: "https://example.org", Headers: map[string]string{"x-api-key": "a", "X-API-Key": "b"}},
+			"ops": {URL: "https://example.org", Headers: map[string]string{
+				"x-api-key": "a",
+				"X-API-Key": "b",
+			}},
 		}}
+
 		require.ErrorContains(t, targets.Validate(), "duplicate header name")
 	})
 
-	for _, name := range []string{"", " ", "bad/name", "bad name", "bad\nname"} {
-		t.Run("rejects invalid webhook target name "+name, func(t *testing.T) {
-			t.Parallel()
-			targets := Targets{Webhook: map[string]WebhookTarget{name: {URL: "https://example.org"}}}
-			require.ErrorContains(t, targets.Validate(), "name")
-		})
+	// Each invalid target name has an independent test.
+	rejectWebhookName := func(t *testing.T, name string) {
+		t.Helper()
+
+		targets := Targets{Webhook: map[string]WebhookTarget{
+			name: {URL: "https://example.org"},
+		}}
+
+		require.ErrorContains(t, targets.Validate(), "name")
 	}
+
+	t.Run("rejects empty webhook target name", func(t *testing.T) {
+		t.Parallel()
+		rejectWebhookName(t, "")
+	})
+
+	t.Run("rejects whitespace-only webhook target name", func(t *testing.T) {
+		t.Parallel()
+		rejectWebhookName(t, " ")
+	})
+
+	t.Run("rejects webhook target name containing spaces", func(t *testing.T) {
+		t.Parallel()
+		rejectWebhookName(t, "bad name")
+	})
+
+	t.Run("rejects webhook target name containing a newline", func(t *testing.T) {
+		t.Parallel()
+		rejectWebhookName(t, "bad\nname")
+	})
 
 	t.Run("rejects invalid cloudflare target name", func(t *testing.T) {
 		t.Parallel()
-		targets := Targets{Cloudflare: map[string]CloudflareTarget{"bad/name": {ZoneID: strings.Repeat("a", 32), APIToken: "token"}}}
+
+		targets := Targets{Cloudflare: map[string]CloudflareTarget{
+			"bad name": {
+				ZoneID:   strings.Repeat("a", 32),
+				APIToken: "token",
+			},
+		}}
+
 		require.ErrorContains(t, targets.Validate(), "name")
 	})
 
-	tests := []struct {
-		name    string
-		targets Targets
-		want    string
-	}{
-		{"empty webhook URL", Targets{Webhook: map[string]WebhookTarget{"ops": {}}}, "url"},
-		{"empty header reference", Targets{Webhook: map[string]WebhookTarget{"ops": {URL: "https://example.org", Headers: map[string]string{"X-Key": " "}}}}, "headers"},
-		{"empty Cloudflare zone", Targets{Cloudflare: map[string]CloudflareTarget{"edge": {APIToken: "token"}}}, "zone-id"},
-		{"empty Cloudflare token", Targets{Cloudflare: map[string]CloudflareTarget{"edge": {ZoneID: strings.Repeat("a", 32)}}}, "api-token"},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			assert.ErrorContains(t, tc.targets.Validate(), tc.want)
-		})
-	}
+	t.Run("accepts slashes in webhook target names", func(t *testing.T) {
+		t.Parallel()
+
+		targets := Targets{Webhook: map[string]WebhookTarget{
+			"ops/alerts": {URL: "https://example.org"},
+		}}
+
+		require.NoError(t, targets.Validate())
+	})
+
+	t.Run("accepts slashes in cloudflare target names", func(t *testing.T) {
+		t.Parallel()
+
+		targets := Targets{Cloudflare: map[string]CloudflareTarget{
+			"primary/zone": {
+				ZoneID:   strings.Repeat("a", 32),
+				APIToken: "token",
+			},
+		}}
+
+		require.NoError(t, targets.Validate())
+	})
+
+	t.Run("rejects empty webhook URL", func(t *testing.T) {
+		t.Parallel()
+
+		targets := Targets{Webhook: map[string]WebhookTarget{
+			"ops": {},
+		}}
+
+		assert.ErrorContains(t, targets.Validate(), "url")
+	})
+
+	t.Run("rejects empty header reference", func(t *testing.T) {
+		t.Parallel()
+
+		targets := Targets{Webhook: map[string]WebhookTarget{
+			"ops": {
+				URL: "https://example.org",
+				Headers: map[string]string{
+					"X-Key": " ",
+				},
+			},
+		}}
+
+		assert.ErrorContains(t, targets.Validate(), "headers")
+	})
+
+	t.Run("rejects empty cloudflare zone", func(t *testing.T) {
+		t.Parallel()
+
+		targets := Targets{Cloudflare: map[string]CloudflareTarget{
+			"edge": {APIToken: "token"},
+		}}
+
+		assert.ErrorContains(t, targets.Validate(), "zone-id")
+	})
+
+	t.Run("rejects empty cloudflare token", func(t *testing.T) {
+		t.Parallel()
+
+		targets := Targets{Cloudflare: map[string]CloudflareTarget{
+			"edge": {ZoneID: strings.Repeat("a", 32)},
+		}}
+
+		assert.ErrorContains(t, targets.Validate(), "api-token")
+	})
 }
