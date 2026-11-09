@@ -25,6 +25,42 @@ Open the [demo realm’s account console](http://127.0.0.1:18080/realms/warden-e
 
 Press Ctrl+C to stop following the logs, then run `make e2e-down` to stop the stack. The [Compose guide](examples/e2e/README.md) includes the automated end-to-end test.
 
+## CLI Commands
+
+Warden provides commands for running the server, managing IP bans, and inspecting persisted decisions.
+
+| Command       | Description                                                              |
+| :------------ | :----------------------------------------------------------------------- |
+| `serve`       | Start the HTTP server, event receiver, and delivery worker.              |
+| `ban`         | Manually ban one or more IP addresses.                                   |
+| `unban`       | Remove bans for one or more IP addresses.                                |
+| `list-active` | List active bans, their sources, and delivery status.                    |
+| `inspect`     | Inspect one or more decisions and their delivery acknowledgements by ID. |
+
+### Examples
+
+```
+# Start Warden
+warden serve --config warden.yaml
+
+# Manually ban an IP
+warden ban 203.0.113.10 --duration 1h --reason "Suspicious activity"
+
+# Ban multiple IPs
+warden ban 203.0.113.10 203.0.113.11 --duration 1h --reason "Investigation"
+
+# Remove bans
+warden unban 203.0.113.10 203.0.113.11
+
+# List active bans
+warden list-active --output json
+
+# Inspect multiple decisions
+warden inspect ID1 ID2 --output json
+```
+
+Use `warden --help` to see the available commands, or `warden <command> --help` for command-specific flags and environment variables.
+
 ## Configuration
 
 Warden reads detection rules and provider-grouped, named targets from `warden.yaml`. Each configured target receives the same decision independently and retries failed delivery. To disable a target, remove it from the configuration after ensuring it no longer owns any active bans.
