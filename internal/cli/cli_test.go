@@ -12,8 +12,12 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -95,8 +99,8 @@ func TestRun(t *testing.T) {
 		var stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect"}, "test", io.Discard, &stderr)
 
-		require.ErrorContains(t, err, "exactly 1 positional")
-		assert.Contains(t, stderr.String(), "exactly 1 positional")
+		require.ErrorContains(t, err, "positional")
+		assert.Contains(t, stderr.String(), "positional")
 	})
 
 	t.Run("serve requires readable config", func(t *testing.T) {
@@ -518,5 +522,97 @@ func TestRun(t *testing.T) {
 
 		require.Error(t, err)
 		assert.NotEmpty(t, stderr.String())
+	})
+}
+
+// inspectTestDatabase creates two persisted decisions for CLI inspection tests.
+func inspectTestDatabase(t *testing.T) (string, []string) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "warden.db")
+	store, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, store.Close()) })
+	service, err := bans.New(store)
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	first, err := service.Ban(t.Context(), bans.Request{IP: "203.0.113.10", Duration: time.Hour, Reason: "incident one"}, now)
+	require.NoError(t, err)
+	second, err := service.Ban(t.Context(), bans.Request{IP: "203.0.113.11", Duration: time.Hour, Reason: "incident two"}, now)
+	require.NoError(t, err)
+	return path, []string{first.Decision.ID, second.Decision.ID}
+}
+
+func TestInspectMultiple(t *testing.T) {
+	t.Parallel()
+
+	t.Run("text displays multiple decisions", func(t *testing.T) {
+		t.Parallel()
+		path, ids := inspectTestDatabase(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
+		require.NoError(t, err, stderr.String())
+		first := strings.Index(stdout.String(), "ID: "+ids[1])
+		second := strings.Index(stdout.String(), "ID: "+ids[0])
+		assert.GreaterOrEqual(t, first, 0)
+		assert.Greater(t, second, first)
+		assert.Contains(t, stdout.String(), "Deliveries: none\n\nID: "+ids[0])
+	})
+
+	t.Run("JSON always returns an array, including for one ID", func(t *testing.T) {
+		t.Parallel()
+		path, ids := inspectTestDatabase(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"inspect", ids[0], "--database", path, "--output", "json"}, "test", &stdout, &stderr)
+		require.NoError(t, err, stderr.String())
+		var views []decisions.Inspection
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
+		require.Len(t, views, 1)
+		assert.Equal(t, ids[0], views[0].Decision.ID)
+	})
+
+	t.Run("JSON preserves requested order for multiple IDs", func(t *testing.T) {
+		t.Parallel()
+		path, ids := inspectTestDatabase(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"--output", "json", "inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
+		require.NoError(t, err, stderr.String())
+		var views []decisions.Inspection
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
+		require.Len(t, views, 2)
+		assert.Equal(t, ids[1], views[0].Decision.ID)
+		assert.Equal(t, ids[0], views[1].Decision.ID)
+	})
+
+	t.Run("YAML returns a sequence", func(t *testing.T) {
+		t.Parallel()
+		path, ids := inspectTestDatabase(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"inspect", ids[0], ids[1], "--database", path, "--output", "yaml"}, "test", &stdout, &stderr)
+		require.NoError(t, err, stderr.String())
+		var views []struct {
+			Decision struct {
+				ID string `yaml:"id"`
+			} `yaml:"decision"`
+		}
+		require.NoError(t, yaml.Load(stdout.Bytes(), &views))
+		require.Len(t, views, 2)
+		assert.Equal(t, ids[0], views[0].Decision.ID)
+		assert.Equal(t, ids[1], views[1].Decision.ID)
+	})
+
+	t.Run("missing ID fails without partial output", func(t *testing.T) {
+		t.Parallel()
+		path, ids := inspectTestDatabase(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"inspect", ids[0], "missing-id", "--database", path, "--output", "json"}, "test", &stdout, &stderr)
+		require.ErrorContains(t, err, "missing-id")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("blank database flag fails parsing", func(t *testing.T) {
+		t.Parallel()
+		var stderr bytes.Buffer
+		err := Run(t.Context(), []string{"inspect", "decision", "--database", "  "}, "test", io.Discard, &stderr)
+		require.ErrorContains(t, err, "must not be blank")
 	})
 }

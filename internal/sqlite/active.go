@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"net/url"
 	"path/filepath"
 	"time"
@@ -22,24 +23,50 @@ func openReader(path string) (*sql.DB, error) {
 }
 
 // Inspect returns a consistent view of a decision and its pending deliveries.
-func Inspect(ctx context.Context, path, id string) (view decisions.Inspection, err error) {
-	view = decisions.Inspection{Deliveries: []decisions.Acknowledgement{}}
+func Inspect(ctx context.Context, path, id string) (decisions.Inspection, error) {
+	views, err := InspectMany(ctx, path, []string{id})
+	if err != nil {
+		return decisions.Inspection{}, err
+	}
+	return views[0], nil
+}
 
+// InspectMany returns the requested decisions and deliveries from one read-only transaction.
+func InspectMany(ctx context.Context, path string, ids []string) ([]decisions.Inspection, error) {
 	db, err := openReader(path)
 	if err != nil {
-		return view, err
+		return nil, err
 	}
 	defer db.Close() // nolint:errcheck
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return view, err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	views := make([]decisions.Inspection, 0, len(ids))
+	for _, id := range ids {
+		view, err := inspectTx(ctx, tx, id)
+		if err != nil {
+			return nil, fmt.Errorf("inspect decision %q: %w", id, err)
+		}
+		views = append(views, view)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return views, nil
+}
+
+// inspectTx reads a decision and its deliveries within an existing transaction.
+func inspectTx(ctx context.Context, tx *sql.Tx, id string) (decisions.Inspection, error) {
+	view := decisions.Inspection{Deliveries: []decisions.Acknowledgement{}}
+
 	decision := &view.Decision
 	var expires int64
-	err = tx.QueryRowContext(ctx, `
+	err := tx.QueryRowContext(ctx, `
 SELECT id, revision, ip, active, expires, failures
 FROM decisions
 WHERE id = ?
@@ -77,7 +104,7 @@ ORDER BY destination
 		return view, err
 	}
 
-	return view, tx.Commit()
+	return view, nil
 }
 
 // ListActiveBans reads active blocks with their automatic and manual sources.
@@ -87,7 +114,7 @@ func ListActiveBans(ctx context.Context, path string, now time.Time) ([]bans.Ban
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close() // nolint:errcheck
 
 	tx, err := db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

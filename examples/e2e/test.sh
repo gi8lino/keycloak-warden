@@ -146,4 +146,3 @@ fi
 success=true
 printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> release webhook.\n'
 printf 'Inspect Hookglass logs: make e2e-logs\n'
-

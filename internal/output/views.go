@@ -77,3 +77,21 @@ func (view Inspection) WriteText(w io.Writer) error {
 	}
 	return nil
 }
+
+// Inspections is an ordered collection of persisted decision views.
+type Inspections []decisions.Inspection
+
+// WriteText displays each decision separated by a blank line.
+func (views Inspections) WriteText(w io.Writer) error {
+	for i, view := range views {
+		if i > 0 {
+			if _, err := fmt.Fprintln(w); err != nil {
+				return err
+			}
+		}
+		if err := (Inspection(view)).WriteText(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}

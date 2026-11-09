@@ -12,9 +12,10 @@ import (
 func Register(root *tinyflags.Command, encode output.Encoder) {
 	command := root.Command("list-active", "Print active security decisions")
 	command.HideEnvs()
-	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__DATABSE.")
+	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__DATABASE.")
 
 	database := command.String("database", "warden.db", "SQLite database file").
+		NotBlank().
 		Value()
 
 	command.Run(func(ctx context.Context) error {

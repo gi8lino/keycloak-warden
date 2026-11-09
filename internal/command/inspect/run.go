@@ -1,4 +1,4 @@
-// Package inspect prints one persisted decision and its delivery acknowledgements.
+// Package inspect prints persisted decisions and their delivery acknowledgements.
 package inspect
 
 import (
@@ -8,11 +8,11 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
-// Run reads the decision by ID without modifying the SQLite database.
-func Run(ctx context.Context, database, id string, encode output.Encoder) error {
-	view, err := sqlite.Inspect(ctx, database, id)
+// Run reads the requested decisions without modifying the SQLite database.
+func Run(ctx context.Context, database string, ids []string, encode output.Encoder) error {
+	views, err := sqlite.InspectMany(ctx, database, ids)
 	if err != nil {
 		return err
 	}
-	return encode(output.Inspection(view))
+	return encode(output.Inspections(views))
 }

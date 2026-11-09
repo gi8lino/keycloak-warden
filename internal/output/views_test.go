@@ -60,3 +60,26 @@ func TestInspectionWriteText(t *testing.T) {
 		assert.Contains(t, output.String(), "edge: revision 4")
 	})
 }
+
+func TestInspectionsWriteText(t *testing.T) {
+	t.Parallel()
+
+	t.Run("prints each decision with a blank separator", func(t *testing.T) {
+		t.Parallel()
+		views := Inspections{
+			{Decision: decisions.Decision{ID: "one", IP: "203.0.113.10"}, Deliveries: []decisions.Acknowledgement{}},
+			{Decision: decisions.Decision{ID: "two", IP: "203.0.113.11"}, Deliveries: []decisions.Acknowledgement{}},
+		}
+		var out bytes.Buffer
+		require.NoError(t, views.WriteText(&out))
+		assert.Contains(t, out.String(), "ID: one\n")
+		assert.Contains(t, out.String(), "ID: two\n")
+		assert.Contains(t, out.String(), "Deliveries: none\n\nID: two\n")
+	})
+
+	t.Run("propagates write failures", func(t *testing.T) {
+		t.Parallel()
+		views := Inspections{{Decision: decisions.Decision{ID: "one"}}}
+		require.Error(t, views.WriteText(failingWriter{}))
+	})
+}
