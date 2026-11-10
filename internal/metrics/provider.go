@@ -10,7 +10,7 @@ import (
 
 // InstrumentProvider wraps destination delivery with success, error, and duration metrics.
 func (r *Registry) InstrumentProvider(name string, provider actions.Provider) actions.Provider {
-	if r == nil || !r.enabled {
+	if !r.enabled {
 		return provider
 	}
 	return &instrumentedProvider{

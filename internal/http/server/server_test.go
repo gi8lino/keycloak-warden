@@ -46,7 +46,7 @@ func TestAccessLogFields(t *testing.T) {
 
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))
-	handlers := server.New(server.Config{
+	handlers := newTestServer(server.Config{
 		AccessLog: true,
 		Logger:    logger,
 		Secret:    "secret",
@@ -77,7 +77,7 @@ func TestAccessLogFields(t *testing.T) {
 
 	// The access-log option remains opt-in for the application.
 	logs.Reset()
-	disabled := server.New(server.Config{
+	disabled := newTestServer(server.Config{
 		Logger:    logger,
 		Secret:    "secret",
 		Processor: noopProcessor{},
@@ -93,7 +93,7 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	newHandlers := func(ready bool) (http.Handler, http.Handler) {
-		h := server.New(server.Config{
+		h := newTestServer(server.Config{
 			Secret:     "secret",
 			Logger:     slog.Default(),
 			Processor:  noopProcessor{},
@@ -126,7 +126,7 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		done := make(chan struct{})
-		handlers := server.New(server.Config{
+		handlers := newTestServer(server.Config{
 			Logger:     slog.Default(),
 			Readiness:  readiness(true),
 			WorkerDone: done,
@@ -150,7 +150,7 @@ func TestNew(t *testing.T) {
 	t.Run("management rejects missing action worker", func(t *testing.T) {
 		t.Parallel()
 
-		handlers := server.New(server.Config{
+		handlers := newTestServer(server.Config{
 			Logger:    slog.Default(),
 			Readiness: readiness(true),
 		})
@@ -231,7 +231,7 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		registry := metrics.NewRegistry(false, "test")
-		handlers := server.New(server.Config{
+		handlers := newTestServer(server.Config{
 			Logger:         slog.Default(),
 			Readiness:      readiness(true),
 			MetricsEnabled: false,
@@ -247,7 +247,7 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		registry := metrics.NewRegistry(true, "integration")
-		handlers := server.New(server.Config{
+		handlers := newTestServer(server.Config{
 			Logger:         slog.Default(),
 			Readiness:      readiness(true),
 			Processor:      noopProcessor{},
@@ -291,7 +291,7 @@ func TestNew(t *testing.T) {
 	t.Run("route prefix applies only to application", func(t *testing.T) {
 		t.Parallel()
 
-		handlers := server.New(server.Config{
+		handlers := newTestServer(server.Config{
 			Logger:      slog.New(slog.NewTextHandler(io.Discard, nil)),
 			Readiness:   readiness(true),
 			Processor:   noopProcessor{},
@@ -331,5 +331,4 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, http.StatusPermanentRedirect, redirect.Code)
 		assert.Equal(t, "/warden/", redirect.Header().Get("Location"))
 	})
-
 }

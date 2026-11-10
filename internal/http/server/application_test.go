@@ -79,7 +79,7 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 	service, err := bans.New(store)
 
 	require.NoError(t, err)
-	h := server.New(server.Config{
+	h := newTestServer(server.Config{
 		Logger:     slog.Default(),
 		Secret:     "snitch-secret",
 		AdminToken: "admin-token",
@@ -222,7 +222,7 @@ func TestNewApplication(t *testing.T) {
 		service, err := bans.New(store)
 
 		require.NoError(t, err)
-		application := server.New(server.Config{
+		application := newTestServer(server.Config{
 			Secret:     "snitch",
 			AdminToken: "admin-token",
 			Logger:     slog.Default(),
@@ -260,7 +260,7 @@ func TestNewApplication(t *testing.T) {
 	t.Run("ban routes disabled without admin token", func(t *testing.T) {
 		t.Parallel()
 
-		h := server.New(server.Config{
+		h := newTestServer(server.Config{
 			Secret:    "secret",
 			Logger:    slog.Default(),
 			Processor: noopProcessor{},
@@ -276,7 +276,7 @@ func TestNewApplication(t *testing.T) {
 	t.Run("rejects duplicate authorization headers", func(t *testing.T) {
 		t.Parallel()
 
-		h := server.New(server.Config{
+		h := newTestServer(server.Config{
 			Secret:     "secret",
 			Logger:     slog.Default(),
 			Processor:  noopProcessor{},
@@ -296,7 +296,7 @@ func TestNewApplication(t *testing.T) {
 	t.Run("rejects basic authorization", func(t *testing.T) {
 		t.Parallel()
 
-		h := server.New(server.Config{
+		h := newTestServer(server.Config{
 			Secret:     "secret",
 			Logger:     slog.Default(),
 			Processor:  noopProcessor{},
@@ -315,7 +315,7 @@ func TestNewApplication(t *testing.T) {
 	t.Run("rejects unknown bearer token on GET and DELETE", func(t *testing.T) {
 		t.Parallel()
 
-		h := server.New(server.Config{
+		h := newTestServer(server.Config{
 			Secret:     "secret",
 			Logger:     slog.Default(),
 			Processor:  noopProcessor{},
@@ -391,7 +391,7 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		rec := httptest.NewRecorder()
-		server.New(server.Config{Secret: "inbound", Logger: slog.Default(), Processor: processor, Readiness: store}).Application.ServeHTTP(rec, req)
+		newTestServer(server.Config{Secret: "inbound", Logger: slog.Default(), Processor: processor, Readiness: store}).Application.ServeHTTP(rec, req)
 
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		block := awaitDecision(t, received)

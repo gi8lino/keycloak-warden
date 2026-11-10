@@ -103,7 +103,7 @@ func NewRegistry(enabled bool, version string) *Registry {
 // A ban decision is attributed to the realm that sent the triggering event, not
 // necessarily every realm whose failures contributed to the global IP threshold.
 func (r *Registry) RecordProcessedEvent(realmID, eventType string, automaticBan bool) {
-	if r == nil || !r.enabled {
+	if !r.enabled {
 		return
 	}
 
@@ -117,7 +117,7 @@ func (r *Registry) RecordProcessedEvent(realmID, eventType string, automaticBan 
 
 // Metrics returns the exposition handler, or a 404 handler when disabled.
 func (r *Registry) Metrics() http.Handler {
-	if r == nil || !r.enabled {
+	if !r.enabled {
 		return http.NotFoundHandler()
 	}
 	return promhttp.HandlerFor(r.registry, promhttp.HandlerOpts{})
@@ -125,7 +125,7 @@ func (r *Registry) Metrics() http.Handler {
 
 // InstrumentHTTP records request counts and latency using bounded route labels.
 func (r *Registry) InstrumentHTTP(next http.Handler) http.Handler {
-	if r == nil || !r.enabled {
+	if !r.enabled {
 		return next
 	}
 

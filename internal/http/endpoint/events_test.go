@@ -56,7 +56,7 @@ func TestEvents(t *testing.T) {
 
 	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","ipAddress":null}`
 	newHandler := func(c *capture) http.Handler {
-		return httpkitmiddleware.Chain(endpoint.Events(c, slog.Default(), nil), middleware.AuthenticateSnitch("key"))
+		return httpkitmiddleware.Chain(endpoint.Events(c, slog.Default(), metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
 	}
 	t.Run("passes a signed native envelope without trusting forwarded IP headers", func(t *testing.T) {
 		t.Parallel()

@@ -18,6 +18,7 @@ func TestNewRegistry(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(false, "test")
+		require.NotNil(t, registry)
 		response := httptest.NewRecorder()
 		registry.Metrics().ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 

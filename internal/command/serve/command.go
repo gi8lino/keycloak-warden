@@ -69,11 +69,6 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 		}
 
 		logger := appkitlogging.Setup(*logFormat, *debug, stdout)
-		logger.Debug(
-			"configuration loaded",
-			"event", "configuration_loaded",
-			"path", *path,
-		)
 		logger.Info(
 			"starting Keycloak Warden",
 			"event", "app_starting",
