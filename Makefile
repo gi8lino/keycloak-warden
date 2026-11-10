@@ -54,6 +54,27 @@ MANAGEMENT_LISTEN_ADDRESS ?= 127.0.0.1:$(WARDEN_MANAGEMENT_ASSIGNED_PORT)
 DATABASE ?= warden.db
 RUN_ARGS ?=
 
+## SQLite migration consolidation
+MIGRATION_DIR := internal/sqlite/migrations
+MIGRATION_OUTPUT_DIR := build/migrations
+MIGRATION_MERGE := scripts/db/merge_migrations.sh
+MIGRATION_CLEANUP := scripts/db/cleanup_migrations.sh
+MIGRATION_HELPER := scripts/db/baseline.py
+
+##@ Migration
+
+.PHONY: merge-migrations
+merge-migrations: $(MIGRATION_MERGE) $(MIGRATION_HELPER) ## Generate and validate the next SQLite baseline without changing source migrations.
+	$(MIGRATION_MERGE) --migrations "$(MIGRATION_DIR)" --output-dir "$(MIGRATION_OUTPUT_DIR)"
+
+.PHONY: cleanup-migrations
+cleanup-migrations: merge-migrations $(MIGRATION_CLEANUP) ## Replace old SQL migration files with the validated baseline.
+	$(MIGRATION_CLEANUP) --migrations "$(MIGRATION_DIR)" --generated-dir "$(MIGRATION_OUTPUT_DIR)"
+
+.PHONY: test-migrations
+test-migrations: ## Run SQLite baseline generation and cleanup regression tests.
+	python3 -m unittest discover -s scripts/db -p 'test_*.py'
+
 ##@ Development
 
 .PHONY: ports
