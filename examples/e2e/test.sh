@@ -143,6 +143,16 @@ if ! curl --silent --fail "$warden_management/metrics" | grep -Fq 'warden_http_r
   exit 1
 fi
 
+metrics=$(curl --silent --fail "$warden_management/metrics")
+if ! printf '%s\n' "$metrics" | grep -Fq 'warden_snitch_events_total{event_type="LOGIN_ERROR",realm="warden-e2e"} 2'; then
+  printf 'Missing realm-specific Snitch login failure counter\n' >&2
+  exit 1
+fi
+if ! printf '%s\n' "$metrics" | grep -Fq 'warden_automatic_ban_decisions_total{trigger_realm="warden-e2e"} 1'; then
+  printf 'Missing realm-specific automatic ban decision counter\n' >&2
+  exit 1
+fi
+
 success=true
 printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> release webhook.\n'
 printf 'Inspect Hookglass logs: make e2e-logs\n'

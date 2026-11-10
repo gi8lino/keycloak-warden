@@ -23,7 +23,7 @@ type EventProcessor interface {
 
 // Events accepts the verified Snitch v1 JSON envelope at POST /events.
 // All authentication is performed by middleware, not by this endpoint.
-func Events(processor EventProcessor, logger *slog.Logger) http.HandlerFunc {
+func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var envelope events.Envelope
 		decoder := json.NewDecoder(r.Body)
@@ -44,6 +44,7 @@ func Events(processor EventProcessor, logger *slog.Logger) http.HandlerFunc {
 				"security event rejected",
 				"event", "security_event_rejected",
 				"event_type", envelope.Kind,
+				"realm_id", envelope.RealmID,
 				"reason", "invalid_event",
 			)
 			httpresponse.Problem(w, http.StatusBadRequest, "Invalid security event.")
@@ -54,17 +55,21 @@ func Events(processor EventProcessor, logger *slog.Logger) http.HandlerFunc {
 			logger.Error(
 				"processing security event failed",
 				"event", "security_event_processing_failed",
+				"realm_id", envelope.RealmID,
 				"error", err,
 			)
 			httpresponse.Problem(w, http.StatusServiceUnavailable, "Event processing unavailable.")
 			return
 		}
 
+		metrics.RecordProcessedEvent(envelope.RealmID, envelope.Kind, decision != nil)
+
 		logger.Debug(
 			"security event processed",
 			"event", "security_event_processed",
 			"event_id", envelope.ID,
 			"event_type", envelope.Kind,
+			"realm_id", envelope.RealmID,
 			"ip", envelope.IP,
 			"decision_created", decision != nil,
 		)
@@ -73,6 +78,7 @@ func Events(processor EventProcessor, logger *slog.Logger) http.HandlerFunc {
 				"automatic ban created",
 				"event", "automatic_ban_created",
 				"decision_id", decision.ID,
+				"trigger_realm_id", envelope.RealmID,
 				"ip", decision.IP,
 				"failures", decision.Failures,
 				"expires_at", decision.ExpiresAt,

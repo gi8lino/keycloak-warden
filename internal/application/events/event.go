@@ -1,4 +1,4 @@
-// Package events defines the normalized inputs accepted by detection.
+// Package events defines the Snitch event contract and normalized events used by detection.
 package events
 
 import "net/netip"

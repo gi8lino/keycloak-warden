@@ -2,19 +2,26 @@ package events
 
 import "time"
 
-// Envelope represents the public, versioned Snitch event contract.
-// Transport adapters may decode it, while the application validates its meaning.
+// Envelope represents the complete, versioned Snitch event contract.
 type Envelope struct {
-	// Version selects the Snitch wire schema.
+	// Version identifies the Snitch event schema.
 	Version int `json:"schemaVersion"`
-	// ID identifies the event or decision in this response.
+	// ID uniquely identifies the event.
 	ID string `json:"id"`
 	// Source identifies the event producer.
 	Source string `json:"source"`
-	// Kind preserves the native Keycloak event type.
+	// Kind is the original Keycloak event type.
 	Kind string `json:"type"`
-	// Timestamp is the event time supplied by the producer.
+	// Timestamp is when the event occurred.
 	Timestamp time.Time `json:"timestamp"`
-	// IP is the reported client address, which may be absent in an event.
+	// RealmID identifies the originating Keycloak realm.
+	RealmID string `json:"realmId"`
+	// ClientID identifies the Keycloak client.
+	ClientID string `json:"clientId"`
+	// UserID identifies the associated Keycloak user, when available.
+	UserID string `json:"userId"`
+	// IP is the reported client address.
 	IP string `json:"ipAddress"`
+	// Error describes the Keycloak authentication failure, when available.
+	Error string `json:"error"`
 }

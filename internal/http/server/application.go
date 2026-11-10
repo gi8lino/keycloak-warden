@@ -18,7 +18,7 @@ func newApplication(config Config) http.Handler {
 	}
 
 	mux.Handle("POST /events", httpkitmiddleware.Chain(
-		endpoint.Events(config.Processor, config.Logger),
+		endpoint.Events(config.Processor, config.Logger, config.Metrics),
 		middleware.AuthenticateSnitch(config.Secret),
 	))
 

@@ -36,6 +36,49 @@ func TestNewRegistry(t *testing.T) {
 	})
 }
 
+func TestRecordProcessedEvent(t *testing.T) {
+	t.Parallel()
+
+	t.Run("attributes received events and automatic decisions by triggering realm", func(t *testing.T) {
+		t.Parallel()
+
+		registry := NewRegistry(true, "test")
+		registry.RecordProcessedEvent("hq", "LOGIN_ERROR", false)
+		registry.RecordProcessedEvent("hq", "LOGIN_ERROR", true)
+		registry.RecordProcessedEvent("personal", "LOGIN_ERROR", false)
+		registry.RecordProcessedEvent("personal", "LOGIN", false)
+
+		output := scrape(t, registry)
+		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="hq"} 2`)
+		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="personal"} 1`)
+		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN",realm="personal"} 1`)
+		assert.Contains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="hq"} 1`)
+		assert.NotContains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="personal"}`)
+	})
+
+	t.Run("missing realm is grouped as unknown", func(t *testing.T) {
+		t.Parallel()
+
+		registry := NewRegistry(true, "test")
+		registry.RecordProcessedEvent("", "LOGIN_ERROR", true)
+		registry.RecordProcessedEvent("  ", "LOGIN_ERROR", false)
+
+		output := scrape(t, registry)
+		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="unknown"} 2`)
+		assert.Contains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="unknown"} 1`)
+	})
+
+	t.Run("disabled registry has no event counters", func(t *testing.T) {
+		t.Parallel()
+
+		registry := NewRegistry(false, "test")
+		registry.RecordProcessedEvent("hq", "LOGIN_ERROR", true)
+
+		assert.Nil(t, registry.snitchEvents)
+		assert.Nil(t, registry.automaticBanDecisions)
+	})
+}
+
 func TestInstrumentHTTP(t *testing.T) {
 	t.Parallel()
 

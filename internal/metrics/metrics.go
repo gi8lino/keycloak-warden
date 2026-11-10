@@ -2,6 +2,7 @@
 package metrics
 
 import (
+	"cmp"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +24,10 @@ type Registry struct {
 	httpRequests *prometheus.CounterVec
 	// httpDuration measures application request latency.
 	httpDuration *prometheus.HistogramVec
+	// snitchEvents counts authenticated events processed by source realm and native type.
+	snitchEvents *prometheus.CounterVec
+	// automaticBanDecisions counts decisions by the realm of the triggering event.
+	automaticBanDecisions *prometheus.CounterVec
 	// deliveryAttempts counts outbound delivery attempts by destination and outcome.
 	deliveryAttempts *prometheus.CounterVec
 	// deliveryDuration measures outbound provider request latency.
@@ -46,6 +51,14 @@ func NewRegistry(enabled bool, version string) *Registry {
 		Help:    "HTTP request duration by method and matched route.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"method", "route"})
+	snitchEvents := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_snitch_events_total",
+		Help: "Authenticated Snitch HTTP events successfully processed (including duplicate event IDs), by realm and event type.",
+	}, []string{"realm", "event_type"})
+	automaticBanDecisions := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_automatic_ban_decisions_total",
+		Help: "Automatic ban decisions by triggering event realm; the detection threshold remains global by IP.",
+	}, []string{"trigger_realm"})
 	deliveryAttempts := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "warden_delivery_attempts_total",
 		Help: "Outbound destination delivery attempts by destination and outcome.",
@@ -67,18 +80,38 @@ func NewRegistry(enabled bool, version string) *Registry {
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		httpRequests,
 		httpDuration,
+		snitchEvents,
+		automaticBanDecisions,
 		deliveryAttempts,
 		deliveryDuration,
 		buildInfo,
 	)
 
 	return &Registry{
-		enabled:          true,
-		registry:         registry,
-		httpRequests:     httpRequests,
-		httpDuration:     httpDuration,
-		deliveryAttempts: deliveryAttempts,
-		deliveryDuration: deliveryDuration,
+		enabled:               true,
+		registry:              registry,
+		httpRequests:          httpRequests,
+		httpDuration:          httpDuration,
+		snitchEvents:          snitchEvents,
+		automaticBanDecisions: automaticBanDecisions,
+		deliveryAttempts:      deliveryAttempts,
+		deliveryDuration:      deliveryDuration,
+	}
+}
+
+// RecordProcessedEvent counts accepted Snitch requests by realm, including duplicate event IDs.
+// A ban decision is attributed to the realm that sent the triggering event, not
+// necessarily every realm whose failures contributed to the global IP threshold.
+func (r *Registry) RecordProcessedEvent(realmID, eventType string, automaticBan bool) {
+	if r == nil || !r.enabled {
+		return
+	}
+
+	realm := cmp.Or(strings.TrimSpace(realmID), "unknown")
+	r.snitchEvents.WithLabelValues(realm, eventType).Inc()
+
+	if automaticBan {
+		r.automaticBanDecisions.WithLabelValues(realm).Inc()
 	}
 }
 
@@ -146,17 +179,22 @@ func requestLabels(request *http.Request) (method, route string) {
 	if _, path, ok := strings.Cut(route, " "); ok {
 		route = strings.TrimSpace(path)
 	}
-	if route == "" {
-		route = "unmatched"
-	}
-	return method, route
+
+	return method, cmp.Or(route, "unmatched")
 }
 
 // metricMethod limits caller-controlled HTTP methods to a fixed label vocabulary.
 func metricMethod(method string) string {
 	switch method {
-	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
-		http.MethodDelete, http.MethodConnect, http.MethodOptions, http.MethodTrace, http.MethodPatch:
+	case http.MethodGet,
+		http.MethodHead,
+		http.MethodPost,
+		http.MethodPut,
+		http.MethodDelete,
+		http.MethodConnect,
+		http.MethodOptions,
+		http.MethodTrace,
+		http.MethodPatch:
 		return method
 	default:
 		return "OTHER"
