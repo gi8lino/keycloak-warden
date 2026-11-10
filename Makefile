@@ -1,3 +1,4 @@
+
 .DEFAULT_GOAL := help
 
 ## Tool Versions
@@ -8,32 +9,43 @@ GOLANGCI_LINT_VERSION ?= v2.15.0
 # renovate: datasource=github-releases depName=gi8lino/dev-tools
 DEV_TOOLS_VERSION ?= v0.9.0
 
+# renovate: datasource=github-releases depName=kumbuka-me/cli
+KUMBUKA_CLI_VERSION ?= v0.14.1
+KUMBUKA_CLI := bin/.kumbuka/$(KUMBUKA_CLI_VERSION)/kumbuka-cli
+KUMBUKA_CLI_ASSET ?= kumbuka-cli_{version}_{os}_{arch}.tar.gz
+
 # renovate: datasource=github-releases depName=gi8lino/keycloak-snitch
 SNITCH_VERSION ?= v1.0.0
 SNITCH_RELEASE := $(patsubst v%,%,$(SNITCH_VERSION))
 SNITCH_JAR := examples/e2e/snitch/keycloak-snitch-$(SNITCH_RELEASE).jar
 SNITCH_URL := https://github.com/gi8lino/keycloak-snitch/releases/download/$(SNITCH_VERSION)/keycloak-snitch-$(SNITCH_RELEASE).jar
 
-## End-to-end Compose configuration
+## End-to-end Compose Configuration
+
 E2E_PROJECT ?= keycloak-warden-e2e
 E2E_KC_PORT ?= 18080
 E2E_WARDEN_PORT ?= 18081
 E2E_MANAGEMENT_PORT ?= 18082
 E2E_RECEIVER_PORT ?= 18090
+
 E2E_KEYCLOAK_REALM_FILE := examples/e2e/realm/warden-e2e.json
 E2E_KEYCLOAK_REALM := $(shell sed -n 's/^[[:space:]]*"realm"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $(E2E_KEYCLOAK_REALM_FILE))
 E2E_KEYCLOAK_URL := http://127.0.0.1:$(E2E_KC_PORT)/realms/$(E2E_KEYCLOAK_REALM)/account/
-E2E_COMPOSE := docker compose -p $(E2E_PROJECT) -f examples/e2e/compose.yaml
-export SNITCH_VERSION SNITCH_RELEASE E2E_PROJECT E2E_KC_PORT E2E_WARDEN_PORT E2E_MANAGEMENT_PORT E2E_RECEIVER_PORT
 
-## Shared development tools
+E2E_COMPOSE := docker compose -p $(E2E_PROJECT) -f examples/e2e/compose.yaml
+
+export SNITCH_VERSION SNITCH_RELEASE
+export E2E_PROJECT E2E_KC_PORT E2E_WARDEN_PORT E2E_MANAGEMENT_PORT E2E_RECEIVER_PORT
+
+## Shared Development Tools
 
 include bin/dev-tools.mk
 include $(call dev-tools-module,tag)
 include $(call dev-tools-module,port)
+include $(call dev-tools-module,browser)
 include $(call dev-tools-module,help)
 
-## Project-local tools
+## Project-local Tools
 
 GOLANGCI_LINT := bin/golangci-lint
 
@@ -47,19 +59,30 @@ LDFLAGS ?= -s -w -X main.Version=$(BUILD_VERSION)
 ## Local Development
 
 CONFIG ?= examples/kubernetes/warden.yaml
+
 WARDEN_ASSIGNED_PORT ?= $(call dev-port,app)
 WARDEN_MANAGEMENT_ASSIGNED_PORT ?= $(call dev-port,management)
+
 LISTEN_ADDRESS ?= 127.0.0.1:$(WARDEN_ASSIGNED_PORT)
 MANAGEMENT_LISTEN_ADDRESS ?= 127.0.0.1:$(WARDEN_MANAGEMENT_ASSIGNED_PORT)
+
 DATABASE ?= warden.db
 RUN_ARGS ?=
 
-## SQLite migration consolidation
+## SQLite Migration Consolidation
+
 MIGRATION_DIR := internal/sqlite/migrations
 MIGRATION_OUTPUT_DIR := build/migrations
 MIGRATION_MERGE := scripts/db/merge_migrations.sh
 MIGRATION_CLEANUP := scripts/db/cleanup_migrations.sh
 MIGRATION_HELPER := scripts/db/baseline.py
+
+## Site Configuration
+
+SITE_CONFIG ?= docs/site.toml
+SITE_PORT = $(call dev-port,site)
+SITE_URL = http://127.0.0.1:$(SITE_PORT)/
+BUILD_ARGS ?=
 
 ##@ Migration
 
@@ -114,6 +137,23 @@ run: ## Run Warden locally.
 clean: ## Remove built binaries and coverage reports.
 	rm -rf build
 	rm -f coverage.out coverage.html
+
+##@ Documentation
+
+.PHONY: build-docs
+build-docs: cli ## Build the production documentation site.
+	$(call run-tool,$(KUMBUKA_CLI),build --config "$(SITE_CONFIG)" $(BUILD_ARGS))
+
+.PHONY: serve-docs
+serve-docs: $(DEV_PORT) $(OPEN_BROWSER) cli ## Build, watch, serve, and open the documentation locally.
+	@(until curl --fail --silent --output /dev/null "$(SITE_URL)"; do sleep 0.2; done; \
+		$(OPEN_BROWSER) "$(SITE_URL)") & \
+	browser_pid=$$!; \
+	trap 'kill "$$browser_pid" 2>/dev/null || true' EXIT; \
+	$(KUMBUKA_CLI) serve \
+		--config "$(SITE_CONFIG)" \
+		--site-url "$(SITE_URL)" \
+		--listen-address "127.0.0.1:$(SITE_PORT)"
 
 ##@ End-to-end Compose
 
@@ -210,7 +250,7 @@ verify: check lint ## Run all local checks.
 ##@ Dependencies
 
 .PHONY: dev-tools
-dev-tools: $(DEV_PORT) $(DEV_TAG) $(MAKE_HELP) $(GO_INSTALL_TOOL) ## Download the pinned development tools.
+dev-tools: $(DEV_PORT) $(DEV_TAG) $(OPEN_BROWSER) $(MAKE_HELP) $(GO_INSTALL_TOOL) ## Download the pinned development tools.
 
 .PHONY: golangci-lint
 golangci-lint: $(GO_INSTALL_TOOL) ## Download golangci-lint locally if necessary.
@@ -218,3 +258,15 @@ golangci-lint: $(GO_INSTALL_TOOL) ## Download golangci-lint locally if necessary
 		--target "$(GOLANGCI_LINT)" \
 		--package github.com/golangci/golangci-lint/v2/cmd/golangci-lint \
 		--tool-version "$(GOLANGCI_LINT_VERSION)"
+
+$(KUMBUKA_CLI): $(GITHUB_RELEASE_INSTALL)
+	@mkdir -p "$(dir $@)"
+	@$(GITHUB_RELEASE_INSTALL) \
+		--repo kumbuka-me/cli \
+		--tag "$(KUMBUKA_CLI_VERSION)" \
+		--asset "$(KUMBUKA_CLI_ASSET)" \
+		--binary kumbuka-cli \
+		--target "$@"
+
+.PHONY: cli
+cli: $(KUMBUKA_CLI) ## Install the pinned Kumbuka CLI.

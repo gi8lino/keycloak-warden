@@ -1,0 +1,46 @@
+# HTTP API
+
+The application listener handles Snitch event ingestion and optional manual ban operations. Health and metrics are exposed separately on the management listener.
+
+## Event ingestion
+
+`POST /events` accepts JSON event envelopes sent by Keycloak Snitch. Requests must carry the valid HMAC signature derived from the shared Snitch secret. Use the [Snitch integration](https://github.com/gi8lino/keycloak-snitch) rather than constructing unsigned requests manually.
+
+A successfully processed event returns HTTP `204 No Content`. An event is not necessarily a new ban: the configured detection threshold decides when a new desired state is recorded.
+
+## Administrative endpoints
+
+When `--admin-token` is set, Warden registers these authenticated routes:
+
+| Method   | Route        | Description                             |
+| -------- | ------------ | --------------------------------------- |
+| `POST`   | `/bans`      | Create or extend a manual ban           |
+| `GET`    | `/bans`      | List current active bans                |
+| `GET`    | `/bans/{id}` | Inspect one decision and its sources    |
+| `DELETE` | `/bans/{id}` | Clear the decision's active ban sources |
+
+Requests require `Authorization: Bearer <admin-token>`. An empty admin token **disables** the routes; it does not make them public.
+
+For a manual ban, send a JSON object such as:
+
+```json
+{
+  "ipAddress": "203.0.113.10",
+  "duration": "1h",
+  "reason": "Investigation"
+}
+```
+
+The API responds with the effective ban record, which includes a nested decision and its source and delivery information. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+
+## Webhook delivery
+
+Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, expiry, and failure count.
+
+Webhook responses in the `2xx` range acknowledge a delivery. An unsuccessful delivery is retried; a successful webhook response means the **receiver accepted the notification**, not necessarily that an external firewall has already reconciled the state.
+
+## Route prefix
+
+With `--route-prefix=/warden`, the application routes become `/warden/events` and `/warden/bans`. Management paths remain `/healthz`, `/readyz`, and `/metrics` without that prefix.
+
+Use [CLI](cli.md) for supported manual operations and [Configuration](configuration.md) for authentication and destination setup.

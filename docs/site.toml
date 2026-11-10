@@ -1,0 +1,16 @@
+site_name = "Keycloak Warden"
+site_url = "https://gi8lino.github.io/keycloak-warden/"
+source_dir = "docs/content"
+output_dir = "docs/site"
+language = "en"
+navigation_style = "sidebar"
+navigation_density = "compact"
+sidebar_width = 300
+footer = "Keycloak Warden · Documentation built with Kumbuka"
+
+[[external_links]]
+label = "Repository"
+url = "https://github.com/kumbuka-me/kumbuka"
+icon = "github-simple"
+description = "GitHub"
+hover_text = "{{label}} | {{description}}"

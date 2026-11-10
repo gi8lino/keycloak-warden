@@ -3,6 +3,7 @@
 !/bin/dev-tools.mk
 /build/
 /dist/
+/docs/site/
 *.db
 *.db-shm
 *.db-wal
