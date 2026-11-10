@@ -1,5 +1,9 @@
 # Keycloak Warden
 
+<p align="center">
+  <img src="docs/assets/warden.svg" alt="Keycloak Warden" width="240" />
+</p>
+
 Warden watches for repeated failed logins from the same IP address. [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) sends the login events. You choose how many failures trigger a ban, how long it lasts, and whether Warden blocks the IP through Cloudflare or sends a webhook.
 
 ```mermaid

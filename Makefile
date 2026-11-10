@@ -20,6 +20,31 @@ SNITCH_RELEASE := $(patsubst v%,%,$(SNITCH_VERSION))
 SNITCH_JAR := examples/e2e/snitch/keycloak-snitch-$(SNITCH_RELEASE).jar
 SNITCH_URL := https://github.com/gi8lino/keycloak-snitch/releases/download/$(SNITCH_VERSION)/keycloak-snitch-$(SNITCH_RELEASE).jar
 
+##@ Assets
+DEV_TOOLS_BIN = bin
+FAVICON_GENERATE := $(DEV_TOOLS_BIN)/favicon-generate
+FAVICON_SOURCE ?= docs/assets/warden.svg
+FAVICON_SIZES ?= 16x16 32x32
+SVG_TO_PNG := $(DEV_TOOLS_BIN)/svg-to-png
+LOGO_SOURCE ?= docs/assets/warden.svg
+LOGO_PNG ?= docs/assets/favicon.png
+LOGO_PNG_WIDTH ?= 1200
+
+
+$(FAVICON_GENERATE): | $(DEV_TOOLS_BIN)
+	$(call download-dev-tool,favicon-generate,$@)
+
+.PHONY: logo-png
+logo-png: $(SVG_TO_PNG) $(LOGO_SOURCE) ## Generate a PNG version of the logo.
+	$(call run-tool,$(SVG_TO_PNG),--width "$(LOGO_PNG_WIDTH)" "$(LOGO_SOURCE)" "$(LOGO_PNG)")
+
+.PHONY: favicon
+favicon: $(FAVICON_GENERATE) $(FAVICON_SOURCE) ## Generate Web UI and documentation favicons from the logo.
+	$(call run-tool,$(FAVICON_GENERATE),--apple-touch "$(FAVICON_SOURCE)" "docs/assets" $(FAVICON_SIZES))
+	$(call run-tool,$(FAVICON_GENERATE),--apple-touch "$(FAVICON_SOURCE)" "docs/assets" $(FAVICON_SIZES))
+	$(call run-tool,$(FAVICON_GENERATE),--apple-touch "$(FAVICON_SOURCE)" "docs/assets" $(FAVICON_SIZES))
+
+
 ## End-to-end Compose Configuration
 
 E2E_PROJECT ?= keycloak-warden-e2e
@@ -270,3 +295,7 @@ $(KUMBUKA_CLI): $(GITHUB_RELEASE_INSTALL)
 
 .PHONY: cli
 cli: $(KUMBUKA_CLI) ## Install the pinned Kumbuka CLI.
+
+$(SVG_TO_PNG): | $(DEV_TOOLS_BIN)
+	$(call download-dev-tool,svg-to-png,$@)
+

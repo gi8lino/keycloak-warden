@@ -8,6 +8,10 @@ navigation_density = "compact"
 sidebar_width = 300
 footer = "Keycloak Warden · Documentation built with Kumbuka"
 
+assets_dir = "assets"
+logo = "assets/warden.svg"
+favicon = "assets/favicon.png"
+
 [[external_links]]
 label = "Repository"
 url = "https://github.com/kumbuka-me/kumbuka"
