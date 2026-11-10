@@ -71,6 +71,13 @@ PRAGMA foreign_keys = ON;
 		return nil, err
 	}
 
+	// Include every table after opening the connection; later calls use SQLite's
+	// lightweight default optimize mode to avoid unnecessary ANALYZE work.
+	if _, err := db.ExecContext(context.Background(), "PRAGMA optimize=0x10002"); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("optimize sqlite database: %w", err)
+	}
+
 	return &Store{
 		db:      db,
 		rule:    rule,
@@ -139,6 +146,15 @@ func (s *Store) commitDecision(tx *sql.Tx) error {
 	select {
 	case s.changes <- struct{}{}:
 	default:
+	}
+	return nil
+}
+
+// Optimize refreshes SQLite query-planner statistics without rebuilding the database.
+func (s *Store) Optimize(ctx context.Context) error {
+	_, err := s.db.ExecContext(ctx, "PRAGMA optimize")
+	if err != nil {
+		return fmt.Errorf("optimize sqlite database: %w", err)
 	}
 	return nil
 }

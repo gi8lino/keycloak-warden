@@ -139,9 +139,6 @@ func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
 	return q.deadlines[cycle-1], nil
 }
 
-// Prune accepts periodic observation cleanup.
-func (q *scriptedQueue) Prune(context.Context, time.Time) error { return nil }
-
 // Maintain is unused by drainReady.
 func (q *scriptedQueue) Maintain(context.Context, time.Time) error { return nil }
 
@@ -223,5 +220,32 @@ func TestWorkerWakeups(t *testing.T) {
 		time.Sleep(time.Minute)
 		synctest.Wait()
 		require.Equal(t, 3, int(q.cycles.Load()))
+	})
+}
+
+func TestWaitUntilNoDeadline(t *testing.T) {
+	t.Parallel()
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		changes := make(chan struct{}, 1)
+		done := make(chan struct{})
+		go func() {
+			waitUntil(ctx, changes, time.Time{})
+			close(done)
+		}()
+		synctest.Wait()
+		select {
+		case <-done:
+			t.Fatal("idle worker did not wait")
+		default:
+		}
+		changes <- struct{}{}
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			t.Fatal("idle worker did not resume on change")
+		}
 	})
 }

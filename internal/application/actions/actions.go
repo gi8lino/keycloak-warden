@@ -10,8 +10,6 @@ import (
 )
 
 const (
-	// pruneInterval defines how often expired records are cleaned up.
-	pruneInterval = time.Hour
 	// drainBudget limits when a cycle may start another job; in-flight deliveries may finish later.
 	drainBudget = time.Second
 	// storageRetry defines the delay before retrying a failed storage operation.
@@ -38,8 +36,6 @@ type Queue interface {
 	Changes() <-chan struct{}
 	// NextDeadline returns the earliest pending work time or zero when idle.
 	NextDeadline(context.Context) (time.Time, error)
-	// Prune removes observations beyond the retention window.
-	Prune(context.Context, time.Time) error
 	// Maintain expires decision sources.
 	Maintain(context.Context, time.Time) error
 	// Next returns the oldest ready destination job, or nil when idle.
@@ -105,11 +101,7 @@ func run(
 	destinations map[string]Provider,
 	logger *slog.Logger,
 ) error {
-	var nextPrune time.Time
-
 	for ctx.Err() == nil {
-		nextPrune = pruneIfDue(ctx, q, logger, nextPrune)
-
 		deadline, err := processReady(ctx, q, destinations, logger)
 		if ctx.Err() != nil {
 			return nil
@@ -126,36 +118,10 @@ func run(
 			continue
 		}
 
-		waitUntil(ctx, q.Changes(), earliestDeadline(deadline, nextPrune))
+		waitUntil(ctx, q.Changes(), deadline)
 	}
 
 	return nil
-}
-
-// pruneIfDue removes expired observations when due and returns the next cleanup deadline.
-func pruneIfDue(
-	ctx context.Context,
-	q Queue,
-	logger *slog.Logger,
-	nextPrune time.Time,
-) (nextDeadline time.Time) {
-	now := time.Now()
-	if now.Before(nextPrune) {
-		return nextPrune
-	}
-
-	if err := q.Prune(ctx, now); err != nil {
-		if ctx.Err() == nil {
-			logger.Warn(
-				"observation cleanup failed",
-				"event", "observation_cleanup_failed",
-				"error", err,
-			)
-		}
-		return now.Add(storageRetry)
-	}
-
-	return now.Add(pruneInterval)
 }
 
 // processReady expires decision sources, delivers ready jobs, and finds the next deadline.
@@ -204,16 +170,17 @@ func drainReady(
 	return ctx.Err()
 }
 
-// earliestDeadline returns the first nonzero deadline, or the earlier of two.
-func earliestDeadline(a, b time.Time) time.Time {
-	if a.IsZero() || (!b.IsZero() && b.Before(a)) {
-		return b
-	}
-	return a
-}
-
 // waitUntil sleeps until the deadline, a queued notification, or shutdown.
 func waitUntil(ctx context.Context, changes <-chan struct{}, deadline time.Time) {
+	if deadline.IsZero() {
+		// No scheduled jobs: wait for an explicit change or shutdown.
+		select {
+		case <-ctx.Done():
+		case <-changes:
+		}
+		return
+	}
+
 	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
 

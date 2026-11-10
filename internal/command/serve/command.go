@@ -4,6 +4,8 @@ import (
 	"context"
 	"io"
 
+	"github.com/gi8lino/keycloak-warden/internal/maintenance"
+
 	appkitlogging "github.com/containeroo/appkit/logging"
 
 	"github.com/containeroo/tinyflags"
@@ -62,6 +64,13 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 	metricsEnabled := command.Bool("metrics", false, "Expose Prometheus metrics on the management listener").
 		Value()
 
+	pruneInterval := command.Duration("prune-interval", maintenance.DefaultPruneInterval, "Interval between SQLite observation cleanup runs").
+		Validate(tinyflags.Between(maintenance.MinInterval, maintenance.MaxInterval)).
+		Value()
+	optimizeInterval := command.Duration("optimize-interval", maintenance.DefaultOptimizeInterval, "Interval between SQLite query planner optimizations").
+		Validate(tinyflags.Between(maintenance.MinInterval, maintenance.MaxInterval)).
+		Value()
+
 	command.Run(func(ctx context.Context) error {
 		cfg, err := config.Load(*path)
 		if err != nil {
@@ -94,6 +103,10 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 			logger,
 			*accessLog,
 			*metricsEnabled,
+			maintenance.Schedule{
+				PruneInterval:    *pruneInterval,
+				OptimizeInterval: *optimizeInterval,
+			},
 			version,
 		)
 	})

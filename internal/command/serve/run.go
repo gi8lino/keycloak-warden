@@ -14,6 +14,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/bootstrap"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
+	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 	"github.com/gi8lino/keycloak-warden/internal/metrics"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
@@ -25,9 +26,13 @@ func Run(
 	routePrefix, listen, managementListen, database, secret, adminToken string,
 	logger *slog.Logger,
 	accessLog, metricsEnabled bool,
+	schedule maintenance.Schedule,
 	version string,
 ) error {
 	if err := cfg.Validate(); err != nil {
+		return err
+	}
+	if err := schedule.Validate(); err != nil {
 		return err
 	}
 	destinations, names, err := bootstrap.Destinations(cfg.Targets)
@@ -58,6 +63,7 @@ func Run(
 	ctx, stop := grace.SignalContext(parent)
 	defer stop()
 
+	maintenanceRunner := maintenance.Start(ctx, store, schedule, logger)
 	runner := actions.Start(ctx, store, destinations, logger)
 	handlers := server.New(server.Config{
 		AccessLog:      accessLog,
@@ -83,5 +89,8 @@ func Run(
 		logger.With("server", "management"),
 	)
 
-	return errors.Join(err, runner.Close())
+	workerErr := runner.Close()
+	maintenanceRunner.Close()
+
+	return errors.Join(err, workerErr)
 }

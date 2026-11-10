@@ -101,6 +101,19 @@ The YAML parser rejects unknown fields, including the removed flat target format
 
 For Kubernetes, use a ConfigMap for the rules and destination definitions and Kubernetes Secrets for credentials. See the Kubernetes example for an end-to-end configuration.
 
+## SQLite maintenance
+
+Warden runs `PRAGMA optimize=0x10002` when opening SQLite, and performs periodic `PRAGMA optimize` for query-planner statistics. It also deletes stale login observations, retaining each observation for at least 24 hours (or longer when required by the configured detection window). Optimization does **not** run a full `VACUUM`; SQLite keeps free pages for reuse, and WAL checkpoints remain managed by SQLite.
+
+The `serve` command provides independent intervals (also configurable through
+`WARDEN__PRUNE_INTERVAL` and `WARDEN__OPTIMIZE_INTERVAL`):
+
+```sh
+warden serve --config warden.yaml --prune-interval=1h --optimize-interval=24h
+```
+
+Both intervals must be between `1s` and `8760h` (one year). Stale observation pruning runs once on startup, then at the configured interval. Optimization runs once when SQLite opens, then on its configured interval. Maintenance failures are logged and retried; they do not stop security event processing. Intervals configure **when** cleanup runs, not how long observations are retained.
+
 ## Deploy on Kubernetes
 
 Follow the [Kubernetes guide](examples/kubernetes/README.md) to connect Snitch to your realm, configure a destination, and deploy Warden.

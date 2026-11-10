@@ -16,12 +16,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// startupLog executes the registered command against an occupied port and captures its startup log.
-func startupLog(t *testing.T, args ...string) string {
+// startupLogs executes the registered command against an occupied port and captures all startup logs.
+func startupLogs(t *testing.T, args ...string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "warden.yaml")
-	require.NoError(t, os.WriteFile(path, []byte("rule:\n  threshold: 2\n  window: 1m\n  ban: 1m\ntargets:\n  webhook:\n    local:\n      url: http://127.0.0.1:8090/hook\n"), 0o600))
+	config := `
+rule:
+  threshold: 2
+  window: 1m
+  ban: 1m
+targets:
+  webhook:
+    local:
+      url: http://127.0.0.1:8090/hook
+`
+	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
 
 	occupied := httptest.NewServer(http.NotFoundHandler())
 	defer occupied.Close()
@@ -31,14 +41,23 @@ func startupLog(t *testing.T, args ...string) string {
 	root.EnvPrefix("WARDEN_")
 	Register(root, endpoint.Register(root), &output, "test")
 	commandArgs := []string{
-		"serve", "--config", path, "--database", filepath.Join(dir, "warden.db"),
+		"serve",
+		"--config", path,
+		"--database", filepath.Join(dir, "warden.db"),
 		"--listen-address", strings.TrimPrefix(occupied.URL, "http://"),
-		"--management-listen-address=127.0.0.1:0", "--snitch-secret", "test-secret",
+		"--management-listen-address=127.0.0.1:0",
+		"--snitch-secret", "test-secret",
 	}
 	runner, err := root.ParseRunner(append(commandArgs, args...))
 	require.NoError(t, err)
 	require.ErrorContains(t, runner.Run(t.Context()), "address already in use")
-	return strings.SplitN(strings.TrimSpace(output.String()), "\n", 2)[0]
+	return strings.TrimSpace(output.String())
+}
+
+// startupLog returns the first startup record for log-format assertions.
+func startupLog(t *testing.T, args ...string) string {
+	t.Helper()
+	return strings.SplitN(startupLogs(t, args...), "\n", 2)[0]
 }
 
 func TestLogFormat(t *testing.T) {
@@ -165,6 +184,26 @@ func TestServeFlagValidation(t *testing.T) {
 		t.Parallel()
 		require.NoError(t, parse("--snitch-secret", "secret"))
 	})
+
+	t.Run("accepts maintenance interval overrides", func(t *testing.T) {
+		t.Parallel()
+		require.NoError(t, parse("--snitch-secret", "secret", "--prune-interval=15m", "--optimize-interval=6h"))
+	})
+
+	t.Run("rejects zero prune interval", func(t *testing.T) {
+		t.Parallel()
+		require.Error(t, parse("--snitch-secret", "secret", "--prune-interval=0"))
+	})
+
+	t.Run("rejects negative optimize interval", func(t *testing.T) {
+		t.Parallel()
+		require.Error(t, parse("--snitch-secret", "secret", "--optimize-interval=-1m"))
+	})
+
+	t.Run("rejects intervals beyond one year", func(t *testing.T) {
+		t.Parallel()
+		require.Error(t, parse("--snitch-secret", "secret", "--prune-interval=8761h"))
+	})
 }
 
 func TestServeSecretEnvironment(t *testing.T) {
@@ -199,4 +238,17 @@ func TestServeRejectsBlankManagementListenerEnvironment(t *testing.T) {
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.ErrorContains(t, err, "must not be blank")
+}
+
+func TestMaintenanceIntervalEnvironment(t *testing.T) {
+	t.Setenv("WARDEN__SNITCH_SECRET", "test-secret")
+	t.Setenv("WARDEN__PRUNE_INTERVAL", "15m")
+	t.Setenv("WARDEN__OPTIMIZE_INTERVAL", "6h")
+
+	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
+	root.EnvPrefix("WARDEN_")
+	Register(root, endpoint.Register(root), &bytes.Buffer{}, "test")
+
+	_, err := root.ParseRunner([]string{"serve"})
+	require.NoError(t, err)
 }

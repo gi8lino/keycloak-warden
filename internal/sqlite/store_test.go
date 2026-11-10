@@ -314,3 +314,11 @@ func TestWorkerSchedule(t *testing.T) {
 		assert.True(t, due.IsZero())
 	})
 }
+
+func TestOptimize(t *testing.T) {
+	t.Parallel()
+	store, _ := openStore(t, filepath.Join(t.TempDir(), "optimize.db"))
+	require.NoError(t, store.Optimize(t.Context()))
+	require.NoError(t, store.Close())
+	require.Error(t, store.Optimize(t.Context()), "optimization should not succeed on a closed store")
+}
