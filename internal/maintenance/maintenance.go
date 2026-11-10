@@ -14,7 +14,7 @@ const (
 	// DefaultOptimizeInterval runs periodic SQLite planner optimization daily.
 	DefaultOptimizeInterval = 24 * time.Hour
 	// MinInterval is the shortest supported operational maintenance interval.
-	MinInterval = time.Second
+	MinInterval = 5 * time.Minute
 	// MaxInterval bounds operational intervals against accidental overflow.
 	MaxInterval = 365 * 24 * time.Hour
 	// retryInterval avoids rapid retries when SQLite maintenance encounters an error.

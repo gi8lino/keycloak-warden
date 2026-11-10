@@ -53,24 +53,42 @@ func TestScheduleValidate(t *testing.T) {
 
 	t.Run("accepts configured intervals", func(t *testing.T) {
 		t.Parallel()
-		assert.NoError(t, (Schedule{PruneInterval: time.Minute, OptimizeInterval: time.Hour}).Validate())
+		sched := Schedule{
+			PruneInterval:    MinInterval,
+			OptimizeInterval: time.Hour,
+		}
+		err := sched.Validate()
+		assert.NoError(t, err)
 	})
 
 	t.Run("rejects missing prune interval", func(t *testing.T) {
 		t.Parallel()
-		err := (Schedule{OptimizeInterval: time.Hour}).Validate()
+
+		sched := Schedule{
+			OptimizeInterval: time.Hour,
+			PruneInterval:    0,
+		}
+		err := sched.Validate()
 		require.ErrorContains(t, err, "prune-interval")
 	})
 
 	t.Run("rejects short optimize interval", func(t *testing.T) {
 		t.Parallel()
-		err := (Schedule{PruneInterval: time.Minute, OptimizeInterval: time.Millisecond}).Validate()
+		sched := Schedule{
+			PruneInterval:    MinInterval,
+			OptimizeInterval: time.Millisecond,
+		}
+		err := sched.Validate()
 		require.ErrorContains(t, err, "optimize-interval")
 	})
 
 	t.Run("rejects overlong intervals", func(t *testing.T) {
 		t.Parallel()
-		err := (Schedule{PruneInterval: MaxInterval + time.Second, OptimizeInterval: time.Hour}).Validate()
+		sched := Schedule{
+			PruneInterval:    MaxInterval + time.Second,
+			OptimizeInterval: time.Hour,
+		}
+		err := sched.Validate()
 		require.ErrorContains(t, err, "prune-interval")
 	})
 }
@@ -101,8 +119,15 @@ func TestRecurringMaintenance(t *testing.T) {
 func TestMaintenanceRetry(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
-		store := &fakeStore{pruneFailure: true, optimizeFailure: true}
-		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Second}, discardLogger())
+		store := &fakeStore{
+			pruneFailure:    true,
+			optimizeFailure: true,
+		}
+		sched := Schedule{
+			PruneInterval:    time.Hour,
+			OptimizeInterval: time.Second,
+		}
+		runner := Start(t.Context(), store, sched, discardLogger())
 		defer runner.Close()
 
 		synctest.Wait()
@@ -127,7 +152,8 @@ func TestMaintenanceClose(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
-		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}, discardLogger())
+		sched := Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}
+		runner := Start(t.Context(), store, sched, discardLogger())
 		synctest.Wait()
 		runner.Close()
 		runner.Close()

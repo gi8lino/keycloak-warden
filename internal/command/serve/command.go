@@ -20,6 +20,14 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
 
+	managementAddr := command.String(
+		"management-listen-address",
+		"127.0.0.1:8081",
+		"Management HTTP listen address",
+	).
+		Placeholder("ADDR").
+		NotBlank().
+		Value()
 	path := command.String("config", "warden.yaml", "YAML detection rules and action destinations").
 		Placeholder("FILE").
 		NotBlank().
@@ -42,15 +50,6 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 		Value()
 
-	managementAddr := command.String(
-		"management-listen-address",
-		"127.0.0.1:8081",
-		"Management HTTP listen address",
-	).
-		Placeholder("ADDR").
-		NotBlank().
-		Value()
-
 	logFormat := tinyflags.Enum(command.FlagSet, "log-format", appkitlogging.LogFormatJSON, "Log output format",
 		appkitlogging.LogFormatText, appkitlogging.LogFormatJSON).
 		Short("l").
@@ -60,7 +59,6 @@ func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, v
 		Value()
 	debug := command.Bool("debug", false, "Enable detailed diagnostic logs").
 		Value()
-
 	metricsEnabled := command.Bool("metrics", false, "Expose Prometheus metrics on the management listener").
 		Value()
 
