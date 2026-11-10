@@ -19,3 +19,9 @@ tag_prefix = "mermaid/v"
 asset = "mermaid"
 version = "1.3.0"
 
+[[plugin]]
+id = "me.kumbuka.code-annotations"
+repository = "kumbuka-me/plugins"
+tag_prefix = "code-annotations/v"
+asset = "code-annotations"
+version = "1.0.0"

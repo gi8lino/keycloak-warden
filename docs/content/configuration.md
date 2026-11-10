@@ -24,12 +24,7 @@ targets:
         Authorization: env:WARDEN_WEBHOOK_AUTHORIZATION
         X-Source: warden
 ```
-
-- `threshold`: number of failed logins required to trigger an automatic ban.
-- `window`: rolling interval over which failures are counted, across events from the same client IP.
-- `ban`: how long an automatic ban lasts.
-- `targets.cloudflare.<name>`: named Cloudflare destination with a `zone-id` and `api-token`.
-- `targets.webhook.<name>`: named HTTP endpoint with a required `url` and optional `headers`.
+{code highlight="2-4,8-10,12-16" note="2:Number of failed logins needed to trigger a ban." note="3:Rolling detection window, counted per client IP." note="4:Duration of an automatic ban." note="8-10:Named Cloudflare destination; zone ID and token resolve from the environment." note="12-16:Named webhook destination with a required URL and optional request headers." reference-position="right" reference-color="blue" line-numbers="true"}
 
 **At least one destination is required.** Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
 
@@ -37,7 +32,7 @@ targets:
 
 Warden resolves destination values once on startup using [Resolver](https://github.com/containeroo/resolver). Use `env:NAME`, `file:/path/to/secret`, or a literal value. `literal:` escapes a value that would otherwise look like a resolver reference.
 
-For webhook targets, HTTP **HTTPS is required** except when explicitly addressing loopback hosts such as `localhost` or `127.0.0.1`. Redirects are not followed. The `Content-Type` header is reserved; Warden sends JSON with `application/json`. Webhooks have no built-in outbound signing, so supply an authentication header if needed.
+For webhook targets, **HTTPS is required** except when explicitly addressing loopback hosts such as `localhost` or `127.0.0.1`. Redirects are not followed. The `Content-Type` header is reserved; Warden sends JSON with `application/json`. Webhooks have no built-in outbound signing, so supply an authentication header if needed.
 
 Inbound requests from Snitch are separately protected by the `--snitch-secret` HMAC key. **Never expose this secret in the public documentation or commit it to the repository.**
 
@@ -57,6 +52,7 @@ warden serve \
   --prune-interval=1h \
   --optimize-interval=24h
 ```
+{code highlight="4-7,9-10" note="4-5:Separate listeners for ingestion and management endpoints." note="6:Required shared HMAC secret for incoming Snitch events." note="7:Optional bearer token enabling the manual-ban HTTP API." note="9-10:Independent pruning and optimization schedules; neither changes data retention." reference-position="right" reference-color="blue" line-numbers="true"}
 
 | Flag                          | Default          | Purpose                                     |
 | ----------------------------- | ---------------- | ------------------------------------------- |
