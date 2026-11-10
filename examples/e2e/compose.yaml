@@ -48,7 +48,7 @@ services:
       context: .
       dockerfile: Dockerfile.keycloak
       args:
-        SNITCH_VERSION: ${SNITCH_RELEASE:-0.2.0}
+        SNITCH_VERSION: ${SNITCH_RELEASE:-1.0.0}
     command: ["start-dev", "--import-realm"]
     ports:
       - "127.0.0.1:${E2E_KC_PORT:-18080}:8080"

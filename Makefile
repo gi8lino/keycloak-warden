@@ -9,7 +9,7 @@ GOLANGCI_LINT_VERSION ?= v2.15.0
 DEV_TOOLS_VERSION ?= v0.9.0
 
 # renovate: datasource=github-releases depName=gi8lino/keycloak-snitch
-SNITCH_VERSION ?= v0.2.0
+SNITCH_VERSION ?= v1.0.0
 SNITCH_RELEASE := $(patsubst v%,%,$(SNITCH_VERSION))
 SNITCH_JAR := examples/e2e/snitch/keycloak-snitch-$(SNITCH_RELEASE).jar
 SNITCH_URL := https://github.com/gi8lino/keycloak-snitch/releases/download/$(SNITCH_VERSION)/keycloak-snitch-$(SNITCH_RELEASE).jar
