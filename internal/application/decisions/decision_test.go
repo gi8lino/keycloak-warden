@@ -24,6 +24,7 @@ func TestDecisionJSONState(t *testing.T) {
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"state":"`+string(state)+`"`)
 		assert.NotContains(t, string(encoded), `"active"`)
+		assert.NotContains(t, string(encoded), `"failures"`)
 
 		var decoded Decision
 		require.NoError(t, json.Unmarshal(encoded, &decoded))

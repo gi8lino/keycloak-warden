@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
 // openReader opens an existing SQLite database in read-only mode.
@@ -22,8 +21,8 @@ func openReader(path string) (*sql.DB, error) {
 	return sql.Open("sqlite", location.String())
 }
 
-// InspectMany returns the requested decisions and deliveries from one read-only transaction.
-func InspectMany(ctx context.Context, path string, ids []string) ([]decisions.Inspection, error) {
+// InspectMany returns requested decision records with sources and deliveries from one read-only transaction.
+func InspectMany(ctx context.Context, path string, ids []string) ([]bans.Record, error) {
 	db, err := openReader(path)
 	if err != nil {
 		return nil, err
@@ -36,9 +35,10 @@ func InspectMany(ctx context.Context, path string, ids []string) ([]decisions.In
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	views := make([]decisions.Inspection, 0, len(ids))
+	now := time.Now()
+	views := make([]bans.Record, 0, len(ids))
 	for _, id := range ids {
-		view, err := inspectTx(ctx, tx, id)
+		view, err := readBan(ctx, tx, id, now)
 		if err != nil {
 			return nil, fmt.Errorf("inspect decision %q: %w", id, err)
 		}
@@ -49,21 +49,6 @@ func InspectMany(ctx context.Context, path string, ids []string) ([]decisions.In
 		return nil, err
 	}
 	return views, nil
-}
-
-// inspectTx reads one decision and its deliveries within an existing transaction.
-func inspectTx(ctx context.Context, tx *sql.Tx, id string) (decisions.Inspection, error) {
-	decision, err := readDecision(ctx, tx, id)
-	if err != nil {
-		return decisions.Inspection{}, err
-	}
-
-	deliveries, err := readDeliveries(ctx, tx, decision.IP)
-	if err != nil {
-		return decisions.Inspection{}, err
-	}
-
-	return decisions.Inspection{Decision: decision, Deliveries: deliveries}, nil
 }
 
 // ListActiveBans reads active blocks with their automatic and manual sources.

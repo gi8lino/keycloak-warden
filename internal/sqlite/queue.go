@@ -49,7 +49,7 @@ WHERE expires <= ?
 		return err
 	}
 	for _, ip := range expired {
-		if _, err := reconcileDecision(ctx, tx, ip, now, s.targets, nil); err != nil {
+		if _, _, err := reconcileDecision(ctx, tx, ip, now, s.targets); err != nil {
 			return err
 		}
 	}
@@ -74,7 +74,7 @@ func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
 	var active bool
 	decision := &job.Decision
 	err := s.db.QueryRowContext(ctx, `
-SELECT d.id, d.revision, d.ip, d.active, d.expires, d.failures, q.destination
+SELECT d.id, d.revision, d.ip, d.active, d.expires, q.destination
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
 LEFT JOIN destination_backoff AS b ON b.destination = q.destination
@@ -90,7 +90,6 @@ LIMIT 1
 		&decision.IP,
 		&active,
 		&expires,
-		&decision.Failures,
 		&job.Destination,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

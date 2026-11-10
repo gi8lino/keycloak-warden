@@ -87,7 +87,7 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 		AdminToken: "admin-token",
 		Readiness:  store,
 		Processor:  noopProcessor{},
-		BanAdmin:   service,
+		Bans:       service,
 	})
 	return h.Application, h.Management
 }
@@ -228,7 +228,7 @@ func TestNewApplication(t *testing.T) {
 			Secret:     "snitch",
 			AdminToken: "admin-token",
 			Logger:     slog.Default(),
-			BanAdmin:   service,
+			Bans:       service,
 			Processor:  ingest,
 			Readiness:  store,
 		}).Application
@@ -250,7 +250,6 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, json.Unmarshal(removed.Body.Bytes(), &view))
 		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
-		assert.Zero(t, view.Decision.Failures)
 		assert.Empty(t, view.Sources)
 		job, err := store.Next(t.Context(), time.Now())
 
@@ -284,7 +283,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			BanAdmin:   noOpBanAdministration{},
+			Bans:       noOpBanAdministration{},
 		})
 		req := httptest.NewRequest(http.MethodPost, "/bans", nil)
 		req.Header.Add("Authorization", "Bearer admin")
@@ -304,7 +303,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			BanAdmin:   noOpBanAdministration{},
+			Bans:       noOpBanAdministration{},
 		})
 		req := httptest.NewRequest(http.MethodGet, "/bans", nil)
 		req.Header.Set("Authorization", "Basic admin")
@@ -323,7 +322,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			BanAdmin:   noOpBanAdministration{},
+			Bans:       noOpBanAdministration{},
 		})
 
 		assert.Equal(t, http.StatusUnauthorized, adminRequest(h.Application, http.MethodGet, "/bans", "secret", "").Code)

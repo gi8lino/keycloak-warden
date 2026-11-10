@@ -37,6 +37,7 @@ func TestProviderApply(t *testing.T) {
 			var got decisions.Decision
 			assert.NoError(t, json.Unmarshal(body, &got))
 			assert.Equal(t, want, got)
+			assert.NotContains(t, string(body), `"failures"`)
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer server.Close()

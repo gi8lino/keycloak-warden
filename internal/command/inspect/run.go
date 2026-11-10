@@ -1,4 +1,4 @@
-// Package inspect prints persisted decisions and their delivery acknowledgements.
+// Package inspect prints persisted decision records, sources, and delivery acknowledgements.
 package inspect
 
 import (
@@ -14,5 +14,5 @@ func Run(ctx context.Context, database string, ids []string, encode output.Encod
 	if err != nil {
 		return err
 	}
-	return encode(output.Inspections(views))
+	return encode(output.Records(views))
 }

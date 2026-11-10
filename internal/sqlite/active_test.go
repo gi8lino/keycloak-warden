@@ -37,6 +37,8 @@ func TestInspect(t *testing.T) {
 		require.Len(t, views, 1)
 		assert.Equal(t, *decision, views[0].Decision)
 		assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 0}}, views[0].Deliveries)
+		require.Len(t, views[0].Sources, 1)
+		assert.Equal(t, bans.SourceAutomatic, views[0].Sources[0].Kind)
 	})
 }
 
@@ -83,10 +85,12 @@ func TestInspectMany(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, views[1].Decision, firstBan.Decision)
 		assert.Equal(t, views[1].Deliveries, firstBan.Deliveries)
+		assert.Equal(t, views[1].Sources, firstBan.Sources)
 		secondBan, err := store.GetDecision(ctx, second.ID, now.Add(time.Second))
 		require.NoError(t, err)
 		assert.Equal(t, views[0].Decision, secondBan.Decision)
 		assert.Equal(t, views[0].Deliveries, secondBan.Deliveries)
+		assert.Equal(t, views[0].Sources, secondBan.Sources)
 	})
 
 	t.Run("missing decision reports its ID without partial results", func(t *testing.T) {
@@ -108,6 +112,26 @@ func TestInspectMany(t *testing.T) {
 		require.ErrorContains(t, err, "missing-id")
 		assert.Nil(t, views)
 	})
+}
+
+func TestInspectReleasedDecision(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "warden.db")
+	store, _ := openStore(t, path, "edge")
+	defer store.Close() //nolint:errcheck
+	service, err := bans.NewAdminService(store)
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	created, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.25", Duration: time.Hour, Reason: "incident"}, now)
+	require.NoError(t, err)
+	released, err := service.Release(t.Context(), created.Decision.ID, now.Add(time.Second))
+	require.NoError(t, err)
+	records, err := sqlite.InspectMany(t.Context(), path, []string{created.Decision.ID})
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	assert.Equal(t, released.Decision, records[0].Decision)
+	assert.Empty(t, records[0].Sources)
+	assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 0}}, records[0].Deliveries)
 }
 
 func TestListActiveBans(t *testing.T) {

@@ -16,7 +16,7 @@ type observationTx struct {
 	tx *sql.Tx
 	// targets lists the configured destinations for new decisions.
 	targets []string
-	// changed records whether this transaction scheduled a decision.
+	// changed indicates source updates that should wake the delivery worker after commit.
 	changed bool
 }
 
@@ -58,7 +58,6 @@ WHERE ip = ?
 func (o *observationTx) Block(
 	ctx context.Context,
 	ip string,
-	count int,
 	until, now time.Time,
 ) (*decisions.Decision, error) {
 	if err := ensureDecision(ctx, o.tx, ip); err != nil {
@@ -67,10 +66,15 @@ func (o *observationTx) Block(
 	if err := setSource(ctx, o.tx, ip, bans.SourceAutomatic, until, ""); err != nil {
 		return nil, err
 	}
-	decision, err := reconcileDecision(ctx, o.tx, ip, now, o.targets, &count)
+	decision, revised, err := reconcileDecision(ctx, o.tx, ip, now, o.targets)
 	if err != nil {
 		return nil, err
 	}
+	// A source may have changed even if an existing manual ban keeps the
+	// effective decision unchanged. The worker still needs an expiry wakeup.
 	o.changed = true
+	if !revised {
+		return nil, nil
+	}
 	return &decision, nil
 }

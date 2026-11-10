@@ -10,11 +10,11 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
-// Run lists active decisions and their sources without modifying SQLite.
+// Run lists active decision records including sources and deliveries without modifying SQLite.
 func Run(ctx context.Context, database string, encode output.Encoder) error {
 	active, err := sqlite.ListActiveBans(ctx, database, time.Now())
 	if err != nil {
 		return err
 	}
-	return encode(output.Bans(active))
+	return encode(output.Records(active))
 }

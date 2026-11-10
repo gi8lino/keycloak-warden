@@ -30,6 +30,4 @@ type Decision struct {
 	State State `json:"state"`
 	// ExpiresAt is the deadline for the desired block.
 	ExpiresAt time.Time `json:"expiresAt"`
-	// Failures records the count that last triggered the decision.
-	Failures int `json:"failures"`
 }

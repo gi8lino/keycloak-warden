@@ -31,11 +31,40 @@ For a manual ban, send a JSON object such as:
 }
 ```
 
-The API responds with the effective ban record, which includes a nested decision and its source and delivery information. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). These records use the same structure as the `list-active` and `inspect` CLI commands. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+
+For example, an active manual ban that has been acknowledged by a webhook might look like:
+
+```json
+{
+  "decision": {
+    "id": "fee0c026-0eb3-416a-9e13-823248fdb9da",
+    "revision": 4,
+    "ipAddress": "203.0.113.10",
+    "state": "banned",
+    "expiresAt": "2026-11-10T22:33:04Z"
+  },
+  "sources": [
+    {
+      "kind": "manual",
+      "expiresAt": "2026-11-10T22:33:04Z",
+      "reason": "Investigation"
+    }
+  ],
+  "deliveries": [
+    {
+      "destination": "webhook.receiver",
+      "acknowledgedRevision": 4
+    }
+  ]
+}
+```
+
+`GET /bans` returns an array of records; `GET /bans/{id}` returns one record. The acknowledgement describes the last successfully accepted revision, which may be lower than the desired revision while delivery is pending or retrying. Only currently active sources are returned, and `sources` is empty for a released decision. Failed-login observation counts remain internal to detection, not part of the decision or webhook payload.
 
 ## Webhook delivery
 
-Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, expiry, and failure count.
+Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry.
 
 Webhook responses in the `2xx` range acknowledge a delivery. An unsuccessful delivery is retried; a successful webhook response means the **receiver accepted the notification**, not necessarily that an external firewall has already reconciled the state.
 

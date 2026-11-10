@@ -106,7 +106,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 func TestStoreReleaseAllSources(t *testing.T) {
 	t.Parallel()
 
-	t.Run("removes manual and automatic sources and clears failure count", func(t *testing.T) {
+	t.Run("removes manual and automatic sources and resets observation generation", func(t *testing.T) {
 		t.Parallel()
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
@@ -137,7 +137,6 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateUnbanned, unbanned.Decision.State)
-		assert.Zero(t, unbanned.Decision.Failures)
 		assert.Empty(t, unbanned.Sources)
 		assert.Equal(t, manual.Decision.Revision+1, unbanned.Decision.Revision)
 
@@ -170,7 +169,6 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, decision)
-		assert.Equal(t, 2, decision.Failures)
 		assert.Equal(t, unbanned.Decision.ID, decision.ID)
 		assert.Equal(t, unbanned.Decision.Revision+1, decision.Revision)
 	})
@@ -197,7 +195,6 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
-		assert.Zero(t, result.Decision.Failures)
 		assert.Empty(t, result.Sources)
 
 		job, err := store.Next(ctx, now.Add(time.Second))

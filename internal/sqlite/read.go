@@ -15,7 +15,7 @@ func readDecision(ctx context.Context, tx *sql.Tx, id string) (decisions.Decisio
 	var expires int64
 	var active bool
 	err := tx.QueryRowContext(ctx, `
-SELECT id, revision, ip, active, expires, failures
+SELECT id, revision, ip, active, expires
 FROM decisions
 WHERE id = ?
 `, id).Scan(
@@ -24,7 +24,6 @@ WHERE id = ?
 		&decision.IP,
 		&active,
 		&expires,
-		&decision.Failures,
 	)
 	if err != nil {
 		return decisions.Decision{}, err

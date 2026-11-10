@@ -31,7 +31,7 @@ var (
 type Store interface {
 	// ApplyManualBan adds or extends the manual source without affecting automatic sources.
 	ApplyManualBan(context.Context, string, time.Time, string, time.Time) (Record, error)
-	// ReleaseAllSources clears automatic and manual sources and resets failure counting.
+	// ReleaseAllSources clears automatic and manual sources and resets the observation generation.
 	ReleaseAllSources(context.Context, string, time.Time) (Record, error)
 	// ListActive returns currently effective blocks.
 	ListActive(context.Context, time.Time) ([]Record, error)

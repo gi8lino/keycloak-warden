@@ -80,7 +80,6 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 				"decision_id", decision.ID,
 				"trigger_realm_id", envelope.RealmID,
 				"ip", decision.IP,
-				"failures", decision.Failures,
 				"expires_at", decision.ExpiresAt,
 			)
 		}

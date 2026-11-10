@@ -33,7 +33,9 @@ A decision's `state` is either `banned` or `unbanned`. This is **Warden's desire
 
 Automatic expiry or a manual unban changes the desired state to `unbanned`. A manual ban and an automatic ban are independent sources; releasing an IP removes the active reasons for blocking it.
 
-A webhook receives a decision object with fields including `id`, `revision`, `ipAddress`, `state`, `expiresAt`, and `failures`.
+The administrative API, `list-active`, and `inspect` return the same record shape: `decision`, `sources`, and `deliveries`. `sources` describes the independent currently active automatic or manual reasons for a block, while `deliveries` contains the last acknowledged revision for each destination. A released decision retains its historical identity and delivery acknowledgements, but has no active sources.
+
+A webhook receives only the desired decision (`id`, `revision`, `ipAddress`, `state`, and `expiresAt`). Failure observations are retained internally for detection and replay protection, not exported as part of the decision.
 
 ## Package responsibilities
 

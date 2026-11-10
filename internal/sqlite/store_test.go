@@ -95,7 +95,6 @@ func TestStoreTransact(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, decision)
-		assert.Equal(t, 2, decision.Failures)
 	})
 }
 
@@ -263,7 +262,7 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		rollback := errors.New("rollback")
 		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
-			_, err := tx.Block(ctx, "203.0.113.2", 2, now.Add(time.Hour), now)
+			_, err := tx.Block(ctx, "203.0.113.2", now.Add(time.Hour), now)
 			require.NoError(t, err)
 			return rollback
 		})
@@ -321,4 +320,32 @@ func TestOptimize(t *testing.T) {
 	require.NoError(t, store.Optimize(t.Context()))
 	require.NoError(t, store.Close())
 	require.Error(t, store.Optimize(t.Context()), "optimization should not succeed on a closed store")
+}
+
+// TestAdditionalFailureDoesNotReviseUnchangedBan ensures observation counts do not trigger delivery revisions.
+func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
+	t.Parallel()
+	store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"), "receiver")
+	defer store.Close() //nolint:errcheck
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	_, err := processor.Process(ctx, failed("first"), now)
+	require.NoError(t, err)
+	original, err := processor.Process(ctx, failed("second"), now)
+	require.NoError(t, err)
+	require.NotNil(t, original)
+	job, err := store.Next(ctx, now)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.NoError(t, store.Finish(ctx, *job, true, now))
+
+	latest, err := processor.Process(ctx, failed("third"), now)
+	require.NoError(t, err)
+	assert.Nil(t, latest, "an extra observation must not be reported as a new decision")
+	record, err := store.GetDecision(ctx, original.ID, now)
+	require.NoError(t, err)
+	assert.Equal(t, *original, record.Decision)
+	next, err := store.Next(ctx, now)
+	require.NoError(t, err)
+	assert.Nil(t, next, "an unchanged ban must not be delivered again")
 }

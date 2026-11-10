@@ -14,8 +14,8 @@ import (
 // ensureDecision creates a stable identity before attaching independently expiring ban sources.
 func ensureDecision(ctx context.Context, tx *sql.Tx, ip string) error {
 	_, err := tx.ExecContext(ctx, `
-INSERT INTO decisions (ip, id, revision, active, expires, failures)
-VALUES (?, ?, 0, 0, 0, 0)
+INSERT INTO decisions (ip, id, revision, active, expires)
+VALUES (?, ?, 0, 0, 0)
 ON CONFLICT (ip) DO NOTHING
 `, ip, uuid.NewString())
 	return err
@@ -58,26 +58,25 @@ func reconcileDecision(
 	ip string,
 	now time.Time,
 	targets []string,
-	failures *int,
-) (decisions.Decision, error) {
+) (decisions.Decision, bool, error) {
 	previous, err := readDecisionByIP(ctx, tx, ip)
 	if err != nil {
-		return decisions.Decision{}, err
+		return decisions.Decision{}, false, err
 	}
 	sources, err := readBanSources(ctx, tx, ip, now)
 	if err != nil {
-		return decisions.Decision{}, err
+		return decisions.Decision{}, false, err
 	}
 
-	decision, changed := bans.Reconcile(previous, sources, failures, now)
+	decision, changed := bans.Reconcile(previous, sources, now)
 	if changed {
 		if _, err := tx.ExecContext(ctx, `
 UPDATE decisions
-SET revision = ?, active = ?, expires = ?, failures = ?
+SET revision = ?, active = ?, expires = ?
 WHERE ip = ?
 `, decision.Revision, decision.State == decisions.StateBanned,
-			decision.ExpiresAt.UnixMilli(), decision.Failures, ip); err != nil {
-			return decisions.Decision{}, err
+			decision.ExpiresAt.UnixMilli(), ip); err != nil {
+			return decisions.Decision{}, false, err
 		}
 	}
 
@@ -87,7 +86,7 @@ WHERE ip = ?
 DELETE FROM deliveries
 WHERE ip = ? AND acknowledged = ? AND ? = 1
 `, ip, previous.Revision, previous.State == decisions.StateUnbanned); err != nil {
-		return decisions.Decision{}, err
+		return decisions.Decision{}, false, err
 	}
 
 	for _, name := range targets {
@@ -96,10 +95,10 @@ INSERT INTO deliveries (ip, destination)
 VALUES (?, ?)
 ON CONFLICT (ip, destination) DO NOTHING
 `, ip, name); err != nil {
-			return decisions.Decision{}, err
+			return decisions.Decision{}, false, err
 		}
 	}
-	return decision, nil
+	return decision, changed, nil
 }
 
 // readDecisionByIP loads the current materialized decision within the transaction.
@@ -108,8 +107,8 @@ func readDecisionByIP(ctx context.Context, tx *sql.Tx, ip string) (decisions.Dec
 	var active bool
 	var expires int64
 	err := tx.QueryRowContext(ctx, `
-SELECT id, revision, active, expires, failures FROM decisions WHERE ip = ?
-`, ip).Scan(&result.ID, &result.Revision, &active, &expires, &result.Failures)
+SELECT id, revision, active, expires FROM decisions WHERE ip = ?
+`, ip).Scan(&result.ID, &result.Revision, &active, &expires)
 	if err != nil {
 		return decisions.Decision{}, err
 	}

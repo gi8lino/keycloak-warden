@@ -90,6 +90,29 @@ SELECT EXISTS (
 		assert.True(t, exists)
 	})
 
+	t.Run("omits aggregate failure count but preserves observation generation", func(t *testing.T) {
+		t.Parallel()
+		db := openMigratedDatabase(t)
+		var count int
+		err := db.QueryRowContext(t.Context(), `
+SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'failures'
+`).Scan(&count)
+		require.NoError(t, err)
+		assert.Zero(t, count)
+
+		err = db.QueryRowContext(t.Context(), `
+SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'failure_generation'
+`).Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+
+		err = db.QueryRowContext(t.Context(), `
+SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'failures'
+`).Scan(&count)
+		require.NoError(t, err)
+		assert.Equal(t, 1, count)
+	})
+
 	t.Run("creates ban sources table", func(t *testing.T) {
 		t.Parallel()
 
@@ -151,4 +174,74 @@ SELECT version, applied_at FROM schema_migrations
 
 	require.NoError(t, rows.Err())
 	return history
+}
+
+// TestUpgradeLegacyDecision verifies migration 4 retains existing bans, sources, deliveries, and replay generations.
+func TestUpgradeLegacyDecision(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	old, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	baseline, err := os.ReadFile("migrations/0003_baseline.sql")
+	require.NoError(t, err)
+	_, err = old.ExecContext(t.Context(), string(baseline))
+	require.NoError(t, err)
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	until := now.Add(time.Hour).UnixMilli()
+	_, err = old.ExecContext(t.Context(), `
+CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
+INSERT INTO schema_migrations (version, applied_at) VALUES (3, 0);
+`)
+	require.NoError(t, err)
+	_, err = old.ExecContext(t.Context(), `
+INSERT INTO decisions (ip, id, revision, active, expires, failures, failure_generation)
+VALUES ('203.0.113.10', 'legacy-decision', 4, 1, ?, 5, 3)
+`, until)
+	require.NoError(t, err)
+	_, err = old.ExecContext(t.Context(), `
+INSERT INTO ban_sources (ip, kind, expires, reason)
+VALUES ('203.0.113.10', 'manual', ?, 'investigation')
+`, until)
+	require.NoError(t, err)
+	_, err = old.ExecContext(t.Context(), `
+INSERT INTO deliveries (ip, destination, acknowledged)
+VALUES ('203.0.113.10', 'webhook.receiver', 4)
+`)
+	require.NoError(t, err)
+	_, err = old.ExecContext(t.Context(), `
+INSERT INTO failures (source, event_id, ip, received, generation)
+VALUES ('keycloak', 'event-one', '203.0.113.10', ?, 3)
+`, now.UnixMilli())
+	require.NoError(t, err)
+	require.NoError(t, old.Close())
+
+	store, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, []string{"webhook.receiver"})
+	require.NoError(t, err)
+	record, err := store.GetDecision(t.Context(), "legacy-decision", now)
+	require.NoError(t, err)
+	assert.Equal(t, int64(4), record.Decision.Revision)
+	assert.Len(t, record.Sources, 1)
+	assert.Equal(t, "investigation", record.Sources[0].Reason)
+	assert.Len(t, record.Deliveries, 1)
+	assert.Equal(t, int64(4), record.Deliveries[0].Revision)
+	require.NoError(t, store.Close())
+
+	upgraded, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	var generation, events, legacyColumn int
+	require.NoError(t, upgraded.QueryRowContext(t.Context(), `SELECT failure_generation FROM decisions WHERE id = 'legacy-decision'`).Scan(&generation))
+	require.NoError(t, upgraded.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM failures WHERE event_id = 'event-one'`).Scan(&events))
+	require.NoError(t, upgraded.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'failures'`).Scan(&legacyColumn))
+	assert.Equal(t, 3, generation)
+	assert.Equal(t, 1, events)
+	assert.Zero(t, legacyColumn)
+	var applied int
+	require.NoError(t, upgraded.QueryRowContext(t.Context(), `SELECT COUNT(*) FROM schema_migrations WHERE version = 4`).Scan(&applied))
+	assert.Equal(t, 1, applied)
+	require.NoError(t, upgraded.Close())
+
+	// Opening an already upgraded database should never rerun the migration.
+	reopened, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, []string{"webhook.receiver"})
+	require.NoError(t, err)
+	require.NoError(t, reopened.Close())
 }

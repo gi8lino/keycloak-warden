@@ -57,7 +57,7 @@ wait_for_active_ban() {
   while [ "$attempt" -lt 30 ]; do
     bans=$(active_bans)
     if printf '%s' "$bans" | grep -Fq '"state":"banned"' &&
-      printf '%s' "$bans" | grep -Fq '"failures":2'; then
+      printf '%s' "$bans" | grep -Fq '"kind":"automatic"'; then
       printf '%s\n' "$bans"
       return 0
     fi

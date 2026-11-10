@@ -564,10 +564,14 @@ func TestInspectMultiple(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", ids[0], "--database", path, "--output", "json"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []decisions.Inspection
+		var views []bans.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 1)
 		assert.Equal(t, ids[0], views[0].Decision.ID)
+		require.Len(t, views[0].Sources, 1)
+		assert.Equal(t, bans.SourceManual, views[0].Sources[0].Kind)
+		assert.Equal(t, "incident one", views[0].Sources[0].Reason)
+		assert.NotContains(t, stdout.String(), `"failures"`)
 	})
 
 	t.Run("JSON preserves requested order for multiple IDs", func(t *testing.T) {
@@ -576,10 +580,12 @@ func TestInspectMultiple(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"--output", "json", "inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []decisions.Inspection
+		var views []bans.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
 		assert.Equal(t, ids[1], views[0].Decision.ID)
+		require.Len(t, views[0].Sources, 1)
+		assert.Equal(t, "incident two", views[0].Sources[0].Reason)
 		assert.Equal(t, ids[0], views[1].Decision.ID)
 	})
 

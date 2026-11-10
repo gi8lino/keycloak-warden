@@ -30,21 +30,17 @@ func (s *Store) ApplyManualBan(
 	if err := ensureDecision(ctx, tx, ip); err != nil {
 		return bans.Record{}, err
 	}
-
 	if err := setSource(ctx, tx, ip, bans.SourceManual, until, reason); err != nil {
 		return bans.Record{}, err
 	}
-
-	decision, err := reconcileDecision(ctx, tx, ip, now, s.targets, nil)
+	decision, _, err := reconcileDecision(ctx, tx, ip, now, s.targets)
 	if err != nil {
 		return bans.Record{}, err
 	}
-
 	view, err := readBan(ctx, tx, decision.ID, now)
 	if err != nil {
 		return bans.Record{}, err
 	}
-
 	return view, s.commitDecision(tx)
 }
 
@@ -89,8 +85,7 @@ WHERE ip = ?
 		return bans.Record{}, err
 	}
 
-	zero := 0
-	decision, err := reconcileDecision(ctx, tx, ip, now, s.targets, &zero)
+	decision, _, err := reconcileDecision(ctx, tx, ip, now, s.targets)
 	if err != nil {
 		return bans.Record{}, err
 	}
@@ -136,7 +131,7 @@ func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, er
 // readActiveBans selects active decisions in IP order and indexes their positions.
 func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, map[string]int, error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT id, revision, ip, active, expires, failures
+SELECT id, revision, ip, active, expires
 FROM decisions
 WHERE active = 1 AND expires > ?
 ORDER BY ip
@@ -156,7 +151,7 @@ ORDER BY ip
 		var active bool
 		if err := rows.Scan(
 			&view.Decision.ID, &view.Decision.Revision, &view.Decision.IP,
-			&active, &expires, &view.Decision.Failures,
+			&active, &expires,
 		); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
