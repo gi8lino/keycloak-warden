@@ -39,7 +39,7 @@ jobs:
           cache: true
 
       - name: Generate Kumbuka static site
-        run: make docs-build
+        run: make build-docs
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v6
