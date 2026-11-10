@@ -163,7 +163,7 @@ func TestNewApplication(t *testing.T) {
 		var view bans.Ban
 
 		require.NoError(t, json.Unmarshal(created.Body.Bytes(), &view))
-		assert.True(t, view.Decision.Active)
+		assert.Equal(t, decisions.StateBanned, view.Decision.State)
 		require.Len(t, view.Sources, 1)
 		assert.Equal(t, bans.SourceManual, view.Sources[0].Kind)
 		listed := adminRequest(application, http.MethodGet, "/bans", "admin-token", "")
@@ -182,7 +182,7 @@ func TestNewApplication(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, removed.Code, removed.Body.String())
 		require.NoError(t, json.Unmarshal(removed.Body.Bytes(), &view))
-		assert.False(t, view.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
 		assert.Empty(t, view.Sources)
 		assert.Len(t, view.Deliveries, 1)
 		duplicate := adminRequest(application, http.MethodDelete, "/bans/"+id, "admin-token", "")
@@ -247,14 +247,14 @@ func TestNewApplication(t *testing.T) {
 		var view bans.Ban
 
 		require.NoError(t, json.Unmarshal(removed.Body.Bytes(), &view))
-		assert.False(t, view.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
 		assert.Zero(t, view.Decision.Failures)
 		assert.Empty(t, view.Sources)
 		job, err := store.Next(t.Context(), time.Now())
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.False(t, job.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
 	})
 
 	t.Run("ban routes disabled without admin token", func(t *testing.T) {
@@ -396,10 +396,10 @@ func TestNewApplication(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		block := awaitDecision(t, received)
 
-		assert.True(t, block.Active)
+		assert.Equal(t, decisions.StateBanned, block.State)
 		release := awaitDecision(t, received)
 
-		assert.False(t, release.Active)
+		assert.Equal(t, decisions.StateUnbanned, release.State)
 		assert.Equal(t, block.ID, release.ID)
 		assert.Equal(t, block.Revision+1, release.Revision)
 	})

@@ -68,8 +68,8 @@ WHERE ip = ?
 		return decisions.Decision{}, err
 	}
 
-	decision.Active = effectiveUntil > 0
-	if !decision.Active {
+	decision.State = stateFromActive(effectiveUntil > 0)
+	if decision.State == decisions.StateUnbanned {
 		effectiveUntil = previousExpires
 	}
 	if failures != nil {
@@ -82,7 +82,7 @@ WHERE ip = ?
 UPDATE decisions
 SET revision = ?, active = ?, expires = ?, failures = ?
 WHERE ip = ?
-`, decision.Revision, decision.Active, effectiveUntil, decision.Failures, ip); err != nil {
+`, decision.Revision, decision.State == decisions.StateBanned, effectiveUntil, decision.Failures, ip); err != nil {
 		return decisions.Decision{}, err
 	}
 

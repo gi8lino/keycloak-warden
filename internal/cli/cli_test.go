@@ -267,7 +267,7 @@ func TestRun(t *testing.T) {
 				_, _ = w.Write([]byte(`[{"decision":{"id":"stable","ipAddress":"203.0.113.10"},"sources":[],"deliveries":[]}]`))
 				return
 			}
-			_, _ = w.Write([]byte(`{"decision":{"id":"stable","ipAddress":"203.0.113.10","active":false},"sources":[],"deliveries":[]}`))
+			_, _ = w.Write([]byte(`{"decision":{"id":"stable","ipAddress":"203.0.113.10","state":"unbanned"},"sources":[],"deliveries":[]}`))
 		}))
 		defer server.Close()
 		var stdout, stderr bytes.Buffer
@@ -440,7 +440,7 @@ func TestRun(t *testing.T) {
 				deletes.Add(1)
 
 				assert.Equal(t, "/bans/stable", r.URL.Path)
-				_, _ = w.Write([]byte(`{"decision":{"active":false},"sources":[],"deliveries":[]}`))
+				_, _ = w.Write([]byte(`{"decision":{"state":"unbanned"},"sources":[],"deliveries":[]}`))
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}

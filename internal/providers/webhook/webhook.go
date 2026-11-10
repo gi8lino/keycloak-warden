@@ -24,6 +24,10 @@ type Provider struct {
 
 // Apply posts the serialized decision and accepts only a successful response.
 func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
+	if !d.State.Valid() {
+		return fmt.Errorf("invalid decision state %q", d.State)
+	}
+
 	body, err := json.Marshal(d)
 	if err != nil {
 		return err

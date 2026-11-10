@@ -50,10 +50,7 @@ type Inspection decisions.Inspection
 
 // WriteText displays the inspected decision and delivery status.
 func (view Inspection) WriteText(w io.Writer) error {
-	state := "inactive"
-	if view.Decision.Active {
-		state = "active"
-	}
+	state := view.Decision.State
 
 	if _, err := fmt.Fprintf(w, "ID: %s\nIP: %s\nState: %s\nRevision: %d\nExpires: %s\nFailures: %d\n",
 		view.Decision.ID, view.Decision.IP, state, view.Decision.Revision,

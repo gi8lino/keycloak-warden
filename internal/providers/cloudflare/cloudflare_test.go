@@ -19,7 +19,7 @@ func TestProviderApply(t *testing.T) {
 	t.Run("apply retries discover owned IPv6 block and release only that block", func(t *testing.T) {
 		t.Parallel()
 
-		d := decisions.Decision{ID: "decision-one", IP: "2001:db8::1", Active: true}
+		d := decisions.Decision{ID: "decision-one", IP: "2001:db8::1", State: decisions.StateBanned}
 		var rules = []rule{{ID: "foreign", Mode: "block", Notes: "manual", Configuration: filter{"ip6", d.IP}}}
 		var created, deleted int
 		var mu sync.Mutex
@@ -64,7 +64,7 @@ func TestProviderApply(t *testing.T) {
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
-		d.Active = false
+		d.State = decisions.StateUnbanned
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
@@ -76,6 +76,12 @@ func TestProviderApply(t *testing.T) {
 		assert.Len(t, rules, 1)
 	})
 
+	t.Run("rejects unknown desired state before calling Cloudflare", func(t *testing.T) {
+		t.Parallel()
+		p := Provider{}
+		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1"}), "invalid decision state")
+	})
+
 	t.Run("forbidden response includes the numeric Cloudflare code", func(t *testing.T) {
 		t.Parallel()
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -84,7 +90,7 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider{RulesURL: server.URL, Client: server.Client()}
-		require.EqualError(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1"}), "Cloudflare HTTP 403 (code 10000)")
+		require.EqualError(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisions.StateBanned}), "Cloudflare HTTP 403 (code 10000)")
 	})
 
 	t.Run("API failure is retryable", func(t *testing.T) {
@@ -94,6 +100,6 @@ func TestProviderApply(t *testing.T) {
 		defer s.Close()
 		p := Provider{RulesURL: s.URL, Client: s.Client(), Token: "secret"}
 
-		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1"}), "429")
+		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisions.StateBanned}), "429")
 	})
 }

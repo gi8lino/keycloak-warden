@@ -128,7 +128,7 @@ func DeleteBan(service BanService, logger *slog.Logger) http.HandlerFunc {
 			"event", "ban_sources_removed",
 			"decision_id", view.Decision.ID,
 			"ip", view.Decision.IP,
-			"remains_blocked", view.Decision.Active,
+			"state", view.Decision.State,
 		)
 		httpresponse.Respond(w, http.StatusOK, view)
 	}

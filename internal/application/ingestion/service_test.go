@@ -56,7 +56,7 @@ func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, 
 // Block records that ingestion requested a block.
 func (tx *fakeTx) Block(_ context.Context, _ string, _ int, _ time.Time, _ time.Time) (*decisions.Decision, error) {
 	tx.blocked = true
-	return &decisions.Decision{ID: "decision", Active: true}, nil
+	return &decisions.Decision{ID: "decision", State: decisions.StateBanned}, nil
 }
 
 func TestNew(t *testing.T) {

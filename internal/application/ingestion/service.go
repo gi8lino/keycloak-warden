@@ -51,7 +51,11 @@ func New(repository Repository, rule detection.Rule) (*Service, error) {
 }
 
 // Process validates one envelope and records a qualifying failure atomically.
-func (s *Service) Process(ctx context.Context, envelope events.Envelope, now time.Time) (decision *decisions.Decision, err error) {
+func (s *Service) Process(
+	ctx context.Context,
+	envelope events.Envelope,
+	now time.Time,
+) (decision *decisions.Decision, err error) {
 	event, err := normalize(envelope)
 	if err != nil {
 		return nil, err

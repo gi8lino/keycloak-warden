@@ -242,7 +242,7 @@ func dispatch(
 		"delivering decision",
 		"event", "delivery_starting",
 		"ip", job.Decision.IP,
-		"active", job.Decision.Active,
+		"state", job.Decision.State,
 	)
 
 	provider, ok := destinations[job.Destination]
@@ -266,7 +266,7 @@ func dispatch(
 	log.Info(
 		"delivery completed",
 		"event", "delivery_completed",
-		"active", job.Decision.Active,
+		"state", job.Decision.State,
 	)
 
 	return q.Finish(ctx, job, true, time.Now())

@@ -49,14 +49,14 @@ func TestInspectionWriteText(t *testing.T) {
 		t.Parallel()
 
 		view := Inspection(decisions.Inspection{
-			Decision:   decisions.Decision{ID: "one", IP: "203.0.113.10", Active: true, Revision: 4},
+			Decision:   decisions.Decision{ID: "one", IP: "203.0.113.10", State: decisions.StateBanned, Revision: 4},
 			Deliveries: []decisions.Acknowledgement{{Destination: "edge", Revision: 4}},
 		})
 		var output bytes.Buffer
 
 		require.NoError(t, view.WriteText(&output))
 		assert.Contains(t, output.String(), "IP: 203.0.113.10")
-		assert.Contains(t, output.String(), "State: active")
+		assert.Contains(t, output.String(), "State: banned")
 		assert.Contains(t, output.String(), "edge: revision 4")
 	})
 }

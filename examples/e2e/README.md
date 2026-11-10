@@ -54,7 +54,7 @@ docker compose -p keycloak-warden-e2e -f examples/e2e/compose.yaml exec warden \
 2. Waits for Warden and Hookglass, checks that `/header` rejects requests missing the API key, and waits for Keycloak.
 3. Sends two **real invalid password grants** to Keycloak's token endpoint.
 4. Confirms Snitch's signed events caused Warden to ban the originating IP.
-5. Confirms Hookglass accepted and logged Warden's header-authenticated active-ban webhook.
+5. Confirms Hookglass accepted and logged Warden's header-authenticated banned-state webhook.
 6. Unbans the recorded IP through Warden's authenticated API.
 7. Confirms the release webhook, empty active-ban list, and Prometheus metrics.
 

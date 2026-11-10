@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
 )
 
@@ -88,7 +89,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		job, err = store.Next(ctx, now.Add(time.Second))
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.False(t, job.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
 		require.NoError(t, provider.Apply(ctx, job.Decision))
 
 		// Simulate another crash after release but before acknowledgement.

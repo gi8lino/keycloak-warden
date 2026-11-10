@@ -21,7 +21,7 @@ make e2e-up
 make e2e-logs
 ```
 
-Open the [demo realm’s account console](http://127.0.0.1:18080/realms/warden-e2e/account/) and sign in as `demo` with a wrong password twice within one minute. Look for a webhook with `"active": true` in the receiver logs. The demo uses a local receiver, so you can try it without a Cloudflare account.
+Open the [demo realm’s account console](http://127.0.0.1:18080/realms/warden-e2e/account/) and sign in as `demo` with a wrong password twice within one minute. Look for a webhook with `"state": "banned"` in the receiver logs. The demo uses a local receiver, so you can try it without a Cloudflare account.
 
 Press Ctrl+C to stop following the logs, then run `make e2e-down` to stop the stack. The [Compose guide](examples/e2e/README.md) includes the automated end-to-end test.
 
@@ -113,7 +113,7 @@ When the CLI prints `Banned`, Warden has recorded the decision. To confirm deliv
 kubectl -n keycloak logs deployment/keycloak-warden --since=10m
 ```
 
-Look for `delivery_completed` with `active: true` for your Cloudflare destination and decision. If you see `delivery_failed`, the error explains why the attempt failed. Warden retries automatically.
+Look for `delivery_completed` with `state: banned` for your Cloudflare destination and decision. If you see `delivery_failed`, the error explains why the attempt failed. Warden retries automatically.
 
 To check in Cloudflare, open **Security → Security rules** for the configured zone. Under **IP access rules**, look for the blocked IP and the note `warden:<decision-id>`.
 

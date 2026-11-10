@@ -13,6 +13,7 @@ import (
 func readDecision(ctx context.Context, tx *sql.Tx, id string) (decisions.Decision, error) {
 	var decision decisions.Decision
 	var expires int64
+	var active bool
 	err := tx.QueryRowContext(ctx, `
 SELECT id, revision, ip, active, expires, failures
 FROM decisions
@@ -21,13 +22,14 @@ WHERE id = ?
 		&decision.ID,
 		&decision.Revision,
 		&decision.IP,
-		&decision.Active,
+		&active,
 		&expires,
 		&decision.Failures,
 	)
 	if err != nil {
 		return decisions.Decision{}, err
 	}
+	decision.State = stateFromActive(active)
 	decision.ExpiresAt = time.UnixMilli(expires).UTC()
 	return decision, nil
 }

@@ -146,13 +146,15 @@ ORDER BY ip
 			Deliveries: []decisions.Acknowledgement{},
 		}
 		var expires int64
+		var active bool
 		if err := rows.Scan(
 			&view.Decision.ID, &view.Decision.Revision, &view.Decision.IP,
-			&view.Decision.Active, &expires, &view.Decision.Failures,
+			&active, &expires, &view.Decision.Failures,
 		); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
 		}
+		view.Decision.State = stateFromActive(active)
 		view.Decision.ExpiresAt = time.UnixMilli(expires).UTC()
 		byIP[view.Decision.IP] = len(list)
 		list = append(list, view)

@@ -234,10 +234,10 @@ func TestClientUnban(t *testing.T) {
 			switch r.Method {
 			case http.MethodGet:
 				getCalled.Store(true)
-				_, _ = w.Write([]byte(`[{"decision":{"id":"stable-id","ipAddress":"203.0.113.22","active":true},"sources":[{"kind":"manual"}],"deliveries":[]}]`))
+				_, _ = w.Write([]byte(`[{"decision":{"id":"stable-id","ipAddress":"203.0.113.22","state":"banned"},"sources":[{"kind":"manual"}],"deliveries":[]}]`))
 			case http.MethodDelete:
 				assert.Equal(t, "/bans/stable-id", r.URL.Path)
-				_, _ = w.Write([]byte(`{"decision":{"id":"stable-id","active":false},"sources":[],"deliveries":[]}`))
+				_, _ = w.Write([]byte(`{"decision":{"id":"stable-id","state":"unbanned"},"sources":[],"deliveries":[]}`))
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}

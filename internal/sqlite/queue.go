@@ -71,6 +71,7 @@ WHERE received <= ?
 func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
 	var job actions.Job
 	var expires int64
+	var active bool
 	decision := &job.Decision
 	err := s.db.QueryRowContext(ctx, `
 SELECT d.id, d.revision, d.ip, d.active, d.expires, d.failures, q.destination
@@ -87,7 +88,7 @@ LIMIT 1
 		&decision.ID,
 		&decision.Revision,
 		&decision.IP,
-		&decision.Active,
+		&active,
 		&expires,
 		&decision.Failures,
 		&job.Destination,
@@ -98,6 +99,7 @@ LIMIT 1
 	if err != nil {
 		return nil, err
 	}
+	decision.State = stateFromActive(active)
 	decision.ExpiresAt = time.UnixMilli(expires).UTC()
 
 	return &job, nil

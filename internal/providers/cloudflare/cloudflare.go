@@ -74,6 +74,10 @@ type pagination struct {
 
 // Apply discovers an owned rule before creation or release, including after an interrupted request.
 func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
+	if !d.State.Valid() {
+		return fmt.Errorf("invalid decision state %q", d.State)
+	}
+
 	addr, err := netip.ParseAddr(d.IP)
 	if err != nil {
 		return err
@@ -95,7 +99,7 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 		return err
 	}
 
-	if d.Active {
+	if d.State == decisions.StateBanned {
 		if len(owned) > 0 {
 			return nil
 		}

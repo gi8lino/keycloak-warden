@@ -30,12 +30,12 @@ func TestRun(t *testing.T) {
 				gets.Add(1)
 
 				assert.Equal(t, "/bans", r.URL.Path)
-				_, _ = w.Write([]byte(`[{"decision":{"id":"id-10","ipAddress":"203.0.113.10","active":true},"sources":[{"kind":"automatic"}],"deliveries":[]},{"decision":{"id":"id-20","ipAddress":"203.0.113.20","active":true},"sources":[{"kind":"manual"}],"deliveries":[]}]`))
+				_, _ = w.Write([]byte(`[{"decision":{"id":"id-10","ipAddress":"203.0.113.10","state":"banned"},"sources":[{"kind":"automatic"}],"deliveries":[]},{"decision":{"id":"id-20","ipAddress":"203.0.113.20","state":"banned"},"sources":[{"kind":"manual"}],"deliveries":[]}]`))
 			case http.MethodDelete:
 				deletedMu.Lock()
 				deleted = append(deleted, r.URL.Path)
 				deletedMu.Unlock()
-				_, _ = w.Write([]byte(`{"decision":{"active":false},"sources":[],"deliveries":[]}`))
+				_, _ = w.Write([]byte(`{"decision":{"state":"unbanned"},"sources":[],"deliveries":[]}`))
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}
@@ -79,7 +79,7 @@ func TestRun(t *testing.T) {
 					_, _ = w.Write([]byte("provider unavailable"))
 					return
 				}
-				_, _ = w.Write([]byte(`{"decision":{"active":false},"sources":[],"deliveries":[]}`))
+				_, _ = w.Write([]byte(`{"decision":{"state":"unbanned"},"sources":[],"deliveries":[]}`))
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}
@@ -114,7 +114,7 @@ func TestRun(t *testing.T) {
 				_, _ = w.Write([]byte(`[{"decision":{"id":"id-20","ipAddress":"203.0.113.20"}}]`))
 			case http.MethodDelete:
 				deletes.Add(1)
-				_, _ = w.Write([]byte(`{"decision":{"active":false},"sources":[],"deliveries":[]}`))
+				_, _ = w.Write([]byte(`{"decision":{"state":"unbanned"},"sources":[],"deliveries":[]}`))
 			default:
 				w.WriteHeader(http.StatusMethodNotAllowed)
 			}

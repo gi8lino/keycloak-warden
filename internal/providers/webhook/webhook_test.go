@@ -20,7 +20,7 @@ func TestProviderApply(t *testing.T) {
 	t.Run("sends configured headers and desired revision", func(t *testing.T) {
 		t.Parallel()
 		want := decisions.Decision{
-			ID: "stable", IP: "203.0.113.2", Revision: 3, Active: false, ExpiresAt: time.Now().UTC(),
+			ID: "stable", IP: "203.0.113.2", Revision: 3, State: decisions.StateUnbanned, ExpiresAt: time.Now().UTC(),
 		}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(r.Body)
@@ -52,7 +52,13 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider{URL: server.URL, Client: server.Client()}
-		require.NoError(t, p.Apply(t.Context(), decisions.Decision{}))
+		require.NoError(t, p.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}))
+	})
+
+	t.Run("rejects unknown desired state before sending webhook", func(t *testing.T) {
+		t.Parallel()
+		p := Provider{}
+		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{}), "invalid decision state")
 	})
 
 	t.Run("non-success response propagates to dispatcher", func(t *testing.T) {
@@ -60,6 +66,6 @@ func TestProviderApply(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }))
 		defer server.Close()
 		p := Provider{URL: server.URL, Client: server.Client()}
-		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{}), "503")
+		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}), "503")
 	})
 }

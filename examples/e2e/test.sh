@@ -56,7 +56,7 @@ wait_for_active_ban() {
   attempt=0
   while [ "$attempt" -lt 30 ]; do
     bans=$(active_bans)
-    if printf '%s' "$bans" | grep -Fq '"active":true' &&
+    if printf '%s' "$bans" | grep -Fq '"state":"banned"' &&
       printf '%s' "$bans" | grep -Fq '"failures":2'; then
       printf '%s\n' "$bans"
       return 0
@@ -76,13 +76,13 @@ wait_for_webhook() {
       grep -F 'event=webhook_received' |
       grep -F 'path=/header' |
       grep -F 'verified=true' |
-      grep -Fq "\\\"active\\\":$desired"; then
+      grep -Fq "\\\"state\\\":\\\"$desired\\\""; then
       return 0
     fi
     attempt=$((attempt + 1))
     sleep 1
   done
-  printf 'Webhook for active=%s was not observed\n' "$desired" >&2
+  printf 'Webhook for state=%s was not observed\n' "$desired" >&2
   return 1
 }
 
@@ -92,7 +92,7 @@ wait_http "$receiver_url/healthz" "Hookglass"
 # Confirm that Hookglass rejects requests without the configured header.
 code=$(curl --silent --show-error --max-time 10 \
   --output /dev/null --write-out '%{http_code}' \
-  -X POST --data '{"active":true}' "$receiver_url/header")
+  -X POST --data '{"state":"banned"}' "$receiver_url/header")
 if [ "$code" != 401 ]; then
   printf 'Hookglass /header returned HTTP %s (expected 401)\n' "$code" >&2
   exit 1
@@ -126,15 +126,15 @@ if [ -z "$ip" ]; then
 fi
 printf 'Automatic ban: %s\n' "$ip"
 
-wait_for_webhook true
-printf 'Verified header-authenticated active-ban webhook\n'
+wait_for_webhook banned
+printf 'Verified header-authenticated banned-state webhook\n'
 
 compose exec -T warden /keycloak-warden unban "$ip" \
   --admin-token development-admin-token \
   --output json
 
-wait_for_webhook false
-if active_bans | grep -Fq '"active":true'; then
+wait_for_webhook unbanned
+if active_bans | grep -Fq '"state":"banned"'; then
   printf 'Warden still reports an active ban after unban\n' >&2
   exit 1
 fi
@@ -154,5 +154,5 @@ if ! printf '%s\n' "$metrics" | grep -Fq 'warden_automatic_ban_decisions_total{t
 fi
 
 success=true
-printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> release webhook.\n'
+printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> unbanned-state webhook.\n'
 printf 'Inspect Hookglass logs: make e2e-logs\n'

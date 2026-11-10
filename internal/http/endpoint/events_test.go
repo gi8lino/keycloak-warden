@@ -151,7 +151,7 @@ func TestEventsRealmTelemetry(t *testing.T) {
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, nil))
 		registry := metrics.NewRegistry(true, "test")
-		processor := &capture{decision: &decisions.Decision{ID: "decision", IP: "203.0.113.5", Active: true}}
+		processor := &capture{decision: &decisions.Decision{ID: "decision", IP: "203.0.113.5", State: decisions.StateBanned}}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, registry), middleware.AuthenticateSnitch("key"))
 
 		require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))

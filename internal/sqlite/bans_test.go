@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
 func TestStoreBanManual(t *testing.T) {
@@ -33,7 +34,7 @@ func TestStoreBanManual(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "203.0.113.7", created.Decision.IP)
-		assert.True(t, created.Decision.Active)
+		assert.Equal(t, decisions.StateBanned, created.Decision.State)
 		require.Len(t, created.Sources, 1)
 		assert.Equal(t, bans.SourceManual, created.Sources[0].Kind)
 		require.NoError(t, store.Close())
@@ -64,7 +65,7 @@ func TestStoreBanManual(t *testing.T) {
 		view, err := service.Get(ctx, created.Decision.ID, created.Decision.ExpiresAt)
 
 		require.NoError(t, err)
-		assert.False(t, view.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
 		assert.Empty(t, view.Sources)
 		_, err = service.Get(ctx, "does-not-exist", now)
 
@@ -95,7 +96,7 @@ func TestStoreBanManual(t *testing.T) {
 		view, err := service.Get(ctx, manual.Decision.ID, auto.ExpiresAt)
 
 		require.NoError(t, err)
-		assert.True(t, view.Decision.Active)
+		assert.Equal(t, decisions.StateBanned, view.Decision.State)
 		require.Len(t, view.Sources, 1)
 		assert.Equal(t, bans.SourceManual, view.Sources[0].Kind)
 		assert.Equal(t, manual.Decision.ExpiresAt, view.Decision.ExpiresAt)
@@ -135,7 +136,7 @@ func TestStoreUnbanAll(t *testing.T) {
 		unbanned, err := service.Unban(ctx, manual.Decision.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
-		assert.False(t, unbanned.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, unbanned.Decision.State)
 		assert.Zero(t, unbanned.Decision.Failures)
 		assert.Empty(t, unbanned.Sources)
 		assert.Equal(t, manual.Decision.Revision+1, unbanned.Decision.Revision)
@@ -144,7 +145,7 @@ func TestStoreUnbanAll(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.False(t, job.Decision.Active, "the release must be queued")
+		assert.Equal(t, decisions.StateUnbanned, job.Decision.State, "the release must be queued")
 		assert.Equal(t, unbanned.Decision.Revision, job.Decision.Revision)
 
 		views, err := service.List(ctx, now.Add(time.Second))
@@ -195,7 +196,7 @@ func TestStoreUnbanAll(t *testing.T) {
 		result, err := service.Unban(ctx, auto.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
-		assert.False(t, result.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
 		assert.Zero(t, result.Decision.Failures)
 		assert.Empty(t, result.Sources)
 
@@ -203,7 +204,7 @@ func TestStoreUnbanAll(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.False(t, job.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
 	})
 
 	t.Run("removes a purely manual ban", func(t *testing.T) {
@@ -222,7 +223,7 @@ func TestStoreUnbanAll(t *testing.T) {
 		result, err := service.Unban(t.Context(), created.Decision.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
-		assert.False(t, result.Decision.Active)
+		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
 		assert.Empty(t, result.Sources)
 	})
 }
