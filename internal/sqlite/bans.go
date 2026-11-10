@@ -10,8 +10,8 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-// BanManual creates or extends one manual source and queues the resulting effective state.
-func (s *Store) BanManual(
+// ApplyManualBan creates or extends one manual source and queues the resulting effective state.
+func (s *Store) ApplyManualBan(
 	ctx context.Context,
 	ip string,
 	until time.Time,
@@ -41,8 +41,8 @@ func (s *Store) BanManual(
 	return view, s.commitDecision(tx)
 }
 
-// UnbanAll removes every active source and resets the failed-login count atomically.
-func (s *Store) UnbanAll(ctx context.Context, id string, now time.Time) (bans.Ban, error) {
+// ReleaseAllSources removes every active source and resets the failed-login count atomically.
+func (s *Store) ReleaseAllSources(ctx context.Context, id string, now time.Time) (bans.Ban, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bans.Ban{}, err
@@ -94,8 +94,8 @@ WHERE ip = ?
 	return view, s.commitDecision(tx)
 }
 
-// ListBans returns all currently active effective bans, with source and delivery details.
-func (s *Store) ListBans(ctx context.Context, now time.Time) ([]bans.Ban, error) {
+// ListActive returns all currently active effective bans, with source and delivery details.
+func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Ban, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
@@ -229,8 +229,8 @@ ORDER BY q.ip, q.destination
 	return rows.Close()
 }
 
-// GetBan returns the persisted decision and all currently active sources.
-func (s *Store) GetBan(ctx context.Context, id string, now time.Time) (bans.Ban, error) {
+// GetDecision returns the persisted decision and all currently active sources.
+func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Ban, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return bans.Ban{}, err

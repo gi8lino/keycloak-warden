@@ -12,7 +12,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-func TestStoreBanManual(t *testing.T) {
+func TestStoreApplyManualBan(t *testing.T) {
 	t.Parallel()
 
 	t.Run("persists manual ban across restart and expires it", func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestStoreBanManual(t *testing.T) {
 	})
 }
 
-func TestStoreUnbanAll(t *testing.T) {
+func TestStoreReleaseAllSources(t *testing.T) {
 	t.Parallel()
 
 	t.Run("removes manual and automatic sources and clears failure count", func(t *testing.T) {
@@ -228,7 +228,7 @@ func TestStoreUnbanAll(t *testing.T) {
 	})
 }
 
-func TestStoreListBans(t *testing.T) {
+func TestStoreListActive(t *testing.T) {
 	t.Parallel()
 
 	t.Run("identifies both automatic and manual ban sources", func(t *testing.T) {
@@ -299,4 +299,88 @@ func TestRetiredDestination(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, job)
 	assert.Equal(t, "new", job.Destination)
+}
+
+// TestIdempotentManualBan verifies that unchanged desired state does not schedule a new delivery.
+func TestIdempotentManualBan(t *testing.T) {
+	t.Parallel()
+	store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
+	defer store.Close() //nolint:errcheck
+	service, err := bans.New(store)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	request := bans.Request{IP: "203.0.113.8", Duration: time.Hour, Reason: "incident"}
+	first, err := service.Ban(t.Context(), request, now)
+	require.NoError(t, err)
+
+	job, err := store.Next(t.Context(), now)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.NoError(t, store.Finish(t.Context(), *job, true, now))
+
+	// Neither identical requests nor a reason-only change affect delivered fields.
+	again, err := service.Ban(t.Context(), request, now)
+	require.NoError(t, err)
+	assert.Equal(t, first.Decision, again.Decision)
+
+	request.Reason = "still investigating"
+	changedReason, err := service.Ban(t.Context(), request, now)
+	require.NoError(t, err)
+	assert.Equal(t, first.Decision, changedReason.Decision)
+	require.Len(t, changedReason.Sources, 1)
+	assert.Equal(t, request.Reason, changedReason.Sources[0].Reason)
+
+	pending, err := store.Next(t.Context(), now)
+	require.NoError(t, err)
+	assert.Nil(t, pending)
+
+	// A real expiry extension must create a revision and a new delivery.
+	request.Duration = 2 * time.Hour
+	extended, err := service.Ban(t.Context(), request, now)
+	require.NoError(t, err)
+	assert.Equal(t, first.Decision.Revision+1, extended.Decision.Revision)
+	pending, err = store.Next(t.Context(), now)
+	require.NoError(t, err)
+	require.NotNil(t, pending)
+	assert.Equal(t, extended.Decision.Revision, pending.Decision.Revision)
+}
+
+// TestExpiringShorterSourceIsNoOp verifies a surviving source keeps the same desired revision.
+func TestExpiringShorterSourceIsNoOp(t *testing.T) {
+	t.Parallel()
+	store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
+	defer store.Close() //nolint:errcheck
+	service, err := bans.New(store)
+	require.NoError(t, err)
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	_, err = ingestion.Process(t.Context(), failed("first"), now)
+	require.NoError(t, err)
+	_, err = ingestion.Process(t.Context(), failed("second"), now)
+	require.NoError(t, err)
+
+	manual, err := service.Ban(t.Context(), bans.Request{
+		IP: "203.0.113.1", Duration: time.Hour, Reason: "extended review",
+	}, now)
+	require.NoError(t, err)
+	assert.Len(t, manual.Sources, 2)
+
+	// Automatic expiry removes a source but does not change the effective block.
+	require.NoError(t, store.Maintain(t.Context(), now.Add(16*time.Minute)))
+	remaining, err := service.Get(t.Context(), manual.Decision.ID, now.Add(16*time.Minute))
+	require.NoError(t, err)
+	assert.Len(t, remaining.Sources, 1)
+	assert.Equal(t, manual.Decision, remaining.Decision)
+
+	// The final expiry creates one release and repeated maintenance is a no-op.
+	require.NoError(t, store.Maintain(t.Context(), now.Add(time.Hour)))
+	released, err := service.Get(t.Context(), manual.Decision.ID, now.Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
+	assert.Equal(t, manual.Decision.Revision+1, released.Decision.Revision)
+	require.NoError(t, store.Maintain(t.Context(), now.Add(time.Hour)))
+	again, err := service.Get(t.Context(), manual.Decision.ID, now.Add(time.Hour))
+	require.NoError(t, err)
+	assert.Equal(t, released.Decision, again.Decision)
 }

@@ -61,7 +61,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 				assert.NoError(t, store.Close())
 			}
 		})
-		ban, err := store.BanManual(ctx, "203.0.113.25", now.Add(time.Hour), "incident", now)
+		ban, err := store.ApplyManualBan(ctx, "203.0.113.25", now.Add(time.Hour), "incident", now)
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
@@ -84,7 +84,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		assert.Nil(t, pending)
 
-		_, err = store.UnbanAll(ctx, ban.Decision.ID, now.Add(time.Second))
+		_, err = store.ReleaseAllSources(ctx, ban.Decision.ID, now.Add(time.Second))
 		require.NoError(t, err)
 		job, err = store.Next(ctx, now.Add(time.Second))
 		require.NoError(t, err)

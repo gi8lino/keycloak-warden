@@ -24,7 +24,7 @@ const (
 var (
 	// ErrInvalid identifies invalid manual ban input.
 	ErrInvalid = errors.New("invalid manual ban")
-	// ErrNotFound identifies a decision without an active ban.
+	// ErrNotFound identifies a missing decision or a ban that is no longer active for release.
 	ErrNotFound = errors.New("active ban not found")
 )
 
@@ -68,12 +68,16 @@ type Request struct {
 	Reason string
 }
 
-// Repository persists manual sources and reads the effective decisions atomically.
+// Repository atomically stores operator changes and reads effective ban decisions.
 type Repository interface {
-	BanManual(context.Context, string, time.Time, string, time.Time) (Ban, error)
-	UnbanAll(context.Context, string, time.Time) (Ban, error)
-	ListBans(context.Context, time.Time) ([]Ban, error)
-	GetBan(context.Context, string, time.Time) (Ban, error)
+	// ApplyManualBan adds or extends the manual source without affecting automatic sources.
+	ApplyManualBan(context.Context, string, time.Time, string, time.Time) (Ban, error)
+	// ReleaseAllSources clears automatic and manual sources and resets failure counting.
+	ReleaseAllSources(context.Context, string, time.Time) (Ban, error)
+	// ListActive returns currently effective blocks.
+	ListActive(context.Context, time.Time) ([]Ban, error)
+	// GetDecision returns the decision, including released historical decisions.
+	GetDecision(context.Context, string, time.Time) (Ban, error)
 }
 
 // Service coordinates validated manual bans without depending on SQLite or HTTP.
@@ -97,7 +101,7 @@ func (s *Service) Ban(ctx context.Context, request Request, now time.Time) (Ban,
 		return Ban{}, err
 	}
 
-	return s.repository.BanManual(ctx, ip, now.Add(request.Duration), reason, now)
+	return s.repository.ApplyManualBan(ctx, ip, now.Add(request.Duration), reason, now)
 }
 
 // validateBanRequest validates and normalizes a manual ban request.
@@ -135,12 +139,12 @@ func (s *Service) Unban(ctx context.Context, id string, now time.Time) (Ban, err
 		return Ban{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 
-	return s.repository.UnbanAll(ctx, id, now)
+	return s.repository.ReleaseAllSources(ctx, id, now)
 }
 
 // List returns current effective blocks, including automatic and manual sources.
 func (s *Service) List(ctx context.Context, now time.Time) ([]Ban, error) {
-	return s.repository.ListBans(ctx, now)
+	return s.repository.ListActive(ctx, now)
 }
 
 // Get returns the effective decision and sources identified by a stable decision ID.
@@ -149,5 +153,5 @@ func (s *Service) Get(ctx context.Context, id string, now time.Time) (Ban, error
 		return Ban{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 
-	return s.repository.GetBan(ctx, id, now)
+	return s.repository.GetDecision(ctx, id, now)
 }

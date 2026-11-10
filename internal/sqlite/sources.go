@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
@@ -20,7 +21,7 @@ ON CONFLICT (ip) DO NOTHING
 	return err
 }
 
-// setSource inserts or extends one block reason without shortening an existing expiry.
+// setSource persists one source after applying the domain's non-shortening expiry policy.
 func setSource(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -29,17 +30,28 @@ func setSource(
 	until time.Time,
 	reason string,
 ) error {
-	_, err := tx.ExecContext(ctx, `
+	var previous int64
+	err := tx.QueryRowContext(ctx, `
+SELECT expires FROM ban_sources WHERE ip = ? AND kind = ?
+`, ip, kind).Scan(&previous)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	if err == nil {
+		until = bans.ExtendExpiry(time.UnixMilli(previous), until)
+	}
+
+	_, err = tx.ExecContext(ctx, `
 INSERT INTO ban_sources (ip, kind, expires, reason)
 VALUES (?, ?, ?, ?)
 ON CONFLICT (ip, kind) DO UPDATE SET
-    expires = MAX(ban_sources.expires, excluded.expires),
+    expires = excluded.expires,
     reason = excluded.reason
 `, ip, kind, until.UnixMilli(), reason)
 	return err
 }
 
-// reconcileDecision materializes the union of unexpired sources and enqueues its revision.
+// reconcileDecision loads independent sources, evaluates the domain policy and persists material changes.
 func reconcileDecision(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -47,52 +59,34 @@ func reconcileDecision(
 	now time.Time,
 	targets []string,
 	failures *int,
-) (decision decisions.Decision, err error) {
-	var effectiveUntil int64
-	if err := tx.QueryRowContext(ctx, `
-SELECT COALESCE(MAX(expires), 0)
-FROM ban_sources
-WHERE ip = ? AND expires > ?
-`, ip, now.UnixMilli()).Scan(&effectiveUntil); err != nil {
+) (decisions.Decision, error) {
+	previous, err := readDecisionByIP(ctx, tx, ip)
+	if err != nil {
+		return decisions.Decision{}, err
+	}
+	sources, err := readBanSources(ctx, tx, ip, now)
+	if err != nil {
 		return decisions.Decision{}, err
 	}
 
-	var previousExpires int64
-	var previousInactive bool
-	decision = decisions.Decision{IP: ip}
-	if err := tx.QueryRowContext(ctx, `
-SELECT id, revision, expires, failures, NOT active
-FROM decisions
-WHERE ip = ?
-`, ip).Scan(&decision.ID, &decision.Revision, &previousExpires, &decision.Failures, &previousInactive); err != nil {
-		return decisions.Decision{}, err
-	}
-
-	decision.State = stateFromActive(effectiveUntil > 0)
-	if decision.State == decisions.StateUnbanned {
-		effectiveUntil = previousExpires
-	}
-	if failures != nil {
-		decision.Failures = *failures
-	}
-	decision.Revision++
-	decision.ExpiresAt = time.UnixMilli(effectiveUntil).UTC()
-
-	if _, err := tx.ExecContext(ctx, `
+	decision, changed := bans.Reconcile(previous, sources, failures, now)
+	if changed {
+		if _, err := tx.ExecContext(ctx, `
 UPDATE decisions
 SET revision = ?, active = ?, expires = ?, failures = ?
 WHERE ip = ?
-`, decision.Revision, decision.State == decisions.StateBanned, effectiveUntil, decision.Failures, ip); err != nil {
-		return decisions.Decision{}, err
+`, decision.Revision, decision.State == decisions.StateBanned,
+			decision.ExpiresAt.UnixMilli(), decision.Failures, ip); err != nil {
+			return decisions.Decision{}, err
+		}
 	}
 
 	// Retire fully acknowledged releases before a later ban can reuse this IP.
 	// Outstanding releases retain ownership until their provider acknowledges them.
 	if _, err := tx.ExecContext(ctx, `
 DELETE FROM deliveries
-WHERE ip = ? AND acknowledged = ?
-    AND ? = 1
-`, ip, decision.Revision-1, previousInactive); err != nil {
+WHERE ip = ? AND acknowledged = ? AND ? = 1
+`, ip, previous.Revision, previous.State == decisions.StateUnbanned); err != nil {
 		return decisions.Decision{}, err
 	}
 
@@ -105,6 +99,22 @@ ON CONFLICT (ip, destination) DO NOTHING
 			return decisions.Decision{}, err
 		}
 	}
-
 	return decision, nil
+}
+
+// readDecisionByIP loads the current materialized decision within the transaction.
+func readDecisionByIP(ctx context.Context, tx *sql.Tx, ip string) (decisions.Decision, error) {
+	var result decisions.Decision
+	var active bool
+	var expires int64
+	err := tx.QueryRowContext(ctx, `
+SELECT id, revision, active, expires, failures FROM decisions WHERE ip = ?
+`, ip).Scan(&result.ID, &result.Revision, &active, &expires, &result.Failures)
+	if err != nil {
+		return decisions.Decision{}, err
+	}
+	result.IP = ip
+	result.State = stateFromActive(active)
+	result.ExpiresAt = time.UnixMilli(expires).UTC()
+	return result, nil
 }

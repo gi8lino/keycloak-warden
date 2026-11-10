@@ -23,23 +23,23 @@ type fakeRepo struct {
 	id string
 }
 
-// BanManual records the manual-ban inputs for assertions.
-func (r *fakeRepo) BanManual(_ context.Context, ip string, until time.Time, reason string, _ time.Time) (bans.Ban, error) {
+// ApplyManualBan records the manual-ban inputs for assertions.
+func (r *fakeRepo) ApplyManualBan(_ context.Context, ip string, until time.Time, reason string, _ time.Time) (bans.Ban, error) {
 	r.ip, r.until, r.reason = ip, until, reason
 	return bans.Ban{}, nil
 }
 
-// UnbanAll records the decision ID selected for release.
-func (r *fakeRepo) UnbanAll(_ context.Context, id string, _ time.Time) (bans.Ban, error) {
+// ReleaseAllSources records the decision ID selected for release.
+func (r *fakeRepo) ReleaseAllSources(_ context.Context, id string, _ time.Time) (bans.Ban, error) {
 	r.id = id
 	return bans.Ban{}, nil
 }
 
-// ListBans returns the fake repository’s active ban view.
-func (r *fakeRepo) ListBans(context.Context, time.Time) ([]bans.Ban, error) { return nil, nil }
+// ListActive returns the fake repository’s active ban view.
+func (r *fakeRepo) ListActive(context.Context, time.Time) ([]bans.Ban, error) { return nil, nil }
 
-// GetBan records the requested decision ID.
-func (r *fakeRepo) GetBan(_ context.Context, id string, _ time.Time) (bans.Ban, error) {
+// GetDecision records the requested decision ID.
+func (r *fakeRepo) GetDecision(_ context.Context, id string, _ time.Time) (bans.Ban, error) {
 	r.id = id
 	return bans.Ban{}, nil
 }

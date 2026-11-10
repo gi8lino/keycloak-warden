@@ -288,7 +288,7 @@ func TestWorkerSchedule(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "state.db")
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, _ := openStore(t, path, "receiver")
-		_, err := store.BanManual(ctx, "203.0.113.1", now.Add(8*time.Second), "test", now)
+		_, err := store.ApplyManualBan(ctx, "203.0.113.1", now.Add(8*time.Second), "test", now)
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)

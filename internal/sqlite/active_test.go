@@ -79,11 +79,11 @@ func TestInspectMany(t *testing.T) {
 		assert.Equal(t, []decisions.Acknowledgement{{Destination: "edge", Revision: 1}}, views[1].Deliveries)
 
 		// The online ban readers must return the same decision and delivery data.
-		firstBan, err := store.GetBan(ctx, first.ID, now)
+		firstBan, err := store.GetDecision(ctx, first.ID, now)
 		require.NoError(t, err)
 		assert.Equal(t, views[1].Decision, firstBan.Decision)
 		assert.Equal(t, views[1].Deliveries, firstBan.Deliveries)
-		secondBan, err := store.GetBan(ctx, second.ID, now.Add(time.Second))
+		secondBan, err := store.GetDecision(ctx, second.ID, now.Add(time.Second))
 		require.NoError(t, err)
 		assert.Equal(t, views[0].Decision, secondBan.Decision)
 		assert.Equal(t, views[0].Deliveries, secondBan.Deliveries)

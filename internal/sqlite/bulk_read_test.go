@@ -24,9 +24,9 @@ func TestBulkBanListing(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Millisecond)
 
 		// Insert out of IP order so the listing order must be enforced by SQL.
-		third, err := store.BanManual(ctx, "203.0.113.30", now.Add(time.Hour), "third", now)
+		third, err := store.ApplyManualBan(ctx, "203.0.113.30", now.Add(time.Hour), "third", now)
 		require.NoError(t, err)
-		first, err := store.BanManual(ctx, "203.0.113.10", now.Add(time.Hour), "first", now)
+		first, err := store.ApplyManualBan(ctx, "203.0.113.10", now.Add(time.Hour), "first", now)
 		require.NoError(t, err)
 
 		event := failed("bulk-first")
@@ -36,10 +36,10 @@ func TestBulkBanListing(t *testing.T) {
 		event.ID = "bulk-second"
 		_, err = processor.Process(ctx, event, now)
 		require.NoError(t, err)
-		second, err := store.BanManual(ctx, "203.0.113.20", now.Add(time.Hour), "second", now)
+		second, err := store.ApplyManualBan(ctx, "203.0.113.20", now.Add(time.Hour), "second", now)
 		require.NoError(t, err)
 
-		views, err := store.ListBans(ctx, now)
+		views, err := store.ListActive(ctx, now)
 		require.NoError(t, err)
 		require.Len(t, views, 3)
 		assert.Equal(t, first.Decision.ID, views[0].Decision.ID)
@@ -63,16 +63,16 @@ func TestBulkBanListing(t *testing.T) {
 		assert.Equal(t, views, readonly)
 
 		// A release must not appear in the bulk list or leak its deliveries.
-		_, err = store.UnbanAll(ctx, second.Decision.ID, now.Add(time.Second))
+		_, err = store.ReleaseAllSources(ctx, second.Decision.ID, now.Add(time.Second))
 		require.NoError(t, err)
-		remaining, err := store.ListBans(ctx, now.Add(time.Second))
+		remaining, err := store.ListActive(ctx, now.Add(time.Second))
 		require.NoError(t, err)
 		require.Len(t, remaining, 2)
 		assert.Equal(t, first.Decision.ID, remaining[0].Decision.ID)
 		assert.Equal(t, third.Decision.ID, remaining[1].Decision.ID)
 
 		// No active decisions should serialize as an empty array, not null.
-		expired, err := store.ListBans(ctx, now.Add(2*time.Hour))
+		expired, err := store.ListActive(ctx, now.Add(2*time.Hour))
 		require.NoError(t, err)
 		assert.NotNil(t, expired)
 		assert.Empty(t, expired)
