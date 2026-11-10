@@ -10,7 +10,7 @@ import (
 )
 
 // Bans is a list of active ban views including automatic and manual sources.
-type Bans []bans.Ban
+type Bans []bans.Record
 
 // WriteText displays each effective ban and its active source details.
 func (list Bans) WriteText(w io.Writer) error {

@@ -44,7 +44,11 @@ func Run(
 			break
 		}
 
-		view, err := client.Ban(ctx, bans.Request{IP: ip, Duration: duration, Reason: reason})
+		view, err := client.Ban(ctx, bans.ManualBanRequest{
+			IP:       ip,
+			Duration: duration,
+			Reason:   reason,
+		})
 		if err != nil {
 			failures = append(failures, fmt.Errorf("failed %s: %w", ip, err))
 			batch.Failed++

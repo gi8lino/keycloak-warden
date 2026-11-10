@@ -16,12 +16,12 @@ import (
 
 const maxBanBodyBytes = 16 << 10
 
-// BanService provides manual-ban operations independently of HTTP.
-type BanService interface {
-	Ban(context.Context, bans.Request, time.Time) (bans.Ban, error)
-	Unban(context.Context, string, time.Time) (bans.Ban, error)
-	List(context.Context, time.Time) ([]bans.Ban, error)
-	Get(context.Context, string, time.Time) (bans.Ban, error)
+// BanAdministration exposes validated administrative ban operations independently of HTTP.
+type BanAdministration interface {
+	BanManual(context.Context, bans.ManualBanRequest, time.Time) (bans.Record, error)
+	Release(context.Context, string, time.Time) (bans.Record, error)
+	ListActive(context.Context, time.Time) ([]bans.Record, error)
+	GetDecision(context.Context, string, time.Time) (bans.Record, error)
 }
 
 // createBanPayload contains the fields decoded independently for each administrative request.
@@ -35,7 +35,7 @@ type createBanPayload struct {
 }
 
 // CreateBan creates or extends a manual ban, returning its effective decision.
-func CreateBan(service BanService, logger *slog.Logger) http.HandlerFunc {
+func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var payload createBanPayload
 		media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
@@ -73,7 +73,7 @@ func CreateBan(service BanService, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 
-		view, err := service.Ban(r.Context(), bans.Request{
+		view, err := service.BanManual(r.Context(), bans.ManualBanRequest{
 			IP:       payload.IP,
 			Duration: duration,
 			Reason:   payload.Reason,
@@ -95,9 +95,9 @@ func CreateBan(service BanService, logger *slog.Logger) http.HandlerFunc {
 }
 
 // ListBans returns current blocks and their independent sources.
-func ListBans(service BanService, logger *slog.Logger) http.HandlerFunc {
+func ListBans(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		list, err := service.List(r.Context(), time.Now())
+		list, err := service.ListActive(r.Context(), time.Now())
 		if writeBanError(w, logger, err) {
 			return
 		}
@@ -106,9 +106,9 @@ func ListBans(service BanService, logger *slog.Logger) http.HandlerFunc {
 }
 
 // GetBan returns one persisted decision together with its sources and deliveries.
-func GetBan(service BanService, logger *slog.Logger) http.HandlerFunc {
+func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		view, err := service.Get(r.Context(), r.PathValue("id"), time.Now())
+		view, err := service.GetDecision(r.Context(), r.PathValue("id"), time.Now())
 		if writeBanError(w, logger, err) {
 			return
 		}
@@ -117,9 +117,9 @@ func GetBan(service BanService, logger *slog.Logger) http.HandlerFunc {
 }
 
 // DeleteBan clears all active ban sources and resets detection for the decision.
-func DeleteBan(service BanService, logger *slog.Logger) http.HandlerFunc {
+func DeleteBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		view, err := service.Unban(r.Context(), r.PathValue("id"), time.Now())
+		view, err := service.Release(r.Context(), r.PathValue("id"), time.Now())
 		if writeBanError(w, logger, err) {
 			return
 		}

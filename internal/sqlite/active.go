@@ -68,7 +68,7 @@ func inspectTx(ctx context.Context, tx *sql.Tx, id string) (decisions.Inspection
 
 // ListActiveBans reads active blocks with their automatic and manual sources.
 // It opens the existing database read-only and never starts the delivery worker.
-func ListActiveBans(ctx context.Context, path string, now time.Time) ([]bans.Ban, error) {
+func ListActiveBans(ctx context.Context, path string, now time.Time) ([]bans.Record, error) {
 	db, err := openReader(path)
 	if err != nil {
 		return nil, err

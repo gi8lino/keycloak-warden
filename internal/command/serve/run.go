@@ -50,7 +50,7 @@ func Run(
 	if err != nil {
 		return err
 	}
-	banService, err := bans.New(store)
+	banAdmin, err := bans.NewAdminService(store)
 	if err != nil {
 		return err
 	}
@@ -72,7 +72,7 @@ func Run(
 		RoutePrefix:    routePrefix,
 		Secret:         secret,
 		AdminToken:     adminToken,
-		Bans:           banService,
+		BanAdmin:       banAdmin,
 		Logger:         logger,
 		Processor:      processor,
 		Readiness:      store,

@@ -10,6 +10,9 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
+// Store fulfills the application's atomic ban administration contract.
+var _ bans.Store = (*Store)(nil)
+
 // ApplyManualBan creates or extends one manual source and queues the resulting effective state.
 func (s *Store) ApplyManualBan(
 	ctx context.Context,
@@ -17,35 +20,39 @@ func (s *Store) ApplyManualBan(
 	until time.Time,
 	reason string,
 	now time.Time,
-) (bans.Ban, error) {
+) (bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	if err := ensureDecision(ctx, tx, ip); err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
+
 	if err := setSource(ctx, tx, ip, bans.SourceManual, until, reason); err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
+
 	decision, err := reconcileDecision(ctx, tx, ip, now, s.targets, nil)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
+
 	view, err := readBan(ctx, tx, decision.ID, now)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
+
 	return view, s.commitDecision(tx)
 }
 
 // ReleaseAllSources removes every active source and resets the failed-login count atomically.
-func (s *Store) ReleaseAllSources(ctx context.Context, id string, now time.Time) (bans.Ban, error) {
+func (s *Store) ReleaseAllSources(ctx context.Context, id string, now time.Time) (bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -56,10 +63,10 @@ FROM decisions
 WHERE id = ? AND active = 1 AND expires > ?
 `, id, now.UnixMilli()).Scan(&ip)
 	if errors.Is(err, sql.ErrNoRows) {
-		return bans.Ban{}, bans.ErrNotFound
+		return bans.Record{}, bans.ErrNotFound
 	}
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 
 	// Remove expired rows as well so the next maintenance pass cannot
@@ -68,7 +75,7 @@ WHERE id = ? AND active = 1 AND expires > ?
 DELETE FROM ban_sources
 WHERE ip = ?
 `, ip); err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 
 	// Keep observed event IDs for replay deduplication, but ignore prior
@@ -79,23 +86,23 @@ UPDATE decisions
 SET failure_generation = failure_generation + 1
 WHERE ip = ?
 `, ip); err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 
 	zero := 0
 	decision, err := reconcileDecision(ctx, tx, ip, now, s.targets, &zero)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	view, err := readBan(ctx, tx, decision.ID, now)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	return view, s.commitDecision(tx)
 }
 
 // ListActive returns all currently active effective bans, with source and delivery details.
-func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Ban, error) {
+func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
@@ -111,7 +118,7 @@ func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Ban, erro
 
 // listBans loads active decisions, sources and acknowledgements with three queries.
 // All three queries share the caller's read-only transaction and snapshot.
-func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Ban, error) {
+func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, error) {
 	list, byIP, err := readActiveBans(ctx, tx, now)
 	if err != nil || len(list) == 0 {
 		return list, err
@@ -127,7 +134,7 @@ func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Ban, error
 }
 
 // readActiveBans selects active decisions in IP order and indexes their positions.
-func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Ban, map[string]int, error) {
+func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, map[string]int, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT id, revision, ip, active, expires, failures
 FROM decisions
@@ -138,10 +145,10 @@ ORDER BY ip
 		return nil, nil, err
 	}
 
-	list := []bans.Ban{}
+	list := []bans.Record{}
 	byIP := make(map[string]int)
 	for rows.Next() {
-		view := bans.Ban{
+		view := bans.Record{
 			Sources:    []bans.Source{},
 			Deliveries: []decisions.Acknowledgement{},
 		}
@@ -170,7 +177,7 @@ ORDER BY ip
 }
 
 // appendActiveSources attaches unexpired sources to the selected active decisions.
-func appendActiveSources(ctx context.Context, tx *sql.Tx, list []bans.Ban, byIP map[string]int, now time.Time) error {
+func appendActiveSources(ctx context.Context, tx *sql.Tx, list []bans.Record, byIP map[string]int, now time.Time) error {
 	rows, err := tx.QueryContext(ctx, `
 SELECT s.ip, s.kind, s.expires, s.reason
 FROM ban_sources AS s
@@ -201,7 +208,7 @@ ORDER BY s.ip, s.kind
 }
 
 // appendActiveDeliveries attaches destination acknowledgements in destination order.
-func appendActiveDeliveries(ctx context.Context, tx *sql.Tx, list []bans.Ban, byIP map[string]int, now time.Time) error {
+func appendActiveDeliveries(ctx context.Context, tx *sql.Tx, list []bans.Record, byIP map[string]int, now time.Time) error {
 	rows, err := tx.QueryContext(ctx, `
 SELECT q.ip, q.destination, q.acknowledged
 FROM deliveries AS q
@@ -230,38 +237,38 @@ ORDER BY q.ip, q.destination
 }
 
 // GetDecision returns the persisted decision and all currently active sources.
-func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Ban, error) {
+func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	view, err := readBan(ctx, tx, id, now)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	return view, tx.Commit()
 }
 
 // readBan loads a decision, its active sources and deliveries from one transaction.
-func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Ban, error) {
+func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Record, error) {
 	decision, err := readDecision(ctx, tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return bans.Ban{}, bans.ErrNotFound
+		return bans.Record{}, bans.ErrNotFound
 	}
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 
 	sources, err := readBanSources(ctx, tx, decision.IP, now)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 
 	deliveries, err := readDeliveries(ctx, tx, decision.IP)
 	if err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 
-	return bans.Ban{Decision: decision, Sources: sources, Deliveries: deliveries}, nil
+	return bans.Record{Decision: decision, Sources: sources, Deliveries: deliveries}, nil
 }

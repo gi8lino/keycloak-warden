@@ -532,12 +532,12 @@ func inspectTestDatabase(t *testing.T) (string, []string) {
 	store, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
-	service, err := bans.New(store)
+	service, err := bans.NewAdminService(store)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	first, err := service.Ban(t.Context(), bans.Request{IP: "203.0.113.10", Duration: time.Hour, Reason: "incident one"}, now)
+	first, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "incident one"}, now)
 	require.NoError(t, err)
-	second, err := service.Ban(t.Context(), bans.Request{IP: "203.0.113.11", Duration: time.Hour, Reason: "incident two"}, now)
+	second, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.11", Duration: time.Hour, Reason: "incident two"}, now)
 	require.NoError(t, err)
 	return path, []string{first.Decision.ID, second.Decision.ID}
 }

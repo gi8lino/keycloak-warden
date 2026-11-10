@@ -174,7 +174,7 @@ func TestClientBan(t *testing.T) {
 		client, err := adminclient.New(server.URL, "admin-secret")
 
 		require.NoError(t, err)
-		view, err := client.Ban(t.Context(), bans.Request{IP: "203.0.113.22", Duration: time.Hour, Reason: "incident"})
+		view, err := client.Ban(t.Context(), bans.ManualBanRequest{IP: "203.0.113.22", Duration: time.Hour, Reason: "incident"})
 
 		require.NoError(t, err)
 		assert.Equal(t, "decision-id", view.Decision.ID)
@@ -193,7 +193,7 @@ func TestClientBan(t *testing.T) {
 		client, err := adminclient.New(server.URL+"/warden/", "admin")
 		require.NoError(t, err)
 
-		view, err := client.Ban(t.Context(), bans.Request{
+		view, err := client.Ban(t.Context(), bans.ManualBanRequest{
 			IP:       "203.0.113.22",
 			Duration: time.Hour,
 			Reason:   "incident",

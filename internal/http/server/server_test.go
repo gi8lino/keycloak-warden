@@ -253,7 +253,7 @@ func TestNew(t *testing.T) {
 			Processor:      noopProcessor{},
 			Secret:         "keycloak-secret",
 			AdminToken:     "admin-secret",
-			Bans:           noOpBanService{},
+			BanAdmin:       noOpBanAdministration{},
 			MetricsEnabled: true,
 			Metrics:        registry,
 			RoutePrefix:    "/warden",

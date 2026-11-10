@@ -14,7 +14,7 @@ type Item struct {
 	// Success reports whether the API accepted the operation.
 	Success bool `json:"success"`
 	// Ban is the returned decision and source view when successful.
-	Ban *bans.Ban `json:"ban,omitempty"`
+	Ban *bans.Record `json:"ban,omitempty"`
 	// Error is the per-address error when unsuccessful.
 	Error string `json:"error,omitempty"`
 }

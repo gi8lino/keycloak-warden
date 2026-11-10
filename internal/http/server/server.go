@@ -23,8 +23,8 @@ type Config struct {
 	Secret string
 	// AdminToken enables and authenticates the administrative API.
 	AdminToken string
-	// Bans performs validated ban administration.
-	Bans endpoint.BanService
+	// BanAdmin performs validated ban administration.
+	BanAdmin endpoint.BanAdministration
 	// Logger records request failures and optional access logs.
 	Logger *slog.Logger
 	// Processor validates and persists authenticated security events.

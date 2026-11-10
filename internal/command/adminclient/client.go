@@ -105,7 +105,7 @@ type createBanRequest struct {
 }
 
 // Ban requests one operator-initiated ban from the running application server.
-func (c *Client) Ban(ctx context.Context, request bans.Request) (bans.Ban, error) {
+func (c *Client) Ban(ctx context.Context, request bans.ManualBanRequest) (bans.Record, error) {
 	return c.request(ctx, http.MethodPost, "/bans", createBanRequest{
 		IPAddress: request.IP,
 		Duration:  request.Duration.String(),
@@ -114,15 +114,15 @@ func (c *Client) Ban(ctx context.Context, request bans.Request) (bans.Ban, error
 }
 
 // Unban removes all active ban sources using a decision ID or canonical IP address.
-func (c *Client) Unban(ctx context.Context, identifier string) (bans.Ban, error) {
+func (c *Client) Unban(ctx context.Context, identifier string) (bans.Record, error) {
 	if strings.TrimSpace(identifier) == "" {
-		return bans.Ban{}, errors.New("decision ID or IP address is required")
+		return bans.Record{}, errors.New("decision ID or IP address is required")
 	}
 
 	if address, err := netip.ParseAddr(identifier); err == nil {
 		list, err := c.List(ctx)
 		if err != nil {
-			return bans.Ban{}, err
+			return bans.Record{}, err
 		}
 
 		identifier = ""
@@ -133,7 +133,7 @@ func (c *Client) Unban(ctx context.Context, identifier string) (bans.Ban, error)
 			}
 		}
 		if identifier == "" {
-			return bans.Ban{}, bans.ErrNotFound
+			return bans.Record{}, bans.ErrNotFound
 		}
 	}
 
@@ -141,8 +141,8 @@ func (c *Client) Unban(ctx context.Context, identifier string) (bans.Ban, error)
 }
 
 // List fetches effective bans with their automatic and manual sources.
-func (c *Client) List(ctx context.Context) ([]bans.Ban, error) {
-	var list []bans.Ban
+func (c *Client) List(ctx context.Context) ([]bans.Record, error) {
+	var list []bans.Record
 	if err := c.do(ctx, http.MethodGet, "/bans", nil, &list); err != nil {
 		return nil, err
 	}
@@ -150,10 +150,10 @@ func (c *Client) List(ctx context.Context) ([]bans.Ban, error) {
 }
 
 // request issues one administrative operation and decodes a single ban response.
-func (c *Client) request(ctx context.Context, method, path string, payload any) (bans.Ban, error) {
-	var result bans.Ban
+func (c *Client) request(ctx context.Context, method, path string, payload any) (bans.Record, error) {
+	var result bans.Record
 	if err := c.do(ctx, method, path, payload, &result); err != nil {
-		return bans.Ban{}, err
+		return bans.Record{}, err
 	}
 	return result, nil
 }

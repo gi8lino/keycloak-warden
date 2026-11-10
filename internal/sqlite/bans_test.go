@@ -22,13 +22,13 @@ func TestStoreApplyManualBan(t *testing.T) {
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, _ := openStore(t, path, "edge")
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 
-		created, err := service.Ban(
+		created, err := service.BanManual(
 			ctx,
-			bans.Request{IP: "::ffff:203.0.113.7", Duration: time.Minute, Reason: "operator investigation"},
+			bans.ManualBanRequest{IP: "::ffff:203.0.113.7", Duration: time.Minute, Reason: "operator investigation"},
 			now,
 		)
 
@@ -41,33 +41,33 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		store, _ = openStore(t, path, "edge")
 		defer store.Close() //nolint:errcheck
-		service, err = bans.New(store)
+		service, err = bans.NewAdminService(store)
 
 		require.NoError(t, err)
-		views, err := service.List(ctx, now)
+		views, err := service.ListActive(ctx, now)
 
 		require.NoError(t, err)
 		require.Len(t, views, 1)
 		assert.Equal(t, created.Decision.ID, views[0].Decision.ID)
 
 		// An extension must not inadvertently shorten an active manual ban.
-		updated, err := service.Ban(ctx, bans.Request{IP: "203.0.113.7", Duration: 10 * time.Second, Reason: "still investigating"}, now)
+		updated, err := service.BanManual(ctx, bans.ManualBanRequest{IP: "203.0.113.7", Duration: 10 * time.Second, Reason: "still investigating"}, now)
 
 		require.NoError(t, err)
 		assert.Equal(t, created.Decision.ExpiresAt, updated.Decision.ExpiresAt)
 		assert.Equal(t, "still investigating", updated.Sources[0].Reason)
 
 		require.NoError(t, store.Maintain(ctx, created.Decision.ExpiresAt))
-		views, err = service.List(ctx, created.Decision.ExpiresAt)
+		views, err = service.ListActive(ctx, created.Decision.ExpiresAt)
 
 		require.NoError(t, err)
 		assert.Empty(t, views)
-		view, err := service.Get(ctx, created.Decision.ID, created.Decision.ExpiresAt)
+		view, err := service.GetDecision(ctx, created.Decision.ID, created.Decision.ExpiresAt)
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
 		assert.Empty(t, view.Sources)
-		_, err = service.Get(ctx, "does-not-exist", now)
+		_, err = service.GetDecision(ctx, "does-not-exist", now)
 
 		require.ErrorIs(t, err, bans.ErrNotFound)
 	})
@@ -77,7 +77,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -89,11 +89,11 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
-		manual, err := service.Ban(ctx, bans.Request{IP: auto.IP, Duration: time.Hour, Reason: "long ban"}, now)
+		manual, err := service.BanManual(ctx, bans.ManualBanRequest{IP: auto.IP, Duration: time.Hour, Reason: "long ban"}, now)
 
 		require.NoError(t, err)
 		require.NoError(t, store.Maintain(ctx, auto.ExpiresAt))
-		view, err := service.Get(ctx, manual.Decision.ID, auto.ExpiresAt)
+		view, err := service.GetDecision(ctx, manual.Decision.ID, auto.ExpiresAt)
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateBanned, view.Decision.State)
@@ -111,7 +111,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -125,7 +125,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, auto)
 
-		manual, err := service.Ban(ctx, bans.Request{IP: auto.IP, Duration: time.Hour, Reason: "Incident"}, now)
+		manual, err := service.BanManual(ctx, bans.ManualBanRequest{IP: auto.IP, Duration: time.Hour, Reason: "Incident"}, now)
 
 		require.NoError(t, err)
 		assert.Equal(t, auto.ID, manual.Decision.ID)
@@ -133,7 +133,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		assert.Equal(t, bans.SourceAutomatic, manual.Sources[0].Kind)
 		assert.Equal(t, bans.SourceManual, manual.Sources[1].Kind)
 
-		unbanned, err := service.Unban(ctx, manual.Decision.ID, now.Add(time.Second))
+		unbanned, err := service.Release(ctx, manual.Decision.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateUnbanned, unbanned.Decision.State)
@@ -148,12 +148,12 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		assert.Equal(t, decisions.StateUnbanned, job.Decision.State, "the release must be queued")
 		assert.Equal(t, unbanned.Decision.Revision, job.Decision.Revision)
 
-		views, err := service.List(ctx, now.Add(time.Second))
+		views, err := service.ListActive(ctx, now.Add(time.Second))
 
 		require.NoError(t, err)
 		assert.Empty(t, views)
 
-		_, err = service.Unban(ctx, manual.Decision.ID, now.Add(2*time.Second))
+		_, err = service.Release(ctx, manual.Decision.ID, now.Add(2*time.Second))
 
 		require.ErrorIs(t, err, bans.ErrNotFound)
 
@@ -180,7 +180,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -193,7 +193,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, auto)
 
-		result, err := service.Unban(ctx, auto.ID, now.Add(time.Second))
+		result, err := service.Release(ctx, auto.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
@@ -212,15 +212,15 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := service.Ban(t.Context(), bans.Request{IP: "203.0.113.10", Duration: time.Hour, Reason: "Incident"}, now)
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "Incident"}, now)
 
 		require.NoError(t, err)
 
-		result, err := service.Unban(t.Context(), created.Decision.ID, now.Add(time.Second))
+		result, err := service.Release(t.Context(), created.Decision.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
 		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
@@ -236,7 +236,7 @@ func TestStoreListActive(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"))
 		defer store.Close() //nolint:errcheck
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -246,10 +246,10 @@ func TestStoreListActive(t *testing.T) {
 		_, err = ingestion.Process(t.Context(), failed("second"), now)
 
 		require.NoError(t, err)
-		_, err = service.Ban(t.Context(), bans.Request{IP: "203.0.113.1", Duration: time.Hour, Reason: "manual review"}, now)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour, Reason: "manual review"}, now)
 
 		require.NoError(t, err)
-		views, err := service.List(t.Context(), now)
+		views, err := service.ListActive(t.Context(), now)
 
 		require.NoError(t, err)
 		require.Len(t, views, 1)
@@ -266,15 +266,15 @@ func TestRetiredDestination(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "warden.db")
 	ctx := t.Context()
 	store, _ := openStore(t, path, "old")
-	service, err := bans.New(store)
+	service, err := bans.NewAdminService(store)
 
 	require.NoError(t, err)
 	now := time.Now()
-	request := bans.Request{IP: "203.0.113.40", Duration: time.Hour, Reason: "incident"}
-	view, err := service.Ban(ctx, request, now)
+	request := bans.ManualBanRequest{IP: "203.0.113.40", Duration: time.Hour, Reason: "incident"}
+	view, err := service.BanManual(ctx, request, now)
 
 	require.NoError(t, err)
-	_, err = service.Unban(ctx, view.Decision.ID, now)
+	_, err = service.Release(ctx, view.Decision.ID, now)
 
 	require.NoError(t, err)
 	job, err := store.Next(ctx, now)
@@ -286,10 +286,10 @@ func TestRetiredDestination(t *testing.T) {
 
 	store, _ = openStore(t, path, "new")
 	defer store.Close() //nolint:errcheck
-	service, err = bans.New(store)
+	service, err = bans.NewAdminService(store)
 
 	require.NoError(t, err)
-	view, err = service.Ban(ctx, request, now)
+	view, err = service.BanManual(ctx, request, now)
 
 	require.NoError(t, err)
 	require.Len(t, view.Deliveries, 1)
@@ -306,12 +306,12 @@ func TestIdempotentManualBan(t *testing.T) {
 	t.Parallel()
 	store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
-	service, err := bans.New(store)
+	service, err := bans.NewAdminService(store)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	request := bans.Request{IP: "203.0.113.8", Duration: time.Hour, Reason: "incident"}
-	first, err := service.Ban(t.Context(), request, now)
+	request := bans.ManualBanRequest{IP: "203.0.113.8", Duration: time.Hour, Reason: "incident"}
+	first, err := service.BanManual(t.Context(), request, now)
 	require.NoError(t, err)
 
 	job, err := store.Next(t.Context(), now)
@@ -320,12 +320,12 @@ func TestIdempotentManualBan(t *testing.T) {
 	require.NoError(t, store.Finish(t.Context(), *job, true, now))
 
 	// Neither identical requests nor a reason-only change affect delivered fields.
-	again, err := service.Ban(t.Context(), request, now)
+	again, err := service.BanManual(t.Context(), request, now)
 	require.NoError(t, err)
 	assert.Equal(t, first.Decision, again.Decision)
 
 	request.Reason = "still investigating"
-	changedReason, err := service.Ban(t.Context(), request, now)
+	changedReason, err := service.BanManual(t.Context(), request, now)
 	require.NoError(t, err)
 	assert.Equal(t, first.Decision, changedReason.Decision)
 	require.Len(t, changedReason.Sources, 1)
@@ -337,7 +337,7 @@ func TestIdempotentManualBan(t *testing.T) {
 
 	// A real expiry extension must create a revision and a new delivery.
 	request.Duration = 2 * time.Hour
-	extended, err := service.Ban(t.Context(), request, now)
+	extended, err := service.BanManual(t.Context(), request, now)
 	require.NoError(t, err)
 	assert.Equal(t, first.Decision.Revision+1, extended.Decision.Revision)
 	pending, err = store.Next(t.Context(), now)
@@ -351,7 +351,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	t.Parallel()
 	store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
-	service, err := bans.New(store)
+	service, err := bans.NewAdminService(store)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
@@ -360,7 +360,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	_, err = ingestion.Process(t.Context(), failed("second"), now)
 	require.NoError(t, err)
 
-	manual, err := service.Ban(t.Context(), bans.Request{
+	manual, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 		IP: "203.0.113.1", Duration: time.Hour, Reason: "extended review",
 	}, now)
 	require.NoError(t, err)
@@ -368,19 +368,19 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 
 	// Automatic expiry removes a source but does not change the effective block.
 	require.NoError(t, store.Maintain(t.Context(), now.Add(16*time.Minute)))
-	remaining, err := service.Get(t.Context(), manual.Decision.ID, now.Add(16*time.Minute))
+	remaining, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(16*time.Minute))
 	require.NoError(t, err)
 	assert.Len(t, remaining.Sources, 1)
 	assert.Equal(t, manual.Decision, remaining.Decision)
 
 	// The final expiry creates one release and repeated maintenance is a no-op.
 	require.NoError(t, store.Maintain(t.Context(), now.Add(time.Hour)))
-	released, err := service.Get(t.Context(), manual.Decision.ID, now.Add(time.Hour))
+	released, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
 	assert.Equal(t, manual.Decision.Revision+1, released.Decision.Revision)
 	require.NoError(t, store.Maintain(t.Context(), now.Add(time.Hour)))
-	again, err := service.Get(t.Context(), manual.Decision.ID, now.Add(time.Hour))
+	again, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, released.Decision, again.Decision)
 }

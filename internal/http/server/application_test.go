@@ -30,25 +30,27 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
-// noOpBanService provides inert ban operations for route authentication tests.
-type noOpBanService struct{}
+// noOpBanAdministration provides inert ban operations for route authentication tests.
+type noOpBanAdministration struct{}
 
-// Ban returns an empty ban for authentication tests.
-func (noOpBanService) Ban(context.Context, bans.Request, time.Time) (bans.Ban, error) {
-	return bans.Ban{}, nil
+// BanManual returns an empty ban for authentication tests.
+func (noOpBanAdministration) BanManual(context.Context, bans.ManualBanRequest, time.Time) (bans.Record, error) {
+	return bans.Record{}, nil
 }
 
-// Unban returns an empty release for authentication tests.
-func (noOpBanService) Unban(context.Context, string, time.Time) (bans.Ban, error) {
-	return bans.Ban{}, nil
+// Release returns an empty release for authentication tests.
+func (noOpBanAdministration) Release(context.Context, string, time.Time) (bans.Record, error) {
+	return bans.Record{}, nil
 }
 
-// List returns an empty active-ban list for authentication tests.
-func (noOpBanService) List(context.Context, time.Time) ([]bans.Ban, error) { return []bans.Ban{}, nil }
+// ListActive returns an empty active-ban list for authentication tests.
+func (noOpBanAdministration) ListActive(context.Context, time.Time) ([]bans.Record, error) {
+	return []bans.Record{}, nil
+}
 
-// Get returns an empty decision for authentication tests.
-func (noOpBanService) Get(context.Context, string, time.Time) (bans.Ban, error) {
-	return bans.Ban{}, nil
+// GetDecision returns an empty decision for authentication tests.
+func (noOpBanAdministration) GetDecision(context.Context, string, time.Time) (bans.Record, error) {
+	return bans.Record{}, nil
 }
 
 // adminRequest sends one authenticated application request for a single subtest.
@@ -76,7 +78,7 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
-	service, err := bans.New(store)
+	service, err := bans.NewAdminService(store)
 
 	require.NoError(t, err)
 	h := newTestServer(server.Config{
@@ -85,7 +87,7 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 		AdminToken: "admin-token",
 		Readiness:  store,
 		Processor:  noopProcessor{},
-		Bans:       service,
+		BanAdmin:   service,
 	})
 	return h.Application, h.Management
 }
@@ -160,7 +162,7 @@ func TestNewApplication(t *testing.T) {
 		)
 
 		require.Equal(t, http.StatusOK, created.Code, created.Body.String())
-		var view bans.Ban
+		var view bans.Record
 
 		require.NoError(t, json.Unmarshal(created.Body.Bytes(), &view))
 		assert.Equal(t, decisions.StateBanned, view.Decision.State)
@@ -169,7 +171,7 @@ func TestNewApplication(t *testing.T) {
 		listed := adminRequest(application, http.MethodGet, "/bans", "admin-token", "")
 
 		require.Equal(t, http.StatusOK, listed.Code)
-		var all []bans.Ban
+		var all []bans.Record
 
 		require.NoError(t, json.Unmarshal(listed.Body.Bytes(), &all))
 		require.Len(t, all, 1)
@@ -219,14 +221,14 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		application := newTestServer(server.Config{
 			Secret:     "snitch",
 			AdminToken: "admin-token",
 			Logger:     slog.Default(),
-			Bans:       service,
+			BanAdmin:   service,
 			Processor:  ingest,
 			Readiness:  store,
 		}).Application
@@ -234,7 +236,7 @@ func TestNewApplication(t *testing.T) {
 		listed := adminRequest(application, http.MethodGet, "/bans", "admin-token", "")
 
 		require.Equal(t, http.StatusOK, listed.Code, listed.Body.String())
-		var all []bans.Ban
+		var all []bans.Record
 
 		require.NoError(t, json.Unmarshal(listed.Body.Bytes(), &all))
 		require.Len(t, all, 1)
@@ -244,7 +246,7 @@ func TestNewApplication(t *testing.T) {
 		removed := adminRequest(application, http.MethodDelete, "/bans/"+auto.ID, "admin-token", "")
 
 		require.Equal(t, http.StatusOK, removed.Code, removed.Body.String())
-		var view bans.Ban
+		var view bans.Record
 
 		require.NoError(t, json.Unmarshal(removed.Body.Bytes(), &view))
 		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
@@ -282,7 +284,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			Bans:       noOpBanService{},
+			BanAdmin:   noOpBanAdministration{},
 		})
 		req := httptest.NewRequest(http.MethodPost, "/bans", nil)
 		req.Header.Add("Authorization", "Bearer admin")
@@ -302,7 +304,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			Bans:       noOpBanService{},
+			BanAdmin:   noOpBanAdministration{},
 		})
 		req := httptest.NewRequest(http.MethodGet, "/bans", nil)
 		req.Header.Set("Authorization", "Basic admin")
@@ -321,7 +323,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			Bans:       noOpBanService{},
+			BanAdmin:   noOpBanAdministration{},
 		})
 
 		assert.Equal(t, http.StatusUnauthorized, adminRequest(h.Application, http.MethodGet, "/bans", "secret", "").Code)
@@ -440,7 +442,7 @@ func TestCreateBanRequestIsolation(t *testing.T) {
 				if !assert.Equal(t, http.StatusOK, result.Code) {
 					return
 				}
-				var view bans.Ban
+				var view bans.Record
 				if assert.NoError(t, json.Unmarshal(result.Body.Bytes(), &view)) {
 					assert.Equal(t, ip, view.Decision.IP)
 				}

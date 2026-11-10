@@ -119,7 +119,7 @@ func TestListActiveBans(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "warden.db")
 		store, ingestion := openStore(t, path)
 		defer store.Close() // nolint:errcheck
-		service, err := bans.New(store)
+		service, err := bans.NewAdminService(store)
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -129,7 +129,7 @@ func TestListActiveBans(t *testing.T) {
 		_, err = ingestion.Process(t.Context(), failed("two"), now)
 
 		require.NoError(t, err)
-		_, err = service.Ban(t.Context(), bans.Request{IP: "203.0.113.1", Duration: time.Hour, Reason: "support"}, now)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour, Reason: "support"}, now)
 
 		require.NoError(t, err)
 
