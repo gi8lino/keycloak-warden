@@ -1,4 +1,5 @@
 // Package output encodes command results in JSON or YAML.
+// Package output encodes command results in JSON or YAML.
 package output
 
 import (
@@ -23,7 +24,7 @@ const (
 type Encoder func(any) error
 
 // New creates an encoder that reads the selected output format at write time.
-func New(format *string, writer io.Writer) Encoder {
+func New(format *string, writer io.Writer, opts ...yaml.Option) Encoder {
 	return func(value any) error {
 		if format == nil {
 			return errors.New("output format is not configured")
@@ -31,13 +32,22 @@ func New(format *string, writer io.Writer) Encoder {
 
 		switch *format {
 		case FormatJSON:
-			return json.NewEncoder(writer).Encode(value)
+			encoder := json.NewEncoder(writer)
+			encoder.SetIndent("", "  ")
+			return encoder.Encode(value)
+
 		case FormatText, FormatYAML:
-			encoder := yaml.NewEncoder(writer)
-			if err := encoder.Encode(value); err != nil {
+			dumper, err := yaml.NewDumper(
+				writer,
+				yaml.WithIndent(2),
+				yaml.WithCompactSeqIndent(false))
+			if err != nil {
 				return err
 			}
-			return encoder.Close()
+			if err := dumper.Dump(value); err != nil {
+				return err
+			}
+			return dumper.Close()
 		default:
 			return fmt.Errorf("unsupported output format %q", *format)
 		}
