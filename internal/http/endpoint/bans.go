@@ -121,29 +121,29 @@ func ListBans(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 // GetBan returns one persisted decision together with its sources and deliveries.
 func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		view, err := service.GetDecision(r.Context(), r.PathValue("id"), time.Now())
+		record, err := service.GetDecision(r.Context(), r.PathValue("id"), time.Now())
 		if writeBanError(w, logger, err) {
 			return
 		}
-		httpresponse.Respond(w, http.StatusOK, view)
+		httpresponse.Respond(w, http.StatusOK, record)
 	}
 }
 
 // DeleteBan clears all active ban sources and resets detection for the decision.
 func DeleteBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		view, err := service.Release(r.Context(), r.PathValue("id"), time.Now())
+		record, err := service.Release(r.Context(), r.PathValue("id"), time.Now())
 		if writeBanError(w, logger, err) {
 			return
 		}
 		logger.Info(
 			"ban sources removed",
 			"event", "ban_sources_removed",
-			"decision_id", view.Decision.ID,
-			"ip", view.Decision.IP,
-			"state", view.Decision.State,
+			"decision_id", record.Decision.ID,
+			"ip", record.Decision.IP,
+			"state", record.Decision.State,
 		)
-		httpresponse.Respond(w, http.StatusOK, view)
+		httpresponse.Respond(w, http.StatusOK, record)
 	}
 }
 

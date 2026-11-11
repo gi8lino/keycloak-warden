@@ -22,8 +22,7 @@ const (
 // Encoder serializes one complete command result to the selected destination.
 type Encoder func(any) error
 
-// New creates an encoder that reads the output format when the result is written.
-// This allows CLI flags to be parsed after command registration.
+// New creates an encoder that reads the selected output format at write time.
 func New(format *string, writer io.Writer) Encoder {
 	return func(value any) error {
 		if format == nil {

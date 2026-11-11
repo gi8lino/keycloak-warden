@@ -9,8 +9,7 @@ import (
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 )
 
-// AuthenticateAdmin restricts application administration routes to a dedicated bearer token.
-// It does not authenticate Snitch events or operational probes.
+// AuthenticateAdmin restricts administrative routes to a dedicated bearer token.
 func AuthenticateAdmin(token string) func(http.Handler) http.Handler {
 	expected := sha256.Sum256([]byte(token))
 	return func(next http.Handler) http.Handler {

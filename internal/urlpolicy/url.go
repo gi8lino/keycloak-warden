@@ -4,7 +4,6 @@ package urlpolicy
 import "net/url"
 
 // AllowedTransport permits HTTPS everywhere and HTTP only on explicit loopback hosts.
-// Callers must separately validate the URL shape required by their endpoint.
 func AllowedTransport(u *url.URL) bool {
 	if u == nil {
 		return false

@@ -87,8 +87,7 @@ func (r *Runner) Wait() error {
 	return r.err
 }
 
-// Close cancels the action worker, waits for it and returns its terminal error.
-// It is safe to call Close more than once.
+// Close cancels the action worker and waits for completion; repeated calls are safe.
 func (r *Runner) Close() error {
 	r.cancel()
 	return r.Wait()
@@ -157,9 +156,11 @@ func drainReady(
 		}
 
 		job, err := q.Next(ctx, time.Now())
-		if err != nil || job == nil {
-			// Stop when fetching fails or no more jobs are ready.
+		if err != nil {
 			return err
+		}
+		if job == nil {
+			return nil
 		}
 
 		if err := dispatch(ctx, q, destinations, logger, *job); err != nil {

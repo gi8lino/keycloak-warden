@@ -67,14 +67,20 @@ func (s *Service) Process(
 
 	err = s.repository.Transact(ctx, func(tx Transaction) error {
 		inserted, err := tx.RecordFailure(ctx, event, now)
-		if err != nil || !inserted {
+		if err != nil {
 			return err
+		}
+		if !inserted {
+			return nil
 		}
 
 		ip := event.IP.String()
 		count, err := tx.CountFailures(ctx, ip, now.Add(-s.rule.Window))
-		if err != nil || !s.rule.Triggered(count) {
+		if err != nil {
 			return err
+		}
+		if !s.rule.Triggered(count) {
+			return nil
 		}
 
 		decision, err = tx.Block(ctx, ip, now.Add(s.rule.Ban), now)

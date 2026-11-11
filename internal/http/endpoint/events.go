@@ -21,8 +21,7 @@ type EventProcessor interface {
 	Process(ctx context.Context, envelope events.Envelope, now time.Time) (*decisions.Decision, error)
 }
 
-// Events accepts the verified Snitch v1 JSON envelope at POST /events.
-// All authentication is performed by middleware, not by this endpoint.
+// Events processes authenticated Snitch v1 envelopes and returns an ingestion result.
 func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var envelope events.Envelope

@@ -7,8 +7,7 @@ import (
 	httpkitresponse "github.com/containeroo/httpkit/response"
 )
 
-// InternalServerError logs a failure and writes a safe HTTP 500 response with a reference ID.
-// The application retains its structured JSON problem contract.
+// InternalServerError logs a failure and writes a safe JSON 500 response with a reference ID.
 func InternalServerError(logger *slog.Logger, w http.ResponseWriter, err error) {
 	reference := httpkitresponse.LogFailure(logger, w, err)
 	if request, ok := w.(*httpkitresponse.RequestWriter); ok && request.Status != 0 {

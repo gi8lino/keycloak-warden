@@ -58,9 +58,7 @@ type Runner struct {
 	done chan struct{}
 }
 
-// Start schedules immediate pruning and recurring SQLite optimization.
-// The initial SQLite optimization is performed separately when the store opens.
-// The schedule must be validated before calling Start.
+// Start schedules maintenance using a prevalidated schedule; SQLite is optimized separately on open.
 func Start(parent context.Context, store Store, schedule Schedule, logger *slog.Logger) *Runner {
 	ctx, cancel := context.WithCancel(parent)
 	runner := &Runner{cancel: cancel, done: make(chan struct{})}
@@ -71,8 +69,7 @@ func Start(parent context.Context, store Store, schedule Schedule, logger *slog.
 	return runner
 }
 
-// Close cancels maintenance and waits for database operations to finish.
-// It is safe to call Close multiple times.
+// Close cancels maintenance and waits for completion; repeated calls are safe.
 func (r *Runner) Close() {
 	r.cancel()
 	<-r.done

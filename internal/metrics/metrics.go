@@ -99,9 +99,7 @@ func NewRegistry(enabled bool, version string) *Registry {
 	}
 }
 
-// RecordProcessedEvent counts accepted Snitch requests by realm, including duplicate event IDs.
-// A ban decision is attributed to the realm that sent the triggering event, not
-// necessarily every realm whose failures contributed to the global IP threshold.
+// RecordProcessedEvent counts accepted Snitch requests and attributes new bans to the triggering realm.
 func (r *Registry) RecordProcessedEvent(realmID, eventType string, automaticBan bool) {
 	if !r.enabled {
 		return

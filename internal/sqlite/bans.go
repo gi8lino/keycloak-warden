@@ -37,11 +37,11 @@ func (s *Store) ApplyManualBan(
 	if err != nil {
 		return bans.Record{}, err
 	}
-	view, err := readBan(ctx, tx, decision.ID, now)
+	record, err := readBan(ctx, tx, decision.ID, now)
 	if err != nil {
 		return bans.Record{}, err
 	}
-	return view, s.commitDecision(tx)
+	return record, s.commitDecision(tx)
 }
 
 // ReleaseAllSources removes every active source and resets the failed-login count atomically.
@@ -89,11 +89,11 @@ WHERE ip = ?
 	if err != nil {
 		return bans.Record{}, err
 	}
-	view, err := readBan(ctx, tx, decision.ID, now)
+	record, err := readBan(ctx, tx, decision.ID, now)
 	if err != nil {
 		return bans.Record{}, err
 	}
-	return view, s.commitDecision(tx)
+	return record, s.commitDecision(tx)
 }
 
 // ListActive returns all currently active effective bans, with source and delivery details.
@@ -111,8 +111,7 @@ func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Record, e
 	return list, tx.Commit()
 }
 
-// listBans loads active decisions, sources and acknowledgements with three queries.
-// All three queries share the caller's read-only transaction and snapshot.
+// listBans reads active decisions, sources and acknowledgements in one consistent snapshot.
 func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, error) {
 	list, byIP, err := readActiveBans(ctx, tx, now)
 	if err != nil || len(list) == 0 {
@@ -143,23 +142,23 @@ ORDER BY ip
 	list := []bans.Record{}
 	byIP := make(map[string]int)
 	for rows.Next() {
-		view := bans.Record{
+		record := bans.Record{
 			Sources:    []bans.Source{},
 			Deliveries: []decisions.Acknowledgement{},
 		}
 		var expires int64
 		var active bool
 		if err := rows.Scan(
-			&view.Decision.ID, &view.Decision.Revision, &view.Decision.IP,
+			&record.Decision.ID, &record.Decision.Revision, &record.Decision.IP,
 			&active, &expires,
 		); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
 		}
-		view.Decision.State = stateFromActive(active)
-		view.Decision.ExpiresAt = time.UnixMilli(expires).UTC()
-		byIP[view.Decision.IP] = len(list)
-		list = append(list, view)
+		record.Decision.State = stateFromActive(active)
+		record.Decision.ExpiresAt = time.UnixMilli(expires).UTC()
+		byIP[record.Decision.IP] = len(list)
+		list = append(list, record)
 	}
 	if err := rows.Err(); err != nil {
 		_ = rows.Close()
@@ -238,11 +237,11 @@ func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans
 		return bans.Record{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
-	view, err := readBan(ctx, tx, id, now)
+	record, err := readBan(ctx, tx, id, now)
 	if err != nil {
 		return bans.Record{}, err
 	}
-	return view, tx.Commit()
+	return record, tx.Commit()
 }
 
 // readBan loads a decision, its active sources and deliveries from one transaction.

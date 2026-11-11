@@ -36,23 +36,22 @@ func InspectMany(ctx context.Context, path string, ids []string) ([]bans.Record,
 	defer func() { _ = tx.Rollback() }()
 
 	now := time.Now()
-	views := make([]bans.Record, 0, len(ids))
+	records := make([]bans.Record, 0, len(ids))
 	for _, id := range ids {
-		view, err := readBan(ctx, tx, id, now)
+		record, err := readBan(ctx, tx, id, now)
 		if err != nil {
 			return nil, fmt.Errorf("inspect decision %q: %w", id, err)
 		}
-		views = append(views, view)
+		records = append(records, record)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return nil, err
 	}
-	return views, nil
+	return records, nil
 }
 
-// ListActiveBans reads active blocks with their automatic and manual sources.
-// It opens the existing database read-only and never starts the delivery worker.
+// ListActiveBans reads active bans and their sources from an existing read-only database.
 func ListActiveBans(ctx context.Context, path string, now time.Time) ([]bans.Record, error) {
 	db, err := openReader(path)
 	if err != nil {
@@ -66,9 +65,9 @@ func ListActiveBans(ctx context.Context, path string, now time.Time) ([]bans.Rec
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	views, err := listBans(ctx, tx, now)
+	records, err := listBans(ctx, tx, now)
 	if err != nil {
 		return nil, err
 	}
-	return views, tx.Commit()
+	return records, tx.Commit()
 }

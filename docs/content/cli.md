@@ -4,13 +4,13 @@ The Warden binary provides server operation, manual ban management, and inspecti
 
 ## Commands
 
-| Command       | Purpose                                                                   |
-| ------------- | ------------------------------------------------------------------------- |
-| `serve`       | Start HTTP ingestion, delivery, and maintenance workers                   |
-| `ban`         | Create or extend one or more manual bans through the application API      |
-| `unban`       | Remove active ban sources for one or more IPs through the application API |
-| `list-active` | Read active bans from SQLite                                              |
-| `inspect`     | Inspect decisions, active sources, and delivery acknowledgements by decision ID            |
+| Command       | Purpose                                                                         |
+| ------------- | ------------------------------------------------------------------------------- |
+| `serve`       | Start HTTP ingestion, delivery, and maintenance workers                         |
+| `ban`         | Create or extend one or more manual bans through the application API            |
+| `unban`       | Remove active ban sources for one or more IPs through the application API       |
+| `list-active` | Read active bans from SQLite                                                    |
+| `inspect`     | Inspect decisions, active sources, and delivery acknowledgements by decision ID |
 
 ## Start Warden
 
