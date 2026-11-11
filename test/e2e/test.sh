@@ -143,15 +143,20 @@ if ! curl --silent --fail "$warden_management/metrics" | grep -Fq 'warden_http_r
   exit 1
 fi
 
-metrics=$(curl --silent --fail "$warden_management/metrics")
-if ! printf '%s\n' "$metrics" | grep -Fq 'warden_snitch_events_total{event_type="LOGIN_ERROR",realm="warden-e2e"} 2'; then
-  printf 'Missing realm-specific Snitch login failure counter\n' >&2
+# Warden records the Keycloak realm ID, not the display name. Keycloak assigns
+# a fresh ID when importing this disposable realm, so discover it from the
+# observed Snitch counter and require the decision counter to use the same ID.
+metrics=$(curl --silent --show-error --fail "$warden_management/metrics")
+realm_id=$(printf '%s\n' "$metrics" | sed -n 's/^warden_snitch_events_total{event_type="LOGIN_ERROR",realm="\([^"]*\)"} 2$/\1/p')
+if [ -z "$realm_id" ] || [ "$realm_id" = unknown ]; then
+  printf 'Missing realm-specific Snitch login failure counter (2 events)\n' >&2
   exit 1
 fi
-if ! printf '%s\n' "$metrics" | grep -Fq 'warden_automatic_ban_decisions_total{trigger_realm="warden-e2e"} 1'; then
-  printf 'Missing realm-specific automatic ban decision counter\n' >&2
+if ! printf '%s\n' "$metrics" | grep -Fqx "warden_automatic_ban_decisions_total{trigger_realm=\"$realm_id\"} 1"; then
+  printf 'Missing automatic ban decision counter for realm ID %s\n' "$realm_id" >&2
   exit 1
 fi
+printf 'Verified realm-specific metrics for realm ID %s\n' "$realm_id"
 
 success=true
 printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> unbanned-state webhook.\n'
