@@ -71,6 +71,7 @@ func TestScheduleValidate(t *testing.T) {
 		}
 		err := sched.Validate()
 		require.ErrorContains(t, err, "prune-interval")
+		assert.ErrorContains(t, err, MinInterval.String())
 	})
 
 	t.Run("rejects short optimize interval", func(t *testing.T) {
@@ -82,6 +83,7 @@ func TestScheduleValidate(t *testing.T) {
 		}
 		err := sched.Validate()
 		require.ErrorContains(t, err, "optimize-interval")
+		assert.ErrorContains(t, err, MaxInterval.String())
 	})
 
 	t.Run("rejects overlong intervals", func(t *testing.T) {

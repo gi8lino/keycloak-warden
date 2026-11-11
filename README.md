@@ -118,7 +118,7 @@ The `serve` command provides independent intervals (also configurable through
 warden serve --config warden.yaml --prune-interval=1h --optimize-interval=24h
 ```
 
-Both intervals must be between `1s` and `8760h` (one year). Stale observation pruning runs once on startup, then at the configured interval. Optimization runs once when SQLite opens, then on its configured interval. Maintenance failures are logged and retried; they do not stop security event processing. Intervals configure **when** cleanup runs, not how long observations are retained.
+Both intervals must be between `5m` and `8760h` (one year). Stale observation pruning runs once on startup, then at the configured interval. Optimization runs once when SQLite opens, then on its configured interval. Maintenance failures are logged and retried; they do not stop security event processing. Intervals configure **when** cleanup runs, not how long observations are retained.
 
 ## Deploy on Kubernetes
 

@@ -30,11 +30,20 @@ func migrate(ctx context.Context, db *sql.DB) error {
 	return migrateFrom(ctx, db, migrationFiles)
 }
 
-// migrateFrom applies migrations from the supplied filesystem for production and tests.
+// migrateFrom plans and applies the supplied migrations without changing the database on invalid input.
 func migrateFrom(ctx context.Context, db *sql.DB, files fs.FS) error {
-	entries, err := fs.ReadDir(files, "migrations")
+	planned, err := planMigrations(files)
 	if err != nil {
 		return err
+	}
+	return applyMigrations(ctx, db, files, planned)
+}
+
+// planMigrations reads and orders the available migrations before starting a transaction.
+func planMigrations(files fs.FS) ([]migration, error) {
+	entries, err := fs.ReadDir(files, "migrations")
+	if err != nil {
+		return nil, err
 	}
 
 	planned := make([]migration, 0, len(entries))
@@ -42,47 +51,58 @@ func migrateFrom(ctx context.Context, db *sql.DB, files fs.FS) error {
 		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
 			continue
 		}
-
-		prefix, _, ok := strings.Cut(entry.Name(), "_")
-		if !ok {
-			return fmt.Errorf("invalid migration name %q", entry.Name())
+		item, err := parseMigration(files, entry.Name())
+		if err != nil {
+			return nil, err
 		}
-
-		version, err := strconv.Atoi(prefix)
-		if err != nil || version < 1 {
-			return fmt.Errorf("invalid migration version in %q", entry.Name())
-		}
-
-		item := migration{version: version, name: entry.Name()}
-		if strings.HasSuffix(item.name, "_baseline.sql") {
-			body, err := fs.ReadFile(files, "migrations/"+item.name)
-			if err != nil {
-				return err
-			}
-			item.replacesThrough, err = baselineReplacesThrough(body)
-			if err != nil {
-				return fmt.Errorf("migration %q: %w", item.name, err)
-			}
-			if item.replacesThrough != item.version-1 {
-				return fmt.Errorf("migration %q: baseline must replace through version %d", item.name, item.version-1)
-			}
-		}
-
 		planned = append(planned, item)
 	}
-
 	if len(planned) == 0 {
-		return fmt.Errorf("no SQL migrations were embedded")
+		return nil, fmt.Errorf("no SQL migrations were embedded")
 	}
 
 	slices.SortFunc(planned, func(a, b migration) int { return a.version - b.version })
-
 	for index := 1; index < len(planned); index++ {
 		if planned[index-1].version == planned[index].version {
-			return fmt.Errorf("duplicate migration version %d", planned[index].version)
+			return nil, fmt.Errorf("duplicate migration version %d", planned[index].version)
 		}
 	}
+	return planned, nil
+}
 
+// parseMigration validates a versioned filename and its optional baseline version fence.
+func parseMigration(files fs.FS, name string) (migration, error) {
+	prefix, _, ok := strings.Cut(name, "_")
+	if !ok {
+		return migration{}, fmt.Errorf("invalid migration name %q", name)
+	}
+
+	version, err := strconv.Atoi(prefix)
+	if err != nil || version < 1 {
+		return migration{}, fmt.Errorf("invalid migration version in %q", name)
+	}
+
+	item := migration{version: version, name: name}
+	if !strings.HasSuffix(name, "_baseline.sql") {
+		return item, nil
+	}
+
+	body, err := fs.ReadFile(files, "migrations/"+name)
+	if err != nil {
+		return migration{}, err
+	}
+	item.replacesThrough, err = baselineReplacesThrough(body)
+	if err != nil {
+		return migration{}, fmt.Errorf("migration %q: %w", name, err)
+	}
+	if item.replacesThrough != item.version-1 {
+		return migration{}, fmt.Errorf("migration %q: baseline must replace through version %d", name, item.version-1)
+	}
+	return item, nil
+}
+
+// applyMigrations records every unapplied migration in a single atomic transaction.
+func applyMigrations(ctx context.Context, db *sql.DB, files fs.FS, planned []migration) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -120,33 +140,37 @@ SELECT EXISTS (
 		if applied {
 			continue
 		}
-
-		// Existing databases already at the previous migration version contain
-		// every change in the consolidated baseline. Record the new version
-		// without running CREATE TABLE statements against their populated schema.
-		// Incomplete older databases must be upgraded using the old migrations first.
-		if item.replacesThrough > 0 && databaseVersion > 0 {
-			if databaseVersion != int64(item.replacesThrough) {
-				return fmt.Errorf("database schema version %d must be upgraded to %d before applying baseline %d", databaseVersion, item.replacesThrough, item.version)
-			}
-		} else {
-			body, err := fs.ReadFile(files, "migrations/"+item.name)
-			if err != nil {
-				return err
-			}
-			if _, err := tx.ExecContext(ctx, string(body)); err != nil {
-				return fmt.Errorf("migration %q: %w", item.name, err)
-			}
-		}
-		if _, err := tx.ExecContext(ctx, `
-INSERT INTO schema_migrations (version, applied_at)
-VALUES (?, ?)
-`, item.version, time.Now().Unix()); err != nil {
+		if err := applyMigration(ctx, tx, files, item, databaseVersion); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+// applyMigration executes an unapplied migration or adopts its baseline after verifying the version fence.
+func applyMigration(ctx context.Context, tx *sql.Tx, files fs.FS, item migration, databaseVersion int64) error {
+	// Historical databases that reached the previous version already contain the
+	// baseline schema. Never replay its CREATE TABLE statements over their data.
+	if item.replacesThrough > 0 && databaseVersion > 0 {
+		if databaseVersion != int64(item.replacesThrough) {
+			return fmt.Errorf("database schema version %d must be upgraded to %d before applying baseline %d", databaseVersion, item.replacesThrough, item.version)
+		}
+	} else {
+		body, err := fs.ReadFile(files, "migrations/"+item.name)
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, string(body)); err != nil {
+			return fmt.Errorf("migration %q: %w", item.name, err)
+		}
+	}
+
+	_, err := tx.ExecContext(ctx, `
+INSERT INTO schema_migrations (version, applied_at)
+VALUES (?, ?)
+`, item.version, time.Now().Unix())
+	return err
 }
 
 // baselineReplacesThrough reads the version fence generated by the consolidation script.

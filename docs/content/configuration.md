@@ -24,6 +24,7 @@ targets:
         Authorization: env:WARDEN_WEBHOOK_AUTHORIZATION
         X-Source: warden
 ```
+
 {code highlight="2-4,8-10,12-16" note="2:Number of failed logins needed to trigger a ban." note="3:Rolling detection window, counted per client IP." note="4:Duration of an automatic ban." note="8-10:Named Cloudflare destination; zone ID and token resolve from the environment." note="12-16:Named webhook destination with a required URL and optional request headers." reference-position="right" reference-color="blue" line-numbers="true"}
 
 **At least one destination is required.** Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
@@ -52,6 +53,7 @@ warden serve \
   --prune-interval=1h \
   --optimize-interval=24h
 ```
+
 {code highlight="4-7,9-10" note="4-5:Separate listeners for ingestion and management endpoints." note="6:Required shared HMAC secret for incoming Snitch events." note="7:Optional bearer token enabling the manual-ban HTTP API." note="9-10:Independent pruning and optimization schedules; neither changes data retention." reference-position="right" reference-color="blue" line-numbers="true"}
 
 | Flag                          | Default          | Purpose                                     |
@@ -72,6 +74,6 @@ warden serve \
 
 Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables, replacing hyphens with underscores. For example, `WARDEN__SNITCH_SECRET` and `WARDEN__OPTIMIZE_INTERVAL`.
 
-The two maintenance intervals must be between `1s` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
+The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
 
 Consult `warden serve --help` for the definitive list of supported flags for your installed release.

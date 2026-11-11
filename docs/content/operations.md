@@ -25,7 +25,7 @@ warden serve \
   --optimize-interval=24h
 ```
 
-The corresponding environment variables are `WARDEN__PRUNE_INTERVAL` and `WARDEN__OPTIMIZE_INTERVAL`. Both intervals must be between `1s` and `8760h`.
+The corresponding environment variables are `WARDEN__PRUNE_INTERVAL` and `WARDEN__OPTIMIZE_INTERVAL`. Both intervals must be between `5m` and `8760h`.
 
 Pruning runs at startup and then on schedule. Observation retention remains at least 24 hours or the configured detection window, whichever is longer. Optimization does **not** run a full `VACUUM`; SQLite reuses freed pages, and its automatic WAL checkpointing remains enabled.
 

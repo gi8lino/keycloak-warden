@@ -32,11 +32,11 @@ type Schedule struct {
 // Validate rejects maintenance intervals outside the supported range.
 func (s Schedule) Validate() error {
 	if s.PruneInterval < MinInterval || s.PruneInterval > MaxInterval {
-		return fmt.Errorf("prune-interval must be between %d and %d", MinInterval, MaxInterval)
+		return fmt.Errorf("prune-interval must be between %s and %s", MinInterval, MaxInterval)
 	}
 
 	if s.OptimizeInterval < MinInterval || s.OptimizeInterval > MaxInterval {
-		return fmt.Errorf("optimize-interval must be between %d and %d", MinInterval, MaxInterval)
+		return fmt.Errorf("optimize-interval must be between %s and %s", MinInterval, MaxInterval)
 	}
 
 	return nil

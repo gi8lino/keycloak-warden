@@ -16,53 +16,60 @@ func (targets Targets) Validate() error {
 		return errors.New("at least one webhook or cloudflare target is required")
 	}
 
-	// Sort map keys to select the same first validation error every time.
+	// Sort names so the same configuration always reports the same first error.
 	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
-		target := targets.Webhook[name]
-		id := "webhook." + name
-
-		if err := validateTargetName(name); err != nil {
-			return fmt.Errorf("target %q: %w", id, err)
-		}
-
-		if strings.TrimSpace(target.URL) == "" {
-			return fmt.Errorf("target %q: url: value must not be blank", id)
-		}
-
-		seen := make(map[string]struct{}, len(target.Headers))
-		for _, header := range slices.Sorted(maps.Keys(target.Headers)) {
-			reference := target.Headers[header]
-			if err := validateHeaderName(header); err != nil {
-				return fmt.Errorf("target %q: headers %q: %w", id, header, err)
-			}
-
-			canonical := http.CanonicalHeaderKey(header)
-			if _, exists := seen[canonical]; exists {
-				return fmt.Errorf("target %q: headers %q: duplicate header name", id, header)
-			}
-
-			seen[canonical] = struct{}{}
-			if strings.TrimSpace(reference) == "" {
-				return fmt.Errorf("target %q: headers %s: value must not be blank", id, header)
-			}
+		if err := validateWebhookTarget(name, targets.Webhook[name]); err != nil {
+			return err
 		}
 	}
-
 	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
-		target := targets.Cloudflare[name]
-		id := "cloudflare." + name
+		if err := validateCloudflareTarget(name, targets.Cloudflare[name]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
-		if err := validateTargetName(name); err != nil {
-			return fmt.Errorf("target %q: %w", id, err)
+// validateWebhookTarget checks a named webhook's endpoint and uniquely named headers.
+func validateWebhookTarget(name string, target WebhookTarget) error {
+	id := "webhook." + name
+	if err := validateTargetName(name); err != nil {
+		return fmt.Errorf("target %q: %w", id, err)
+	}
+	if strings.TrimSpace(target.URL) == "" {
+		return fmt.Errorf("target %q: url: value must not be blank", id)
+	}
+
+	seen := make(map[string]struct{}, len(target.Headers))
+	for _, header := range slices.Sorted(maps.Keys(target.Headers)) {
+		if err := validateHeaderName(header); err != nil {
+			return fmt.Errorf("target %q: headers %q: %w", id, header, err)
 		}
 
-		if strings.TrimSpace(target.ZoneID) == "" {
-			return fmt.Errorf("target %q: zone-id: value must not be blank", id)
+		canonical := http.CanonicalHeaderKey(header)
+		if _, exists := seen[canonical]; exists {
+			return fmt.Errorf("target %q: headers %q: duplicate header name", id, header)
 		}
+		seen[canonical] = struct{}{}
 
-		if strings.TrimSpace(target.APIToken) == "" {
-			return fmt.Errorf("target %q: api-token: value must not be blank", id)
+		if strings.TrimSpace(target.Headers[header]) == "" {
+			return fmt.Errorf("target %q: headers %s: value must not be blank", id, header)
 		}
+	}
+	return nil
+}
+
+// validateCloudflareTarget checks a named zone's resolvable credentials.
+func validateCloudflareTarget(name string, target CloudflareTarget) error {
+	id := "cloudflare." + name
+	if err := validateTargetName(name); err != nil {
+		return fmt.Errorf("target %q: %w", id, err)
+	}
+	if strings.TrimSpace(target.ZoneID) == "" {
+		return fmt.Errorf("target %q: zone-id: value must not be blank", id)
+	}
+	if strings.TrimSpace(target.APIToken) == "" {
+		return fmt.Errorf("target %q: api-token: value must not be blank", id)
 	}
 	return nil
 }
