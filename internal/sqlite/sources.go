@@ -8,16 +8,16 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/google/uuid"
+	"uuid"
 )
 
-// ensureDecision creates a stable identity before attaching independently expiring ban sources.
+// ensureDecision creates a stable UUIDv7 identity before attaching independently expiring ban sources.
 func ensureDecision(ctx context.Context, tx *sql.Tx, ip string) error {
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO decisions (ip, id, revision, active, expires)
 VALUES (?, ?, 0, 0, 0)
 ON CONFLICT (ip) DO NOTHING
-`, ip, uuid.NewString())
+`, ip, uuid.NewV7().String())
 	return err
 }
 
