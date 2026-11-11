@@ -39,6 +39,8 @@ The corresponding environment variables are `WARDEN__PRUNE_INTERVAL` and `WARDEN
 
 Pruning runs at startup and then on schedule. Observation retention remains at least 24 hours or the configured detection window, whichever is longer. Optimization does **not** run a full `VACUUM`; SQLite reuses freed pages, and its automatic WAL checkpointing remains enabled.
 
+Manual maintenance is available through the authenticated application API (`GET /maintenance`, `POST /maintenance/prune`, and `POST /maintenance/optimize`). Scheduled tasks continue unchanged, and operations are serialized to avoid overlapping housekeeping. These actions do not delete ban decisions or run `VACUUM`.
+
 ## Migration baselines
 
 The repository includes migration consolidation tools adapted for SQLite:

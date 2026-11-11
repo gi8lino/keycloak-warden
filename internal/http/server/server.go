@@ -25,6 +25,8 @@ type Config struct {
 	AdminToken string
 	// BanAdmin performs validated ban administration.
 	BanAdmin endpoint.BanAdministration
+	// Maintenance exposes authenticated manual maintenance and status.
+	Maintenance endpoint.MaintenanceOperations
 	// Logger records request failures and optional access logs.
 	Logger *slog.Logger
 	// Processor validates and persists authenticated security events.

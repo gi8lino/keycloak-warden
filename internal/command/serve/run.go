@@ -73,6 +73,7 @@ func Run(
 		Secret:         secret,
 		AdminToken:     adminToken,
 		BanAdmin:       banAdmin,
+		Maintenance:    maintenanceRunner,
 		Logger:         logger,
 		Processor:      processor,
 		Readiness:      store,

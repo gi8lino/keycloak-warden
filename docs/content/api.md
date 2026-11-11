@@ -77,3 +77,22 @@ Webhook responses in the `2xx` range acknowledge a delivery. An unsuccessful del
 With `--route-prefix=/warden`, the application routes become `/warden/events` and `/warden/bans`. Management paths remain `/healthz`, `/readyz`, and `/metrics` without that prefix.
 
 Use [CLI](cli.md) for supported manual operations and [Configuration](configuration.md) for authentication and destination setup.
+
+## Database maintenance
+
+Authenticated administrator requests (the same bearer token as `/bans`) can inspect and trigger housekeeping:
+
+- `GET /maintenance` — status of in-process observation pruning and SQLite optimization, including last attempts and results.
+- `POST /maintenance/prune` — remove expired failure observations using Warden's configured retention rule.
+- `POST /maintenance/optimize` — invoke SQLite `PRAGMA optimize` (not a full `VACUUM`).
+
+Manual operations run synchronously, return updated status, and are serialized with scheduled maintenance. A concurrent request returns `409 Conflict`; failures return a safe error response. These operations do not remove bans, decisions, delivery acknowledgements, or live observations. No request bodies or arbitrary SQL are accepted.
+
+Example:
+
+```sh
+curl -fsS -H "Authorization: Bearer $WARDEN_ADMIN_TOKEN" http://127.0.0.1:8080/maintenance
+curl -fsS -X POST -H "Authorization: Bearer $WARDEN_ADMIN_TOKEN" http://127.0.0.1:8080/maintenance/prune
+```
+
+With a route prefix, these routes are prefixed like `/bans`; the management listener remains separate.
