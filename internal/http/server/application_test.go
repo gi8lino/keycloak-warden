@@ -30,6 +30,12 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
+// processDecision extracts the effective decision for server-storage integration tests.
+func processDecision(processor *ingestion.Service, ctx context.Context, envelope events.Envelope, now time.Time) (*decisions.Decision, error) {
+	result, err := processor.Process(ctx, envelope, now)
+	return result.Decision, err
+}
+
 // noOpBanAdministration provides inert ban operations for route authentication tests.
 type noOpBanAdministration struct{}
 
@@ -222,10 +228,10 @@ func TestNewApplication(t *testing.T) {
 				Timestamp: now,
 			}
 		}
-		_, err = ingest.Process(t.Context(), input("first"), now)
+		_, err = processDecision(ingest, t.Context(), input("first"), now)
 
 		require.NoError(t, err)
-		auto, err := ingest.Process(t.Context(), input("second"), now)
+		auto, err := processDecision(ingest, t.Context(), input("second"), now)
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)

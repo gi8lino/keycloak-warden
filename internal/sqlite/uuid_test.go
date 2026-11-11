@@ -52,10 +52,10 @@ func TestDecisionIDsUseUUIDv7(t *testing.T) {
 		defer store.Close() //nolint:errcheck
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err := processor.Process(t.Context(), failed("uuidv7-first"), now)
+		_, err := processDecision(processor, t.Context(), failed("uuidv7-first"), now)
 		require.NoError(t, err)
 
-		decision, err := processor.Process(t.Context(), failed("uuidv7-second"), now)
+		decision, err := processDecision(processor, t.Context(), failed("uuidv7-second"), now)
 		require.NoError(t, err)
 		require.NotNil(t, decision)
 

@@ -15,8 +15,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
+	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/metrics"
 	"github.com/gi8lino/keycloak-warden/internal/signing"
@@ -26,8 +26,8 @@ import (
 type noopProcessor struct{}
 
 // Process accepts test events without persistence.
-func (noopProcessor) Process(context.Context, events.Envelope, time.Time) (*decisions.Decision, error) {
-	return nil, nil
+func (noopProcessor) Process(context.Context, events.Envelope, time.Time) (ingestion.Result, error) {
+	return ingestion.Result{Outcome: ingestion.OutcomeIgnored}, nil
 }
 
 type readiness bool

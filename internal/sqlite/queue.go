@@ -7,34 +7,44 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-// Maintain expires individual ban sources and reconciles their effective decisions.
-func (s *Store) Maintain(ctx context.Context, now time.Time) error {
+// Maintain expires sources and returns only effective releases after commit.
+func (s *Store) Maintain(ctx context.Context, now time.Time) ([]decisions.Decision, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer func() { _ = tx.Rollback() }()
 
 	expiredIPs, err := readExpiredSourceIPs(ctx, tx, now)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if _, err := tx.ExecContext(ctx, `
 DELETE FROM ban_sources
 WHERE expires <= ?
 `, now.UnixMilli()); err != nil {
-		return err
+		return nil, err
 	}
+
+	var released []decisions.Decision
 	for _, ip := range expiredIPs {
-		if _, _, err := reconcileDecision(ctx, tx, ip, now, s.targets); err != nil {
-			return err
+		decision, changed, err := reconcileDecision(ctx, tx, ip, now, s.targets)
+		if err != nil {
+			return nil, err
+		}
+		if changed && decision.State == decisions.StateUnbanned {
+			released = append(released, decision)
 		}
 	}
 
-	return tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return released, nil
 }
 
 // readExpiredSourceIPs finds affected addresses before their expired sources are deleted.

@@ -36,8 +36,8 @@ type Queue interface {
 	Changes() <-chan struct{}
 	// NextDeadline returns the earliest pending work time or zero when idle.
 	NextDeadline(context.Context) (time.Time, error)
-	// Maintain expires decision sources.
-	Maintain(context.Context, time.Time) error
+	// Maintain expires decision sources and returns decisions released by a committed expiry.
+	Maintain(context.Context, time.Time) ([]decisions.Decision, error)
 	// Next returns the oldest ready destination job, or nil when idle.
 	Next(context.Context, time.Time) (*Job, error)
 	// Finish acknowledges the revision or schedules a retry.
@@ -130,8 +130,18 @@ func processReady(
 	destinations map[string]Provider,
 	logger *slog.Logger,
 ) (nextDeadline time.Time, err error) {
-	if err := q.Maintain(ctx, time.Now()); err != nil {
+	expired, err := q.Maintain(ctx, time.Now())
+	if err != nil {
 		return time.Time{}, err
+	}
+	for _, decision := range expired {
+		logger.Info("ban expired",
+			"event", "ban_expired",
+			"decision_id", decision.ID,
+			"revision", decision.Revision,
+			"ip", decision.IP,
+			"state", decision.State,
+		)
 	}
 
 	if err := drainReady(ctx, q, destinations, logger, time.Now().Add(drainBudget)); err != nil {
@@ -204,13 +214,6 @@ func dispatch(
 		"decision_id", job.Decision.ID,
 		"revision", job.Decision.Revision,
 		"destination", job.Destination,
-	)
-
-	log.Debug(
-		"delivering decision",
-		"event", "delivery_starting",
-		"ip", job.Decision.IP,
-		"state", job.Decision.State,
 	)
 
 	provider, ok := destinations[job.Destination]

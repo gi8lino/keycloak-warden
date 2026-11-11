@@ -65,7 +65,14 @@ func TestStoreApplyManualBan(t *testing.T) {
 		assert.Equal(t, created.Decision.ExpiresAt, updated.Decision.ExpiresAt)
 		assert.Equal(t, "still investigating", updated.Sources[0].Reason)
 
-		require.NoError(t, store.Maintain(ctx, created.Decision.ExpiresAt))
+		released, err := store.Maintain(ctx, created.Decision.ExpiresAt)
+		require.NoError(t, err)
+		require.Len(t, released, 1)
+		assert.Equal(t, created.Decision.ID, released[0].ID)
+		assert.Equal(t, decisions.StateUnbanned, released[0].State)
+		released, err = store.Maintain(ctx, created.Decision.ExpiresAt)
+		require.NoError(t, err)
+		assert.Empty(t, released, "expiration must only be reported once")
 		views, err = service.ListActive(ctx, created.Decision.ExpiresAt)
 
 		require.NoError(t, err)
@@ -90,10 +97,10 @@ func TestStoreApplyManualBan(t *testing.T) {
 		require.NoError(t, err)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err = ingestion.Process(ctx, failed("first"), now)
+		_, err = processDecision(ingestion, ctx, failed("first"), now)
 
 		require.NoError(t, err)
-		auto, err := ingestion.Process(ctx, failed("second"), now)
+		auto, err := processDecision(ingestion, ctx, failed("second"), now)
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
@@ -104,7 +111,9 @@ func TestStoreApplyManualBan(t *testing.T) {
 		}, now)
 
 		require.NoError(t, err)
-		require.NoError(t, store.Maintain(ctx, auto.ExpiresAt))
+		released, err := store.Maintain(ctx, auto.ExpiresAt)
+		require.NoError(t, err)
+		assert.Empty(t, released, "a manual source still keeps the effective ban active")
 		view, err := service.GetDecision(ctx, manual.Decision.ID, auto.ExpiresAt)
 
 		require.NoError(t, err)
@@ -129,10 +138,10 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
 
-		_, err = ingestion.Process(ctx, failed("first"), now)
+		_, err = processDecision(ingestion, ctx, failed("first"), now)
 
 		require.NoError(t, err)
-		auto, err := ingestion.Process(ctx, failed("second"), now)
+		auto, err := processDecision(ingestion, ctx, failed("second"), now)
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
@@ -173,15 +182,15 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		require.ErrorIs(t, err, bans.ErrNotFound)
 
 		// Replayed IDs remain deduplicated, but new login failures start at zero.
-		decision, err := ingestion.Process(ctx, failed("first"), now.Add(3*time.Second))
+		decision, err := processDecision(ingestion, ctx, failed("first"), now.Add(3*time.Second))
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
-		decision, err = ingestion.Process(ctx, failed("third"), now.Add(3*time.Second))
+		decision, err = processDecision(ingestion, ctx, failed("third"), now.Add(3*time.Second))
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
-		decision, err = ingestion.Process(ctx, failed("fourth"), now.Add(4*time.Second))
+		decision, err = processDecision(ingestion, ctx, failed("fourth"), now.Add(4*time.Second))
 
 		require.NoError(t, err)
 		require.NotNil(t, decision)
@@ -199,10 +208,10 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		require.NoError(t, err)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err = ingestion.Process(ctx, failed("first"), now)
+		_, err = processDecision(ingestion, ctx, failed("first"), now)
 
 		require.NoError(t, err)
-		auto, err := ingestion.Process(ctx, failed("second"), now)
+		auto, err := processDecision(ingestion, ctx, failed("second"), now)
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
@@ -257,10 +266,10 @@ func TestStoreListActive(t *testing.T) {
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err = ingestion.Process(t.Context(), failed("first"), now)
+		_, err = processDecision(ingestion, t.Context(), failed("first"), now)
 
 		require.NoError(t, err)
-		_, err = ingestion.Process(t.Context(), failed("second"), now)
+		_, err = processDecision(ingestion, t.Context(), failed("second"), now)
 
 		require.NoError(t, err)
 		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
@@ -386,9 +395,9 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	_, err = ingestion.Process(t.Context(), failed("first"), now)
+	_, err = processDecision(ingestion, t.Context(), failed("first"), now)
 	require.NoError(t, err)
-	_, err = ingestion.Process(t.Context(), failed("second"), now)
+	_, err = processDecision(ingestion, t.Context(), failed("second"), now)
 	require.NoError(t, err)
 
 	manual, err := service.BanManual(t.Context(), bans.ManualBanRequest{
@@ -400,19 +409,22 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	assert.Len(t, manual.Sources, 2)
 
 	// Automatic expiry removes a source but does not change the effective block.
-	require.NoError(t, store.Maintain(t.Context(), now.Add(16*time.Minute)))
+	_, err = store.Maintain(t.Context(), now.Add(16*time.Minute))
+	require.NoError(t, err)
 	remaining, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(16*time.Minute))
 	require.NoError(t, err)
 	assert.Len(t, remaining.Sources, 1)
 	assert.Equal(t, manual.Decision, remaining.Decision)
 
 	// The final expiry creates one release and repeated maintenance is a no-op.
-	require.NoError(t, store.Maintain(t.Context(), now.Add(time.Hour)))
+	_, err = store.Maintain(t.Context(), now.Add(time.Hour))
+	require.NoError(t, err)
 	released, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
 	assert.Equal(t, manual.Decision.Revision+1, released.Decision.Revision)
-	require.NoError(t, store.Maintain(t.Context(), now.Add(time.Hour)))
+	_, err = store.Maintain(t.Context(), now.Add(time.Hour))
+	require.NoError(t, err)
 	again, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, released.Decision, again.Decision)

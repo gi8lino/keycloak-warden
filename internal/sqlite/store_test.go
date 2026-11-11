@@ -35,6 +35,12 @@ func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *in
 	return store, processor
 }
 
+// processDecision extracts a changed decision from an ingestion outcome for storage tests.
+func processDecision(processor *ingestion.Service, ctx context.Context, event events.Envelope, now time.Time) (*decisions.Decision, error) {
+	result, err := processor.Process(ctx, event, now)
+	return result.Decision, err
+}
+
 // failed constructs a distinct Keycloak failed login from one stable client address.
 func failed(id string) events.Envelope {
 	return events.Envelope{
@@ -60,23 +66,23 @@ func TestStoreTransact(t *testing.T) {
 		ok.Kind = "LOGIN"
 		noIP := failed("missing")
 		noIP.IP = ""
-		decision, err := processor.Process(t.Context(), failed("same"), now)
+		decision, err := processDecision(processor, t.Context(), failed("same"), now)
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
-		decision, err = processor.Process(t.Context(), failed("same"), now)
+		decision, err = processDecision(processor, t.Context(), failed("same"), now)
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
-		decision, err = processor.Process(t.Context(), ok, now)
+		decision, err = processDecision(processor, t.Context(), ok, now)
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
-		decision, err = processor.Process(t.Context(), noIP, now)
+		decision, err = processDecision(processor, t.Context(), noIP, now)
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
-		decision, err = processor.Process(t.Context(), failed("outside-window"), now.Add(time.Minute))
+		decision, err = processDecision(processor, t.Context(), failed("outside-window"), now.Add(time.Minute))
 
 		require.NoError(t, err)
 		assert.Nil(t, decision)
@@ -91,14 +97,14 @@ func TestStoreTransact(t *testing.T) {
 		now := time.Now()
 		for range 12 {
 			wg.Go(func() {
-				decision, err := processor.Process(context.Background(), failed("repeat"), now)
+				decision, err := processDecision(processor, context.Background(), failed("repeat"), now)
 
 				assert.NoError(t, err)
 				assert.Nil(t, decision)
 			})
 		}
 		wg.Wait()
-		decision, err := processor.Process(t.Context(), failed("next"), now)
+		decision, err := processDecision(processor, t.Context(), failed("next"), now)
 
 		require.NoError(t, err)
 		require.NotNil(t, decision)
@@ -115,10 +121,10 @@ func TestOpen(t *testing.T) {
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, processor := openStore(t, path, "a", "b")
-		_, err := processor.Process(ctx, failed("one"), now)
+		_, err := processDecision(processor, ctx, failed("one"), now)
 
 		require.NoError(t, err)
-		decision, err := processor.Process(ctx, failed("two"), now)
+		decision, err := processDecision(processor, ctx, failed("two"), now)
 
 		require.NoError(t, err)
 		require.NotNil(t, decision)
@@ -144,7 +150,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, a, retry)
 
 		later := now.Add(time.Second)
-		extended, err := processor.Process(ctx, failed("three"), later)
+		extended, err := processDecision(processor, ctx, failed("three"), later)
 
 		require.NoError(t, err)
 		require.NotNil(t, extended)
@@ -173,7 +179,8 @@ func TestOpen(t *testing.T) {
 
 		now = extended.ExpiresAt
 
-		require.NoError(t, store.Maintain(ctx, now))
+		_, err = store.Maintain(ctx, now)
+		require.NoError(t, err)
 		release, err := store.Next(ctx, now)
 
 		require.NoError(t, err)
@@ -205,9 +212,9 @@ func TestDestinationBackoff(t *testing.T) {
 	store, processor := openStore(t, path, "edge")
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	_, err := processor.Process(ctx, failed("one"), now)
+	_, err := processDecision(processor, ctx, failed("one"), now)
 	require.NoError(t, err)
-	_, err = processor.Process(ctx, failed("two"), now)
+	_, err = processDecision(processor, ctx, failed("two"), now)
 	require.NoError(t, err)
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
@@ -218,7 +225,7 @@ func TestDestinationBackoff(t *testing.T) {
 	for _, id := range []string{"three", "four"} {
 		event := failed(id)
 		event.IP = "203.0.113.2"
-		_, err = processor.Process(ctx, event, now)
+		_, err = processDecision(processor, ctx, event, now)
 		require.NoError(t, err)
 	}
 	require.NoError(t, store.Close())
@@ -226,7 +233,8 @@ func TestDestinationBackoff(t *testing.T) {
 
 	for _, seconds := range []int{10, 20, 40, 80, 160, 300, 300} {
 		due := now.Add(time.Duration(seconds) * time.Second)
-		require.NoError(t, store.Maintain(ctx, due.Add(-time.Millisecond)))
+		_, err = store.Maintain(ctx, due.Add(-time.Millisecond))
+		require.NoError(t, err)
 		pending, err := store.Next(ctx, due.Add(-time.Millisecond))
 		require.NoError(t, err)
 		require.Nil(t, pending)
@@ -266,7 +274,7 @@ func TestWorkerSchedule(t *testing.T) {
 		now := time.Now()
 		store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"), "receiver")
 		defer store.Close() //nolint:errcheck
-		_, err := processor.Process(ctx, failed("one"), now)
+		_, err := processDecision(processor, ctx, failed("one"), now)
 		require.NoError(t, err)
 		rollback := errors.New("rollback")
 		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
@@ -280,7 +288,7 @@ func TestWorkerSchedule(t *testing.T) {
 			t.Fatal("unexpected wake before decision commit")
 		default:
 		}
-		_, err = processor.Process(ctx, failed("two"), now)
+		_, err = processDecision(processor, ctx, failed("two"), now)
 		require.NoError(t, err)
 		select {
 		case <-store.Changes():
@@ -308,7 +316,8 @@ func TestWorkerSchedule(t *testing.T) {
 		due, err := store.NextDeadline(ctx)
 		require.NoError(t, err)
 		require.True(t, now.Add(8*time.Second).Equal(due))
-		require.NoError(t, store.Maintain(ctx, due))
+		_, err = store.Maintain(ctx, due)
+		require.NoError(t, err)
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
 		require.True(t, now.Add(10*time.Second).Equal(due))
@@ -340,9 +349,9 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	defer store.Close() //nolint:errcheck
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	_, err := processor.Process(ctx, failed("first"), now)
+	_, err := processDecision(processor, ctx, failed("first"), now)
 	require.NoError(t, err)
-	original, err := processor.Process(ctx, failed("second"), now)
+	original, err := processDecision(processor, ctx, failed("second"), now)
 	require.NoError(t, err)
 	require.NotNil(t, original)
 	job, err := store.Next(ctx, now)
@@ -352,7 +361,8 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 
 	latest, err := processor.Process(ctx, failed("third"), now)
 	require.NoError(t, err)
-	assert.Nil(t, latest, "an extra observation must not be reported as a new decision")
+	assert.Equal(t, ingestion.OutcomeUnchanged, latest.Outcome)
+	assert.Nil(t, latest.Decision, "an extra observation must not be reported as a new decision")
 	record, err := store.GetDecision(ctx, original.ID, now)
 	require.NoError(t, err)
 	assert.Equal(t, *original, record.Decision)

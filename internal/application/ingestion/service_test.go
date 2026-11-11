@@ -36,8 +36,10 @@ type fakeTx struct {
 	inserted bool
 	// count supplies the failure count returned by the fake transaction.
 	count int
-	// blocked records whether the fake transaction created a block.
+	// blocked records whether the fake transaction applied the block operation.
 	blocked bool
+	// unchanged models a threshold hit that did not revise the effective decision.
+	unchanged bool
 }
 
 // RecordFailure validates the test address and returns the configured insert result.
@@ -56,6 +58,9 @@ func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, 
 // Block records that ingestion requested a block.
 func (tx *fakeTx) Block(_ context.Context, _ string, _ time.Time, _ time.Time) (*decisions.Decision, error) {
 	tx.blocked = true
+	if tx.unchanged {
+		return nil, nil
+	}
 	return &decisions.Decision{ID: "decision", State: decisions.StateBanned}, nil
 }
 
@@ -107,8 +112,8 @@ func processEvent(t *testing.T, event events.Envelope, count int, inserted bool)
 	})
 
 	require.NoError(t, err)
-	decision, err := service.Process(t.Context(), event, time.Now())
-	return decision, repo, tx, err
+	result, err := service.Process(t.Context(), event, time.Now())
+	return result.Decision, repo, tx, err
 }
 
 func TestServiceProcess(t *testing.T) {
@@ -198,4 +203,53 @@ func TestServiceProcess(t *testing.T) {
 		assert.Zero(t, repo.calls)
 		assert.False(t, tx.blocked)
 	})
+}
+
+// TestProcessingOutcomes distinguishes every non-error detection path for diagnostic logging.
+func TestProcessingOutcomes(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		kind      string
+		ip        string
+		inserted  bool
+		count     int
+		unchanged bool
+		outcome   ingestion.Outcome
+		reason    string
+	}{
+		{name: "ignored event type", kind: "LOGIN", ip: "203.0.113.5", outcome: ingestion.OutcomeIgnored, reason: "unsupported_event_type"},
+		{name: "missing address", kind: "LOGIN_ERROR", outcome: ingestion.OutcomeIgnored, reason: "missing_ip"},
+		{name: "duplicate", kind: "LOGIN_ERROR", ip: "203.0.113.5", outcome: ingestion.OutcomeDuplicate},
+		{name: "below threshold", kind: "LOGIN_ERROR", ip: "203.0.113.5", inserted: true, count: 4, outcome: ingestion.OutcomeBelowThreshold},
+		{name: "threshold met", kind: "LOGIN_ERROR", ip: "203.0.113.5", inserted: true, count: 5, outcome: ingestion.OutcomeUpdated},
+		{name: "unchanged decision", kind: "LOGIN_ERROR", ip: "203.0.113.5", inserted: true, count: 5, unchanged: true, outcome: ingestion.OutcomeUnchanged},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			tx := &fakeTx{inserted: tt.inserted, count: tt.count, unchanged: tt.unchanged}
+			repo := &fakeRepository{tx: tx}
+			service, err := ingestion.New(repo, detection.Rule{Threshold: 5, Window: time.Minute, Ban: 15 * time.Minute})
+			require.NoError(t, err)
+			event := validEvent()
+			event.Kind = tt.kind
+			event.IP = tt.ip
+			result, err := service.Process(t.Context(), event, time.Now())
+			require.NoError(t, err)
+			assert.Equal(t, tt.outcome, result.Outcome)
+			assert.Equal(t, tt.reason, result.Reason)
+			if tt.outcome == ingestion.OutcomeUpdated {
+				require.NotNil(t, result.Decision)
+			} else {
+				assert.Nil(t, result.Decision)
+			}
+			if tt.outcome == ingestion.OutcomeBelowThreshold || tt.outcome == ingestion.OutcomeUpdated || tt.outcome == ingestion.OutcomeUnchanged {
+				assert.Equal(t, tt.count, result.Failures)
+				assert.Equal(t, 5, result.Threshold)
+			}
+		})
+	}
 }

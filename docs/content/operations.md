@@ -14,6 +14,16 @@ The management listener is independent of the optional application `--route-pref
 
 Warden reports successful delivery only after a destination acknowledges a decision revision. Look for `delivery_completed`, `delivery_failed`, and the destination name in logs.
 
+## Diagnostic logging
+
+Normal operation logs effective automatic ban updates and destination acknowledgements at INFO.
+A committed expiry that releases the last active source emits `ban_expired` at INFO.
+Unexpected authenticated event-contract failures and retryable delivery failures use WARN.
+With `--debug`, Warden also explains why an event was ignored, identified as a duplicate,
+remained below the detection threshold, or left a decision unchanged. DEBUG logs do not
+repeat ordinary successful event processing or delivery starts. HTTP access logs remain
+independently controlled by `--access-log`.
+
 ## SQLite maintenance
 
 Warden runs SQLite `PRAGMA optimize` when opening its database and periodically afterward. It also prunes stale failed-login observations. The two schedules are independent:

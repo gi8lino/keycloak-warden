@@ -57,7 +57,7 @@ func NewRegistry(enabled bool, version string) *Registry {
 	}, []string{"realm", "event_type"})
 	automaticBanDecisions := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "warden_automatic_ban_decisions_total",
-		Help: "Automatic ban decisions by triggering event realm; the detection threshold remains global by IP.",
+		Help: "Effective automatic ban decision changes by triggering event realm; the detection threshold remains global by IP.",
 	}, []string{"trigger_realm"})
 	deliveryAttempts := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "warden_delivery_attempts_total",
@@ -99,7 +99,7 @@ func NewRegistry(enabled bool, version string) *Registry {
 	}
 }
 
-// RecordProcessedEvent counts accepted Snitch requests and attributes new bans to the triggering realm.
+// RecordProcessedEvent counts accepted Snitch requests and attributes revised automatic ban decisions to the triggering realm.
 func (r *Registry) RecordProcessedEvent(realmID, eventType string, automaticBan bool) {
 	if !r.enabled {
 		return

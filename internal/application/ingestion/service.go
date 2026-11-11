@@ -50,19 +50,27 @@ func New(repository Repository, rule detection.Rule) (*Service, error) {
 	return &Service{repository: repository, rule: rule}, nil
 }
 
-// Process validates one envelope and records a qualifying failure atomically.
+// Process validates an envelope and returns the committed detection outcome.
 func (s *Service) Process(
 	ctx context.Context,
 	envelope events.Envelope,
 	now time.Time,
-) (decision *decisions.Decision, err error) {
+) (result Result, err error) {
 	event, err := normalize(envelope)
 	if err != nil {
-		return nil, err
+		return Result{}, err
 	}
 
+	result = Result{Outcome: OutcomeIgnored}
+	if event.IP.IsValid() {
+		result.IP = event.IP.String()
+	}
 	if !s.rule.Matches(event) {
-		return nil, nil
+		result.Reason = "unsupported_event_type"
+		if !event.IP.IsValid() {
+			result.Reason = "missing_ip"
+		}
+		return result, nil
 	}
 
 	err = s.repository.Transact(ctx, func(tx Transaction) error {
@@ -71,23 +79,37 @@ func (s *Service) Process(
 			return err
 		}
 		if !inserted {
+			result.Outcome = OutcomeDuplicate
 			return nil
 		}
 
-		ip := event.IP.String()
-		count, err := tx.CountFailures(ctx, ip, now.Add(-s.rule.Window))
+		count, err := tx.CountFailures(ctx, result.IP, now.Add(-s.rule.Window))
 		if err != nil {
 			return err
 		}
+		result.Failures = count
+		result.Threshold = s.rule.Threshold
 		if !s.rule.Triggered(count) {
+			result.Outcome = OutcomeBelowThreshold
 			return nil
 		}
 
-		decision, err = tx.Block(ctx, ip, now.Add(s.rule.Ban), now)
-		return err
+		decision, err := tx.Block(ctx, result.IP, now.Add(s.rule.Ban), now)
+		if err != nil {
+			return err
+		}
+		if decision == nil {
+			result.Outcome = OutcomeUnchanged
+			return nil
+		}
+		result.Outcome = OutcomeUpdated
+		result.Decision = decision
+		return nil
 	})
-
-	return decision, err
+	if err != nil {
+		return Result{}, err
+	}
+	return result, nil
 }
 
 // normalize validates the producer contract without trusting HTTP headers.

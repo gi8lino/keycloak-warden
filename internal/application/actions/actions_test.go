@@ -1,6 +1,7 @@
 package actions
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -28,11 +29,11 @@ type blockingQueue struct {
 }
 
 // Maintain blocks until cancellation so Close must wait for it to return.
-func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time) error {
+func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time) ([]decisions.Decision, error) {
 	close(q.started)
 	<-ctx.Done()
 	close(q.stopped)
-	return ctx.Err()
+	return nil, ctx.Err()
 }
 
 // Next is not reached while Maintain blocks.
@@ -125,6 +126,8 @@ type scriptedQueue struct {
 	cycles atomic.Int32
 	// jobs contains the queued jobs supplied by the test.
 	jobs []*Job
+	// expired contains committed decisions that became unbanned due to expiry.
+	expired []decisions.Decision
 	// finished records jobs acknowledged by the worker.
 	finished []Job
 }
@@ -142,7 +145,11 @@ func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
 }
 
 // Maintain is unused by drainReady.
-func (q *scriptedQueue) Maintain(context.Context, time.Time) error { return nil }
+func (q *scriptedQueue) Maintain(context.Context, time.Time) ([]decisions.Decision, error) {
+	released := q.expired
+	q.expired = nil
+	return released, nil
+}
 
 // Next returns one available job or nil when drained.
 func (q *scriptedQueue) Next(context.Context, time.Time) (*Job, error) {
@@ -252,4 +259,74 @@ func TestWaitUntilNoDeadline(t *testing.T) {
 			t.Fatal("idle worker did not resume on change")
 		}
 	})
+}
+
+// failingProvider rejects an attempted delivery for outcome-log tests.
+type failingProvider struct{}
+
+// Apply returns a retryable delivery error.
+func (failingProvider) Apply(context.Context, decisions.Decision) error {
+	return errors.New("receiver unavailable")
+}
+
+func TestDispatchLogging(t *testing.T) {
+	t.Parallel()
+
+	job := Job{
+		Decision:    decisions.Decision{ID: "decision", IP: "203.0.113.5", Revision: 14, State: decisions.StateBanned},
+		Destination: "webhook.receiver",
+	}
+
+	t.Run("logs successful delivery without a start message", func(t *testing.T) {
+		t.Parallel()
+
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		queue := &scriptedQueue{}
+		provider := &acceptProvider{}
+
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Provider{job.Destination: provider}, logger, job))
+		assert.Equal(t, 1, provider.applied)
+		assert.Contains(t, logs.String(), `"event":"delivery_completed"`)
+		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "successful delivery should emit one log entry")
+		assert.Contains(t, logs.String(), `"revision":14`)
+		assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
+	})
+
+	t.Run("logs delivery failure without a start message", func(t *testing.T) {
+		t.Parallel()
+
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		queue := &scriptedQueue{}
+
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Provider{job.Destination: failingProvider{}}, logger, job))
+		assert.Contains(t, logs.String(), `"event":"delivery_failed"`)
+		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "failed delivery should emit one log entry")
+		assert.Contains(t, logs.String(), `"level":"WARN"`)
+		assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
+	})
+}
+
+// TestExpiryLogging logs only committed, effective releases, once per transition.
+func TestExpiryLogging(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	q := &scriptedQueue{expired: []decisions.Decision{{
+		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: decisions.StateUnbanned,
+	}}}
+
+	_, err := processReady(t.Context(), q, nil, logger)
+	require.NoError(t, err)
+	assert.Contains(t, logs.String(), `"event":"ban_expired"`)
+	assert.Contains(t, logs.String(), `"decision_id":"expired-id"`)
+	assert.Contains(t, logs.String(), `"level":"INFO"`)
+	assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
+
+	logs.Reset()
+	_, err = processReady(t.Context(), q, nil, logger)
+	require.NoError(t, err)
+	assert.Empty(t, logs.String(), "expiry notification must not be emitted again")
 }

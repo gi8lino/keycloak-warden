@@ -18,6 +18,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
+	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
 	"github.com/gi8lino/keycloak-warden/internal/http/middleware"
 	"github.com/gi8lino/keycloak-warden/internal/metrics"
@@ -30,12 +31,22 @@ type capture struct {
 	events []events.Envelope
 	// decision is the simulated result of a detection threshold being reached.
 	decision *decisions.Decision
+	// result defines a non-changing detection outcome for event log tests.
+	result ingestion.Result
+	// err simulates invalid or unavailable event processing.
+	err error
 }
 
 // Process records the event after HTTP authentication and application dispatch.
-func (c *capture) Process(_ context.Context, e events.Envelope, _ time.Time) (*decisions.Decision, error) {
+func (c *capture) Process(_ context.Context, e events.Envelope, _ time.Time) (ingestion.Result, error) {
 	c.events = append(c.events, e)
-	return c.decision, nil
+	if c.err != nil {
+		return ingestion.Result{}, c.err
+	}
+	if c.decision != nil {
+		return ingestion.Result{Outcome: ingestion.OutcomeUpdated, Decision: c.decision}, nil
+	}
+	return c.result, nil
 }
 
 // post constructs a signed request and returns the endpoint status.
@@ -119,7 +130,7 @@ func TestEvents(t *testing.T) {
 	})
 }
 
-// TestEventsRealmTelemetry verifies that the signed realm ID reaches investigation logs and metrics.
+// TestEventsRealmTelemetry verifies realm-scoped metrics and logs for committed decisions.
 func TestEventsRealmTelemetry(t *testing.T) {
 	t.Parallel()
 
@@ -131,14 +142,17 @@ func TestEventsRealmTelemetry(t *testing.T) {
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		registry := metrics.NewRegistry(true, "test")
-		processor := new(capture)
+		processor := &capture{result: ingestion.Result{
+			Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 1, Threshold: 5,
+		}}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, registry), middleware.AuthenticateSnitch("key"))
 
 		require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))
 		require.Len(t, processor.events, 1)
 		assert.Equal(t, "hq", processor.events[0].RealmID)
-		assert.Contains(t, logs.String(), `"realm_id":"hq"`)
-		assert.Contains(t, logs.String(), `"event":"security_event_processed"`)
+		assert.Contains(t, logs.String(), `"event":"detection_threshold_not_reached"`)
+		assert.Contains(t, logs.String(), `"failures":1`)
+		assert.Contains(t, logs.String(), `"threshold":5`)
 
 		output := httptest.NewRecorder()
 		registry.Metrics().ServeHTTP(output, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -150,18 +164,24 @@ func TestEventsRealmTelemetry(t *testing.T) {
 		t.Parallel()
 
 		var logs bytes.Buffer
-		logger := slog.New(slog.NewJSONHandler(&logs, nil))
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		registry := metrics.NewRegistry(true, "test")
 		processor := &capture{decision: &decisions.Decision{
-			ID:    "decision",
-			IP:    "203.0.113.5",
-			State: decisions.StateBanned,
+			ID:       "decision",
+			IP:       "203.0.113.5",
+			Revision: 14,
+			State:    decisions.StateBanned,
 		}}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, registry), middleware.AuthenticateSnitch("key"))
 
 		require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))
 		assert.Contains(t, logs.String(), `"trigger_realm_id":"hq"`)
-		assert.Contains(t, logs.String(), `"event":"automatic_ban_created"`)
+		assert.Contains(t, logs.String(), `"trigger_event_id":"one"`)
+		assert.Contains(t, logs.String(), `"revision":14`)
+		assert.Contains(t, logs.String(), `"event":"automatic_ban_updated"`)
+		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "a decision change should emit one log entry")
+		assert.NotContains(t, logs.String(), `"event":"automatic_ban_created"`)
+		assert.NotContains(t, logs.String(), `"event":"security_event_processed"`)
 
 		output := httptest.NewRecorder()
 		registry.Metrics().ServeHTTP(output, httptest.NewRequest(http.MethodGet, "/metrics", nil))
@@ -180,5 +200,72 @@ func TestEventsRealmTelemetry(t *testing.T) {
 		output := httptest.NewRecorder()
 		registry.Metrics().ServeHTTP(output, httptest.NewRequest(http.MethodGet, "/metrics", nil))
 		assert.NotContains(t, output.Body.String(), "warden_snitch_events_total{")
+	})
+}
+
+// TestEventDiagnosticLogging verifies that diagnostic outcomes are DEBUG-only and contract errors are WARN.
+func TestEventDiagnosticLogging(t *testing.T) {
+	t.Parallel()
+
+	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","realmId":"hq","ipAddress":"203.0.113.5"}`
+	tests := []struct {
+		name   string
+		result ingestion.Result
+		event  string
+	}{
+		{name: "ignored event", result: ingestion.Result{Outcome: ingestion.OutcomeIgnored, Reason: "unsupported_event_type"}, event: "security_event_ignored"},
+		{name: "duplicate", result: ingestion.Result{Outcome: ingestion.OutcomeDuplicate, IP: "203.0.113.5"}, event: "security_event_duplicate"},
+		{name: "below threshold", result: ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 2, Threshold: 5}, event: "detection_threshold_not_reached"},
+		{name: "unchanged decision", result: ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5", Failures: 5, Threshold: 5}, event: "decision_unchanged"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			for _, level := range []slog.Level{slog.LevelInfo, slog.LevelDebug} {
+				var logs bytes.Buffer
+				logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: level}))
+				processor := &capture{result: tt.result}
+				handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
+				require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))
+				if level == slog.LevelDebug {
+					assert.Contains(t, logs.String(), `"event":"`+tt.event+`"`)
+					assert.Contains(t, logs.String(), `"level":"DEBUG"`)
+				} else {
+					assert.Empty(t, logs.String(), "routine non-changing events should be silent without --debug")
+				}
+			}
+		})
+	}
+
+	t.Run("malformed authenticated JSON logs a warning without the body", func(t *testing.T) {
+		t.Parallel()
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, nil))
+		handler := httpkitmiddleware.Chain(endpoint.Events(new(capture), logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
+		require.Equal(t, http.StatusBadRequest, post(handler, `{bad`, "key", time.Now()))
+		assert.Contains(t, logs.String(), `"level":"WARN"`)
+		assert.Contains(t, logs.String(), `"reason":"invalid_json"`)
+		assert.NotContains(t, logs.String(), `{bad`)
+	})
+
+	t.Run("invalid authenticated event logs a warning", func(t *testing.T) {
+		t.Parallel()
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, nil))
+		processor := &capture{err: ingestion.ErrInvalidEvent}
+		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
+		require.Equal(t, http.StatusBadRequest, post(handler, body, "key", time.Now()))
+		assert.Contains(t, logs.String(), `"level":"WARN"`)
+		assert.Contains(t, logs.String(), `"event":"security_event_rejected"`)
+	})
+
+	t.Run("invalid signature does not generate event warning", func(t *testing.T) {
+		t.Parallel()
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, nil))
+		handler := httpkitmiddleware.Chain(endpoint.Events(new(capture), logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
+		require.Equal(t, http.StatusUnauthorized, post(handler, body, "wrong", time.Now()))
+		assert.Empty(t, logs.String())
 	})
 }
