@@ -1,4 +1,4 @@
-// Package output encodes command results in text, JSON, or YAML.
+// Package output encodes command results in JSON or YAML.
 package output
 
 import (
@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	// FormatText renders human-readable command output.
+	// FormatText is a compatibility alias for human-readable YAML output.
 	FormatText = "text"
 	// FormatJSON renders a single JSON document.
 	FormatJSON = "json"
@@ -22,11 +22,6 @@ const (
 // Encoder serializes one complete command result to the selected destination.
 type Encoder func(any) error
 
-// TextWriter is implemented by command results that support a human-readable representation.
-type TextWriter interface {
-	WriteText(io.Writer) error
-}
-
 // New creates an encoder that reads the output format when the result is written.
 // This allows CLI flags to be parsed after command registration.
 func New(format *string, writer io.Writer) Encoder {
@@ -36,33 +31,14 @@ func New(format *string, writer io.Writer) Encoder {
 		}
 
 		switch *format {
-		case FormatText:
-			printable, ok := value.(TextWriter)
-			if !ok {
-				return fmt.Errorf("text output is not supported for %T", value)
-			}
-			return printable.WriteText(writer)
 		case FormatJSON:
 			return json.NewEncoder(writer).Encode(value)
-		case FormatYAML:
-			// Marshal through JSON to honor existing json field tags,
-			// including ipAddress, expiresAt, and omitted fields.
-			data, err := json.Marshal(value)
-			if err != nil {
+		case FormatText, FormatYAML:
+			encoder := yaml.NewEncoder(writer)
+			if err := encoder.Encode(value); err != nil {
 				return err
 			}
-			var normalized yaml.Node
-			if err := yaml.Load(data, &normalized); err != nil {
-				return err
-			}
-			dumper, err := yaml.NewDumper(writer, yaml.WithV3Defaults())
-			if err != nil {
-				return err
-			}
-			if err := dumper.Dump(&normalized); err != nil {
-				return err
-			}
-			return dumper.Close()
+			return encoder.Close()
 		default:
 			return fmt.Errorf("unsupported output format %q", *format)
 		}

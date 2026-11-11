@@ -12,100 +12,79 @@ import (
 	"go.yaml.in/yaml/v4"
 )
 
-// fakePrintable supplies a text representation independent of JSON formatting.
-type fakePrintable struct {
-	// Name supplies the sample address rendered by the test result.
-	Name string `json:"ipAddress"`
-}
-
-// WriteText prints a dedicated human-readable representation.
-func (p fakePrintable) WriteText(w io.Writer) error {
-	_, err := io.WriteString(w, "IP: "+p.Name+"\n")
-	return err
+// sampleResult verifies that JSON and YAML use the same field names.
+type sampleResult struct {
+	// IP is the address written by the encoder.
+	IP string `json:"ipAddress" yaml:"ipAddress"`
+	// Reason is optional in either format.
+	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
 }
 
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	t.Run("text uses the result's text renderer", func(t *testing.T) {
+	t.Run("json uses json tags", func(t *testing.T) {
 		t.Parallel()
-
 		var output bytes.Buffer
+		require.NoError(t, New(ptr(FormatJSON), &output)(sampleResult{IP: "203.0.113.10"}))
 
-		require.NoError(t, New(ptr(FormatText), &output)(fakePrintable{Name: "203.0.113.10"}))
-		assert.Equal(t, "IP: 203.0.113.10\n", output.String())
-	})
-
-	t.Run("json preserves exported field names", func(t *testing.T) {
-		t.Parallel()
-
-		var output bytes.Buffer
-
-		require.NoError(t, New(ptr(FormatJSON), &output)(fakePrintable{Name: "203.0.113.10"}))
 		var result map[string]any
-
 		require.NoError(t, json.Unmarshal(output.Bytes(), &result))
 		assert.Equal(t, "203.0.113.10", result["ipAddress"])
+		assert.NotContains(t, result, "reason")
 	})
 
-	t.Run("yaml uses json field names", func(t *testing.T) {
+	t.Run("yaml uses yaml tags directly", func(t *testing.T) {
 		t.Parallel()
-
 		var output bytes.Buffer
+		require.NoError(t, New(ptr(FormatYAML), &output)(sampleResult{IP: "203.0.113.10"}))
 
-		require.NoError(t, New(ptr(FormatYAML), &output)(fakePrintable{Name: "203.0.113.10"}))
 		var result map[string]any
-
 		require.NoError(t, yaml.Load(output.Bytes(), &result))
 		assert.Equal(t, "203.0.113.10", result["ipAddress"])
+		assert.NotContains(t, result, "reason")
+		assert.NotContains(t, result, "ip")
+	})
+
+	t.Run("text is a yaml alias", func(t *testing.T) {
+		t.Parallel()
+		value := sampleResult{IP: "203.0.113.10", Reason: "Manual review"}
+		var textOutput, yamlOutput bytes.Buffer
+		require.NoError(t, New(ptr(FormatText), &textOutput)(value))
+		require.NoError(t, New(ptr(FormatYAML), &yamlOutput)(value))
+		assert.Equal(t, yamlOutput.String(), textOutput.String())
 	})
 
 	t.Run("uses the format selected after encoder creation", func(t *testing.T) {
 		t.Parallel()
-
 		var output bytes.Buffer
-		format := FormatText
+		format := FormatYAML
 		encode := New(&format, &output)
 		format = FormatJSON
 
-		require.NoError(t, encode(fakePrintable{Name: "203.0.113.10"}))
+		require.NoError(t, encode(sampleResult{IP: "203.0.113.10"}))
 		var result map[string]any
-
 		require.NoError(t, json.Unmarshal(output.Bytes(), &result))
 		assert.Equal(t, "203.0.113.10", result["ipAddress"])
 	})
 
+	t.Run("rejects nil format", func(t *testing.T) {
+		t.Parallel()
+		require.ErrorContains(t, New(nil, io.Discard)(sampleResult{}), "output format is not configured")
+	})
+
 	t.Run("rejects an unsupported format", func(t *testing.T) {
 		t.Parallel()
-
-		err := New(ptr("xml"), io.Discard)(fakePrintable{})
-
-		require.ErrorContains(t, err, "unsupported output format")
+		require.ErrorContains(t, New(ptr("xml"), io.Discard)(sampleResult{}), "unsupported output format")
 	})
 
-	t.Run("rejects values without a text renderer", func(t *testing.T) {
-		t.Parallel()
-
-		err := New(ptr(FormatText), io.Discard)(struct{}{})
-
-		require.ErrorContains(t, err, "text output is not supported")
-	})
-
-	t.Run("propagates yaml write errors", func(t *testing.T) {
-		t.Parallel()
-
-		err := New(ptr(FormatYAML), failingWriter{})(fakePrintable{Name: "203.0.113.10"})
-
-		require.ErrorContains(t, err, "write failed")
-	})
-
-	t.Run("propagates text write errors", func(t *testing.T) {
-		t.Parallel()
-
-		err := New(ptr(FormatText), failingWriter{})(fakePrintable{Name: "203.0.113.10"})
-
-		require.ErrorContains(t, err, "write failed")
-	})
+	for _, format := range []string{FormatJSON, FormatYAML, FormatText} {
+		t.Run("propagates "+format+" write errors", func(t *testing.T) {
+			t.Parallel()
+			err := New(ptr(format), failingWriter{})(sampleResult{IP: "203.0.113.10"})
+			require.ErrorContains(t, err, "write failed")
+		})
+	}
 }
 
 // failingWriter simulates a broken stdout stream.
@@ -116,13 +95,11 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write fa
 
 func TestYAMLIntegerPrecision(t *testing.T) {
 	t.Parallel()
-
 	var output bytes.Buffer
 	input := map[string]int64{"revision": 9007199254740993}
 
 	require.NoError(t, New(ptr(FormatYAML), &output)(input))
 	var decoded map[string]int64
-
 	require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 	assert.Equal(t, input, decoded)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/output"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 
 	"github.com/stretchr/testify/assert"
@@ -425,7 +426,11 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, []string{"203.0.113.10", "203.0.113.20"}, received)
 		receivedMu.Unlock()
 
-		assert.Contains(t, stdout.String(), "2 succeeded, 0 failed")
+		var batch output.Batch
+		require.NoError(t, yaml.Load(stdout.Bytes(), &batch))
+		assert.Equal(t, "ban", batch.Operation)
+		assert.Equal(t, 2, batch.Succeeded)
+		assert.Zero(t, batch.Failed)
 	})
 
 	t.Run("unban canonicalizes and deduplicates addresses before requesting", func(t *testing.T) {
@@ -455,7 +460,11 @@ func TestRun(t *testing.T) {
 
 		require.NoError(t, err, stderr.String())
 		assert.EqualValues(t, 1, deletes.Load())
-		assert.Contains(t, stdout.String(), "1 succeeded, 0 failed")
+		var batch output.Batch
+		require.NoError(t, yaml.Load(stdout.Bytes(), &batch))
+		assert.Equal(t, "unban", batch.Operation)
+		assert.Equal(t, 1, batch.Succeeded)
+		assert.Zero(t, batch.Failed)
 	})
 
 	t.Run("ban rejects blank reason during flag parsing", func(t *testing.T) {
@@ -545,17 +554,19 @@ func inspectTestDatabase(t *testing.T) (string, []string) {
 func TestInspectMultiple(t *testing.T) {
 	t.Parallel()
 
-	t.Run("text displays multiple decisions", func(t *testing.T) {
+	t.Run("default YAML displays multiple decisions in request order", func(t *testing.T) {
 		t.Parallel()
 		path, ids := inspectTestDatabase(t)
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		first := strings.Index(stdout.String(), "ID: "+ids[1])
-		second := strings.Index(stdout.String(), "ID: "+ids[0])
-		assert.GreaterOrEqual(t, first, 0)
-		assert.Greater(t, second, first)
-		assert.Contains(t, stdout.String(), "Deliveries: none\n\nID: "+ids[0])
+		var views []bans.Record
+		require.NoError(t, yaml.Load(stdout.Bytes(), &views))
+		require.Len(t, views, 2)
+		assert.Equal(t, ids[1], views[0].Decision.ID)
+		assert.Equal(t, ids[0], views[1].Decision.ID)
+		require.Len(t, views[0].Sources, 1)
+		assert.Equal(t, bans.SourceManual, views[0].Sources[0].Kind)
 	})
 
 	t.Run("JSON always returns an array, including for one ID", func(t *testing.T) {

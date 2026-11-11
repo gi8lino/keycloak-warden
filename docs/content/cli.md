@@ -4,13 +4,13 @@ The Warden binary provides server operation, manual ban management, and inspecti
 
 ## Commands
 
-| Command       | Purpose                                                                         |
-| ------------- | ------------------------------------------------------------------------------- |
-| `serve`       | Start HTTP ingestion, delivery, and maintenance workers                         |
-| `ban`         | Create or extend one or more manual bans through the application API            |
-| `unban`       | Remove active ban sources for one or more IPs through the application API       |
-| `list-active` | Read active bans from SQLite                                                    |
-| `inspect`     | Inspect decisions, active sources, and delivery acknowledgements by decision ID |
+| Command       | Purpose                                                                   |
+| ------------- | ------------------------------------------------------------------------- |
+| `serve`       | Start HTTP ingestion, delivery, and maintenance workers                   |
+| `ban`         | Create or extend one or more manual bans through the application API      |
+| `unban`       | Remove active ban sources for one or more IPs through the application API |
+| `list-active` | Read active bans from SQLite                                              |
+| `inspect`     | Inspect decisions, active sources, and delivery acknowledgements by decision ID            |
 
 ## Start Warden
 
@@ -43,7 +43,7 @@ warden list-active --database=/data/warden.db --output=json
 warden inspect DECISION_ID --database=/data/warden.db --output=json
 ```
 
-Use `--output=text`, `--output=json`, or `--output=yaml` with commands that produce output. `list-active` and `inspect` return the same record structure (`decision`, `sources`, and `deliveries`) in JSON and YAML. The `inspect` command also includes the currently active sources for historical decisions. Both commands read SQLite directly rather than calling the administrative HTTP API, so run them where the database is accessible.
+The default output format is YAML. Use `--output=yaml` or `--output=json` with commands that produce output. `--output=text` remains a compatibility alias for YAML; the old custom text formatter has been removed. `list-active` and `inspect` return the same record structure (`decision`, `sources`, and `deliveries`) in JSON and YAML. The `inspect` command also includes the currently active sources for historical decisions. Both commands read SQLite directly rather than calling the administrative HTTP API, so run them where the database is accessible.
 
 ## Discover flags
 

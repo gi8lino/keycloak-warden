@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v4"
 
 	clioutput "github.com/gi8lino/keycloak-warden/internal/output"
 )
@@ -47,7 +48,7 @@ func TestRun(t *testing.T) {
 			server.URL,
 			"admin-secret",
 			[]string{"203.0.113.10", "203.0.113.20"},
-			clioutput.New(textFormat(), &output),
+			clioutput.New(yamlFormat(), &output),
 		)
 
 		require.NoError(t, err)
@@ -56,7 +57,14 @@ func TestRun(t *testing.T) {
 		deletedMu.Unlock()
 
 		assert.EqualValues(t, 1, gets.Load())
-		assert.Equal(t, "Unbanned 203.0.113.10\nUnbanned 203.0.113.20\n2 succeeded, 0 failed\n", output.String())
+		var result clioutput.Batch
+		require.NoError(t, yaml.Load(output.Bytes(), &result))
+		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, 2, result.Succeeded)
+		assert.Zero(t, result.Failed)
+		require.Len(t, result.Results, 2)
+		assert.True(t, result.Results[0].Success)
+		assert.True(t, result.Results[1].Success)
 	})
 
 	t.Run("reports failed unban while continuing to the next IP", func(t *testing.T) {
@@ -91,7 +99,7 @@ func TestRun(t *testing.T) {
 			server.URL,
 			"admin-secret",
 			[]string{"203.0.113.10", "203.0.113.20"},
-			clioutput.New(textFormat(), &output),
+			clioutput.New(yamlFormat(), &output),
 		)
 
 		require.ErrorContains(t, err, "failed 203.0.113.10")
@@ -101,7 +109,14 @@ func TestRun(t *testing.T) {
 		deletedMu.Unlock()
 
 		assert.EqualValues(t, 1, gets.Load())
-		assert.Equal(t, "Unbanned 203.0.113.20\n1 succeeded, 1 failed\n", output.String())
+		var result clioutput.Batch
+		require.NoError(t, yaml.Load(output.Bytes(), &result))
+		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, 1, result.Succeeded)
+		assert.Equal(t, 1, result.Failed)
+		require.Len(t, result.Results, 2)
+		assert.False(t, result.Results[0].Success)
+		assert.True(t, result.Results[1].Success)
 	})
 
 	t.Run("reports an unbanned IP as not found and continues", func(t *testing.T) {
@@ -126,18 +141,25 @@ func TestRun(t *testing.T) {
 			server.URL,
 			"admin-secret",
 			[]string{"203.0.113.10", "203.0.113.20"},
-			clioutput.New(textFormat(), &output),
+			clioutput.New(yamlFormat(), &output),
 		)
 
 		require.ErrorContains(t, err, "failed 203.0.113.10: active ban not found")
 		assert.EqualValues(t, 1, deletes.Load())
-		assert.Equal(t, "Unbanned 203.0.113.20\n1 succeeded, 1 failed\n", output.String())
+		var result clioutput.Batch
+		require.NoError(t, yaml.Load(output.Bytes(), &result))
+		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, 1, result.Succeeded)
+		assert.Equal(t, 1, result.Failed)
+		require.Len(t, result.Results, 2)
+		assert.False(t, result.Results[0].Success)
+		assert.True(t, result.Results[1].Success)
 	})
 
 }
 
-// textFormat provides an output format pointer for command tests.
-func textFormat() *string {
-	format := clioutput.FormatText
+// yamlFormat provides an output format pointer for command tests.
+func yamlFormat() *string {
+	format := clioutput.FormatYAML
 	return &format
 }
