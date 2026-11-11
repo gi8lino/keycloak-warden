@@ -10,9 +10,9 @@ import (
 
 // Run reads the requested decisions without modifying the SQLite database.
 func Run(ctx context.Context, database string, ids []string, encode output.Encoder) error {
-	views, err := sqlite.InspectMany(ctx, database, ids)
+	records, err := sqlite.InspectMany(ctx, database, ids)
 	if err != nil {
 		return err
 	}
-	return encode(output.Records(views))
+	return encode(records)
 }

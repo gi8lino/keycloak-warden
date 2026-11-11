@@ -65,6 +65,8 @@ warden inspect ID1 ID2 --output json
 
 Use `warden --help` to see the available commands, or `warden <command> --help` for command-specific flags and environment variables.
 
+CLI command results use YAML by default; specify `--output=json` for scripts. The legacy `--output=text` value is accepted as a YAML alias.
+
 ## Configuration
 
 Warden reads detection rules and provider-grouped, named targets from `warden.yaml`. At least one webhook or Cloudflare target is required; Warden does not run in monitoring-only mode. Each configured target receives the same decision independently and retries failed delivery. To disable a target, remove it from the configuration after ensuring it no longer owns any active bans. Do not remove the final target.

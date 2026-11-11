@@ -12,9 +12,9 @@ import (
 
 // Run lists active decision records including sources and deliveries without modifying SQLite.
 func Run(ctx context.Context, database string, encode output.Encoder) error {
-	active, err := sqlite.ListActiveBans(ctx, database, time.Now())
+	records, err := sqlite.ListActiveBans(ctx, database, time.Now())
 	if err != nil {
 		return err
 	}
-	return encode(output.Records(active))
+	return encode(records)
 }
