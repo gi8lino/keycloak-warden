@@ -27,6 +27,7 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 
 	format := root.String("output", output.FormatYAML, "Output format").
 		Choices(output.FormatText, output.FormatJSON, output.FormatYAML).
+		Short("o").
 		Value()
 
 	// Bind the flag value; the encoder reads it when a command runs, after parsing.

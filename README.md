@@ -57,7 +57,7 @@ warden ban 203.0.113.10 203.0.113.11 --duration 1h --reason "Investigation"
 warden unban 203.0.113.10 203.0.113.11
 
 # List active bans
-warden list-active --output json
+warden list-active -o json
 
 # Inspect multiple decisions
 warden inspect ID1 ID2 --output json

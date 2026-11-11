@@ -39,11 +39,11 @@ Both commands accept multiple addresses. When the server is not local, set `--ap
 ## Inspect persisted state
 
 ```sh
-warden list-active --database=/data/warden.db --output=json
-warden inspect DECISION_ID --database=/data/warden.db --output=json
+warden list-active --database=/data/warden.db -o json
+warden inspect DECISION_ID --database=/data/warden.db -o json
 ```
 
-The default output format is YAML. Use `--output=yaml` or `--output=json` with commands that produce output. `--output=text` remains a compatibility alias for YAML; the old custom text formatter has been removed. `list-active` and `inspect` return the same record structure (`decision`, `sources`, and `deliveries`) in JSON and YAML. The `inspect` command also includes the currently active sources for historical decisions. Both commands read SQLite directly rather than calling the administrative HTTP API, so run them where the database is accessible.
+> The default output format is YAML. Use `-o json` or `--output=json` for JSON, and `-o yaml` or `--output=yaml` for YAML. `--output=text` remains a compatibility alias for YAML. The `list-active` and `inspect` commands return the same record structure (`decision`, `sources`, and `deliveries`).
 
 ## Discover flags
 
