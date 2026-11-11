@@ -39,7 +39,7 @@ targets:
 	var output bytes.Buffer
 	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
 	root.EnvPrefix("WARDEN_")
-	Register(root, appflags.Register(root), &output, "test")
+	Register(root, appflags.RegisterServer(root), &output, "test")
 	commandArgs := []string{
 		"serve",
 		"--config", path,
@@ -91,7 +91,7 @@ func TestLogFormat(t *testing.T) {
 		t.Parallel()
 
 		root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
-		Register(root, appflags.Register(root), &bytes.Buffer{}, "test")
+		Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 		_, err := root.ParseRunner([]string{"serve", "--log-format", "xml"})
 		require.Error(t, err)
 	})
@@ -107,7 +107,7 @@ func TestServeFlagValidation(t *testing.T) {
 
 	parse := func(args ...string) error {
 		root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
-		Register(root, appflags.Register(root), &bytes.Buffer{}, "test")
+		Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 
 		_, err := root.ParseRunner(append([]string{"serve"}, args...))
 		return err
@@ -239,7 +239,7 @@ func TestServeSecretEnvironment(t *testing.T) {
 
 	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
 	root.EnvPrefix("WARDEN_")
-	Register(root, appflags.Register(root), &bytes.Buffer{}, "test")
+	Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.NoError(t, err)
@@ -250,7 +250,7 @@ func TestServeRejectsBlankSecretEnvironment(t *testing.T) {
 
 	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
 	root.EnvPrefix("WARDEN_")
-	Register(root, appflags.Register(root), &bytes.Buffer{}, "test")
+	Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.ErrorContains(t, err, "must not be blank")
@@ -262,7 +262,7 @@ func TestServeRejectsBlankManagementListenerEnvironment(t *testing.T) {
 
 	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
 	root.EnvPrefix("WARDEN_")
-	Register(root, appflags.Register(root), &bytes.Buffer{}, "test")
+	Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.ErrorContains(t, err, "must not be blank")
@@ -275,7 +275,7 @@ func TestMaintenanceIntervalEnvironment(t *testing.T) {
 
 	root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
 	root.EnvPrefix("WARDEN_")
-	Register(root, appflags.Register(root), &bytes.Buffer{}, "test")
+	Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.NoError(t, err)

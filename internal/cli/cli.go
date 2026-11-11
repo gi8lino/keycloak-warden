@@ -33,12 +33,13 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 	// Bind the flag value; the encoder reads it when a command runs, after parsing.
 	encode := output.New(format, stdout)
 
-	flags := appflags.Register(root)
-	serve.Register(root, flags, stdout, version)
-	listactive.Register(root, flags, encode)
-	inspect.Register(root, flags, encode)
-	ban.Register(root, flags, encode)
-	unban.Register(root, flags, encode)
+	serverFlags := appflags.RegisterServer(root)
+
+	serve.Register(root, serverFlags, stdout, version)
+	listactive.Register(root, serverFlags, encode)
+	inspect.Register(root, serverFlags, encode)
+	ban.Register(root, serverFlags, encode)
+	unban.Register(root, serverFlags, encode)
 
 	runner, err := root.ParseRunner(args)
 	if err != nil {

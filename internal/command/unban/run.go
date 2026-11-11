@@ -7,12 +7,11 @@ import (
 	"fmt"
 
 	"github.com/gi8lino/keycloak-warden/internal/adminclient"
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/output"
 )
 
-// Run removes all active ban sources from each IP, continuing after individual API failures.
+// Run resolves requested addresses to active decision IDs and reports batch results.
 func Run(ctx context.Context, applicationURL, token string, inputs []string, encode output.Encoder) error {
 	addresses, err := ipargs.Unique(inputs)
 	if err != nil {
@@ -29,47 +28,9 @@ func Run(ctx context.Context, applicationURL, token string, inputs []string, enc
 		return fmt.Errorf("list active bans: %w", err)
 	}
 
-	ids := decisionIDsByIP(active)
-
-	var failures []error
-	batch := output.Batch{Operation: "unban", Results: make([]output.Item, 0, len(addresses))}
-	for _, ip := range addresses {
-		if err := ctx.Err(); err != nil {
-			failures = append(failures, err)
-			break
-		}
-
-		id, exists := ids[ip]
-		if !exists {
-			failures = append(failures, fmt.Errorf("failed %s: %w", ip, bans.ErrNotFound))
-			batch.Failed++
-			batch.Results = append(batch.Results, output.Item{IPAddress: ip, Error: bans.ErrNotFound.Error()})
-			continue
-		}
-
-		record, err := client.Unban(ctx, id)
-		if err != nil {
-			failures = append(failures, fmt.Errorf("failed %s: %w", ip, err))
-			batch.Failed++
-			batch.Results = append(batch.Results, output.Item{IPAddress: ip, Error: err.Error()})
-			continue
-		}
-
-		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &record})
-		batch.Succeeded++
-	}
-
+	batch, failures := execute(ctx, client, addresses, decisionIDsByIP(active))
 	if err := encode(batch); err != nil {
 		failures = append(failures, err)
 	}
 	return errors.Join(failures...)
-}
-
-// decisionIDsByIP indexes active decisions for CLI address-based unban requests.
-func decisionIDsByIP(records []bans.Record) map[string]string {
-	ids := make(map[string]string, len(records))
-	for _, record := range records {
-		ids[record.Decision.IP] = record.Decision.ID
-	}
-	return ids
 }

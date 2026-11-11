@@ -4,16 +4,14 @@ package ban
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/adminclient"
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/output"
 )
 
-// Run applies a manual ban to each IP, continuing after individual API failures.
+// Run validates the requested IPs, prepares the client, and reports batch results.
 func Run(
 	ctx context.Context,
 	applicationURL, token string,
@@ -32,34 +30,7 @@ func Run(
 		return err
 	}
 
-	var failures []error
-	batch := output.Batch{
-		Operation: "ban",
-		Results:   make([]output.Item, 0, len(addresses)),
-	}
-
-	for _, ip := range addresses {
-		if err := ctx.Err(); err != nil {
-			failures = append(failures, err)
-			break
-		}
-
-		record, err := client.Ban(ctx, bans.ManualBanRequest{
-			IP:       ip,
-			Duration: duration,
-			Reason:   reason,
-		})
-		if err != nil {
-			failures = append(failures, fmt.Errorf("failed %s: %w", ip, err))
-			batch.Failed++
-			batch.Results = append(batch.Results, output.Item{IPAddress: ip, Error: err.Error()})
-			continue
-		}
-
-		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &record})
-		batch.Succeeded++
-	}
-
+	batch, failures := execute(ctx, client, addresses, duration, reason)
 	if err := encode(batch); err != nil {
 		failures = append(failures, err)
 	}

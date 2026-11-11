@@ -1,4 +1,4 @@
-// Package appflags defines application endpoint flags shared by Warden subcommands.
+// Package appflags defines shared server and administrative client flags.
 package appflags
 
 import (
@@ -8,20 +8,29 @@ import (
 
 	"github.com/containeroo/httpkit/prefix"
 	"github.com/containeroo/tinyflags"
+
 	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 )
 
-// Flags holds the global application listener settings parsed by tinyflags.
-type Flags struct {
+// ServerFlags holds the global application listener settings parsed by tinyflags.
+type ServerFlags struct {
 	// ListenAddress identifies the application interface and port.
 	ListenAddress *string
 	// RoutePrefix is the normalized base path of the application API.
 	RoutePrefix *string
 }
 
-// Register registers the shared application endpoint on the root command.
-func Register(root *tinyflags.Command) Flags {
-	return Flags{
+// AdminFlags holds the authenticated application API settings for an administrative command.
+type AdminFlags struct {
+	// ApplicationURL identifies the application API endpoint.
+	ApplicationURL *string
+	// AdminToken authenticates requests to the administrative API.
+	AdminToken *string
+}
+
+// RegisterServer registers application listener settings on the root command.
+func RegisterServer(root *tinyflags.Command) ServerFlags {
+	return ServerFlags{
 		ListenAddress: root.Globals().String("listen-address", "127.0.0.1:8080", "Application listener address").
 			NotBlank().
 			Placeholder("ADDR").
@@ -33,26 +42,33 @@ func Register(root *tinyflags.Command) Flags {
 	}
 }
 
-// ApplicationURLFlag finalizes the client URL after tinyflags parses the root and command flags.
-func (f Flags) ApplicationURLFlag(cmd *tinyflags.Command) *string {
-	address := cmd.String("application-url", "", "Override the URL derived from --listen-address and --route-prefix").
-		Value()
+// RegisterAdmin registers client settings and derives the default URL from server flags.
+func RegisterAdmin(cmd *tinyflags.Command, server ServerFlags) AdminFlags {
+	flags := AdminFlags{
+		ApplicationURL: cmd.String("application-url", "", "Override the URL derived from --listen-address and --route-prefix").
+			Value(),
+		AdminToken: cmd.String("admin-token", "", "Application API administrator bearer token").
+			Placeholder("SECRET").
+			OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
+			Value(),
+	}
+
 	cmd.Validate(func() error {
-		if *address == "" {
-			host, port, err := net.SplitHostPort(*f.ListenAddress)
+		if *flags.ApplicationURL == "" {
+			host, port, err := net.SplitHostPort(*server.ListenAddress)
 			if err != nil {
 				return fmt.Errorf("invalid --listen-address: %w", err)
 			}
 			base := url.URL{
 				Scheme: "http",
 				Host:   net.JoinHostPort(connectHost(host), port),
-				Path:   *f.RoutePrefix,
+				Path:   *server.RoutePrefix,
 			}
-			*address = base.String()
+			*flags.ApplicationURL = base.String()
 		}
-		return adminclient.ValidateURL(*address)
+		return adminclient.ValidateURL(*flags.ApplicationURL)
 	})
-	return address
+	return flags
 }
 
 // connectHost substitutes a reachable loopback address for a wildcard bind.
@@ -67,12 +83,4 @@ func connectHost(host string) string {
 		return "::1"
 	}
 	return host
-}
-
-// AdminTokenFlag registers a protected application API credential on an administrative command.
-func AdminTokenFlag(cmd *tinyflags.Command) *string {
-	return cmd.String("admin-token", "", "Application API administrator bearer token").
-		Placeholder("SECRET").
-		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
-		Value()
 }
