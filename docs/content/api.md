@@ -6,6 +6,8 @@ The application listener handles Snitch event ingestion and optional manual ban 
 
 `POST /events` accepts JSON event envelopes sent by Keycloak Snitch. Requests must carry the valid HMAC signature derived from the shared Snitch secret. Use the [Snitch integration](https://github.com/gi8lino/keycloak-snitch) rather than constructing unsigned requests manually.
 
+Request bodies are limited to **64 KiB**. Larger requests are rejected with HTTP `413 Request Entity Too Large`.
+
 A successfully processed event returns HTTP `204 No Content`. An event is not necessarily a new ban: the configured detection threshold decides when a new desired state is recorded.
 
 ## Administrative endpoints
@@ -20,6 +22,8 @@ When `--admin-token` is set, Warden registers these authenticated routes:
 | `DELETE` | `/bans/{id}` | Clear the decision's active ban sources |
 
 Requests require `Authorization: Bearer <admin-token>`. An empty admin token **disables** the routes; it does not make them public.
+
+`POST /bans` accepts JSON request bodies up to **16 KiB**. Larger requests are rejected with HTTP `413 Request Entity Too Large`.
 
 For a manual ban, send a JSON object such as:
 
