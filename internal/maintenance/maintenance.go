@@ -70,25 +70,25 @@ type Store interface {
 // TaskStatus describes the latest attempt for one maintenance operation.
 type TaskStatus struct {
 	// Running indicates that an attempt is currently in progress.
-	Running bool `json:"running"`
+	Running bool `json:"running" yaml:"running"`
 	// LastAttemptAt records when the most recent attempt began.
-	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty"`
+	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty" yaml:"lastAttemptAt,omitempty"`
 	// LastSuccessAt records when the most recent successful attempt completed.
-	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty"`
+	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty" yaml:"lastSuccessAt,omitempty"`
 	// LastError reports the last failed attempt, cleared after success.
-	LastError string `json:"lastError,omitempty"`
+	LastError string `json:"lastError,omitempty" yaml:"lastError,omitempty"`
 }
 
 // Status is a safe snapshot of the in-process maintenance scheduler.
 type Status struct {
 	// Prune reports the last observation cleanup attempt.
-	Prune TaskStatus `json:"prune"`
+	Prune TaskStatus `json:"prune" yaml:"prune"`
 	// Optimize reports the last SQLite optimization attempt.
-	Optimize TaskStatus `json:"optimize"`
+	Optimize TaskStatus `json:"optimize" yaml:"optimize"`
 	// PruneInterval describes the configured recurring cleanup interval.
-	PruneInterval string `json:"pruneInterval"`
+	PruneInterval string `json:"pruneInterval" yaml:"pruneInterval"`
 	// OptimizeInterval describes the configured recurring optimization interval.
-	OptimizeInterval string `json:"optimizeInterval"`
+	OptimizeInterval string `json:"optimizeInterval" yaml:"optimizeInterval"`
 }
 
 // Runner owns the maintenance worker and serializes scheduled and manual operations.
@@ -116,6 +116,7 @@ type Runner struct {
 // Start schedules maintenance using a prevalidated schedule; SQLite is optimized separately on open.
 func Start(parent context.Context, store Store, schedule Schedule, logger *slog.Logger) *Runner {
 	ctx, cancel := context.WithCancel(parent)
+
 	runner := &Runner{
 		cancel:   cancel,
 		done:     make(chan struct{}),
@@ -123,10 +124,13 @@ func Start(parent context.Context, store Store, schedule Schedule, logger *slog.
 		schedule: schedule,
 		logger:   logger,
 	}
+
 	go func() {
 		defer close(runner.done)
+
 		runner.run(ctx)
 	}()
+
 	return runner
 }
 
@@ -140,6 +144,7 @@ func (r *Runner) Close() {
 func (r *Runner) Snapshot() Status {
 	r.statusMu.Lock()
 	defer r.statusMu.Unlock()
+
 	return Status{
 		Prune:            r.pruneStatus,
 		Optimize:         r.optimizeStatus,
@@ -160,6 +165,7 @@ func (r *Runner) Trigger(ctx context.Context, operation Operation) error {
 		return ErrBusy
 	}
 	defer r.executeMu.Unlock()
+
 	return r.execute(ctx, operation)
 }
 
@@ -192,6 +198,7 @@ func (r *Runner) execute(ctx context.Context, operation Operation) error {
 		status.LastError = err.Error()
 	}
 	r.statusMu.Unlock()
+
 	return err
 }
 
@@ -200,6 +207,7 @@ func (r *Runner) statusFor(operation Operation) *TaskStatus {
 	if operation == OperationPrune {
 		return &r.pruneStatus
 	}
+
 	return &r.optimizeStatus
 }
 
@@ -207,47 +215,47 @@ func (r *Runner) statusFor(operation Operation) *TaskStatus {
 func (r *Runner) run(ctx context.Context) {
 	nextPrune := time.Time{}
 	nextOptimize := time.Now().Add(r.schedule.OptimizeInterval)
+
 	for ctx.Err() == nil {
 		now := time.Now()
 		if !now.Before(nextPrune) {
 			r.executeMu.Lock()
 			err := r.execute(ctx, OperationPrune)
 			r.executeMu.Unlock()
+
 			if err != nil && ctx.Err() == nil {
-				r.logger.Warn(
-					"observation cleanup failed",
-					"event", "observation_cleanup_failed",
-					"error", err,
-				)
+				r.logger.Warn("observation cleanup failed", "event", "observation_cleanup_failed", "error", err)
 			}
+
 			interval := r.schedule.PruneInterval
 			if err != nil {
 				interval = retryInterval
 			}
 			nextPrune = time.Now().Add(interval)
 		}
+
 		now = time.Now()
 		if !now.Before(nextOptimize) && ctx.Err() == nil {
 			r.executeMu.Lock()
 			err := r.execute(ctx, OperationOptimize)
 			r.executeMu.Unlock()
+
 			if err != nil && ctx.Err() == nil {
-				r.logger.Warn(
-					"sqlite optimization failed",
-					"event", "sqlite_optimize_failed",
-					"error", err,
-				)
+				r.logger.Warn("sqlite optimization failed", "event", "sqlite_optimize_failed", "error", err)
 			}
+
 			interval := r.schedule.OptimizeInterval
 			if err != nil {
 				interval = retryInterval
 			}
 			nextOptimize = time.Now().Add(interval)
 		}
+
 		deadline := nextPrune
 		if nextOptimize.Before(deadline) {
 			deadline = nextOptimize
 		}
+
 		waitUntil(ctx, deadline)
 	}
 }
@@ -256,6 +264,7 @@ func (r *Runner) run(ctx context.Context) {
 func waitUntil(ctx context.Context, deadline time.Time) {
 	timer := time.NewTimer(time.Until(deadline))
 	defer timer.Stop()
+
 	select {
 	case <-ctx.Done():
 	case <-timer.C:

@@ -17,6 +17,7 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 	command := root.Command("serve", "Start authenticated event ingestion and action delivery")
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
+	command.NoPositional()
 
 	managementAddr := command.String(
 		"management-listen-address",

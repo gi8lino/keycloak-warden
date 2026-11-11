@@ -26,6 +26,7 @@ func (s *manualStore) Prune(ctx context.Context, _ time.Time) error {
 	case s.started <- struct{}{}:
 	default:
 	}
+
 	select {
 	case <-s.release:
 		return s.failure
@@ -39,40 +40,90 @@ func (*manualStore) Optimize(context.Context) error { return nil }
 
 func TestManualMaintenance(t *testing.T) {
 	t.Parallel()
-	s := &manualStore{started: make(chan struct{}, 2), release: make(chan struct{})}
-	close(s.release)
-	r := &Runner{store: s, schedule: Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}}
-	require.NoError(t, r.Trigger(t.Context(), OperationOptimize))
-	status := r.Snapshot()
-	require.NotNil(t, status.Optimize.LastSuccessAt)
-	assert.Empty(t, status.Optimize.LastError)
-	assert.Equal(t, time.Hour.String(), status.PruneInterval)
-	assert.ErrorIs(t, r.Trigger(t.Context(), "vacuum"), ErrInvalidOperation)
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	assert.ErrorIs(t, r.Trigger(ctx, OperationPrune), context.Canceled)
-}
 
-func TestManualMaintenanceFailure(t *testing.T) {
-	t.Parallel()
-	s := &manualStore{started: make(chan struct{}, 2), release: make(chan struct{}), failure: errors.New("disk unavailable")}
-	close(s.release)
-	r := &Runner{store: s, schedule: Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}}
-	// A failed manual operation records the failed attempt.
-	require.ErrorContains(t, r.Trigger(t.Context(), OperationPrune), "disk unavailable")
-	assert.Contains(t, r.Snapshot().Prune.LastError, "disk unavailable")
-}
+	t.Run("records a successful optimization", func(t *testing.T) {
+		t.Parallel()
 
-func TestManualMaintenanceBusy(t *testing.T) {
-	t.Parallel()
-	s := &manualStore{started: make(chan struct{}, 2), release: make(chan struct{})}
-	r := Start(t.Context(), s, Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}, discardLogger())
-	defer func() { close(s.release); r.Close() }()
-	select {
-	case <-s.started:
-	case <-time.After(3 * time.Second):
-		t.Fatal("scheduled prune did not start")
-	}
-	assert.True(t, r.Snapshot().Prune.Running)
-	assert.ErrorIs(t, r.Trigger(t.Context(), OperationOptimize), ErrBusy)
+		store := &manualStore{}
+		runner := &Runner{
+			store: store,
+			schedule: Schedule{
+				PruneInterval:    time.Hour,
+				OptimizeInterval: time.Hour,
+			},
+		}
+
+		require.NoError(t, runner.Trigger(t.Context(), OperationOptimize))
+
+		status := runner.Snapshot()
+		require.NotNil(t, status.Optimize.LastSuccessAt)
+		assert.Empty(t, status.Optimize.LastError)
+		assert.Equal(t, time.Hour.String(), status.PruneInterval)
+	})
+
+	t.Run("rejects unsupported operations", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &Runner{}
+
+		require.ErrorIs(t, runner.Trigger(t.Context(), "vacuum"), ErrInvalidOperation)
+	})
+
+	t.Run("propagates canceled context", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		cancel()
+
+		runner := &Runner{}
+
+		require.ErrorIs(t, runner.Trigger(ctx, OperationPrune), context.Canceled)
+	})
+
+	t.Run("records a failed prune", func(t *testing.T) {
+		t.Parallel()
+
+		store := &manualStore{
+			release: make(chan struct{}),
+			failure: errors.New("disk unavailable"),
+		}
+		close(store.release)
+
+		runner := &Runner{
+			store: store,
+			schedule: Schedule{
+				PruneInterval:    time.Hour,
+				OptimizeInterval: time.Hour,
+			},
+		}
+
+		require.ErrorContains(t, runner.Trigger(t.Context(), OperationPrune), "disk unavailable")
+		assert.Contains(t, runner.Snapshot().Prune.LastError, "disk unavailable")
+	})
+
+	t.Run("reports busy during scheduled pruning", func(t *testing.T) {
+		t.Parallel()
+
+		store := &manualStore{
+			started: make(chan struct{}, 2),
+			release: make(chan struct{}),
+		}
+		runner := Start(t.Context(), store, Schedule{
+			PruneInterval:    time.Hour,
+			OptimizeInterval: time.Hour,
+		}, discardLogger())
+		defer func() {
+			close(store.release)
+			runner.Close()
+		}()
+
+		select {
+		case <-store.started:
+		case <-time.After(3 * time.Second):
+			t.Fatal("scheduled prune did not start")
+		}
+
+		assert.True(t, runner.Snapshot().Prune.Running)
+		assert.ErrorIs(t, runner.Trigger(t.Context(), OperationOptimize), ErrBusy)
+	})
 }

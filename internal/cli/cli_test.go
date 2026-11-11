@@ -689,3 +689,91 @@ func TestListActiveHTTP(t *testing.T) {
 		assert.Contains(t, stderr.String(), "database")
 	})
 }
+
+func TestMaintenanceCommand(t *testing.T) {
+	t.Parallel()
+
+	t.Run("root help lists maintenance", func(t *testing.T) {
+		t.Parallel()
+		var stdout bytes.Buffer
+		require.NoError(t, Run(t.Context(), []string{"--help"}, "test", &stdout, io.Discard))
+		assert.Contains(t, stdout.String(), "maintenance")
+	})
+
+	t.Run("requires an explicit maintenance subcommand", func(t *testing.T) {
+		t.Parallel()
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"maintenance"}, "test", &stdout, &stderr)
+		require.Error(t, err)
+		assert.Contains(t, stderr.String(), "status")
+		assert.Contains(t, stderr.String(), "prune")
+		assert.Contains(t, stderr.String(), "optimize")
+	})
+
+	t.Run("status help displays admin flags", func(t *testing.T) {
+		t.Parallel()
+		var stdout bytes.Buffer
+		require.NoError(t, Run(t.Context(), []string{"maintenance", "status", "--help"}, "test", &stdout, io.Discard))
+		assert.Contains(t, stdout.String(), "--admin-token")
+		assert.Contains(t, stdout.String(), "--application-url")
+		assert.NotContains(t, stdout.String(), "--database")
+	})
+
+	t.Run("status encodes API response as JSON", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodGet, r.Method)
+			assert.Equal(t, "/maintenance", r.URL.Path)
+			assert.Equal(t, "Bearer admin-secret", r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"prune":{},"optimize":{},"pruneInterval":"1h0m0s","optimizeInterval":"24h0m0s"}`))
+		}))
+		defer server.Close()
+
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{
+			"maintenance", "status", "--application-url", server.URL,
+			"--admin-token", "admin-secret", "--output", "json",
+		}, "test", &stdout, &stderr)
+		require.NoError(t, err, stderr.String())
+		assert.Contains(t, stdout.String(), `"pruneInterval": "1h0m0s"`)
+	})
+
+	t.Run("status rejects positional arguments", func(t *testing.T) {
+		t.Parallel()
+
+		var stderr bytes.Buffer
+
+		err := Run(t.Context(), []string{
+			"maintenance", "status", "unexpected", "--admin-token", "admin-secret",
+		}, "test", io.Discard, &stderr)
+
+		require.ErrorContains(t, err, "accepts no positional arguments")
+		assert.Contains(t, stderr.String(), "accepts no positional arguments")
+	})
+
+	t.Run("prune rejects positional arguments", func(t *testing.T) {
+		t.Parallel()
+
+		var stderr bytes.Buffer
+
+		err := Run(t.Context(), []string{
+			"maintenance", "prune", "unexpected", "--admin-token", "admin-secret",
+		}, "test", io.Discard, &stderr)
+
+		require.ErrorContains(t, err, "accepts no positional arguments")
+		assert.Contains(t, stderr.String(), "accepts no positional arguments")
+	})
+
+	t.Run("optimize rejects positional arguments", func(t *testing.T) {
+		t.Parallel()
+
+		var stderr bytes.Buffer
+
+		err := Run(t.Context(), []string{
+			"maintenance", "optimize", "unexpected", "--admin-token", "admin-secret",
+		}, "test", io.Discard, &stderr)
+
+		require.ErrorContains(t, err, "accepts no positional arguments")
+		assert.Contains(t, stderr.String(), "accepts no positional arguments")
+	})
+}

@@ -22,31 +22,99 @@ func (testMaintenance) Snapshot() maintenance.Status { return maintenance.Status
 // Trigger accepts an administrative maintenance request.
 func (testMaintenance) Trigger(context.Context, maintenance.Operation) error { return nil }
 
+// assertMaintenanceRoute verifies one independently configured HTTP route.
+func assertMaintenanceRoute(t *testing.T, method, path, token, provided string, want int) {
+	t.Helper()
+
+	handlers := server.New(server.Config{
+		AdminToken:  token,
+		Maintenance: testMaintenance{},
+		Logger:      slog.Default(),
+	})
+
+	request := httptest.NewRequest(method, path, nil)
+	if provided != "" {
+		request.Header.Set("Authorization", "Bearer "+provided)
+	}
+
+	response := httptest.NewRecorder()
+	handlers.Application.ServeHTTP(response, request)
+
+	assert.Equal(t, want, response.Code)
+}
+
 func TestMaintenanceRouteAuth(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct {
-		name     string
-		token    string
-		provided string
-		want     int
-	}{
-		{name: "disabled", want: http.StatusNotFound},
-		{name: "missing credential", token: "admin", want: http.StatusUnauthorized},
-		{name: "invalid credential", token: "admin", provided: "wrong", want: http.StatusUnauthorized},
-		{name: "authorized", token: "admin", provided: "admin", want: http.StatusOK},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			handlers := server.New(server.Config{AdminToken: tc.token, Maintenance: testMaintenance{}, Logger: slog.Default()})
-			for _, route := range []struct{ method, path string }{{"GET", "/maintenance"}, {"POST", "/maintenance/prune"}, {"POST", "/maintenance/optimize"}} {
-				req := httptest.NewRequest(route.method, route.path, nil)
-				if tc.provided != "" {
-					req.Header.Set("Authorization", "Bearer "+tc.provided)
-				}
-				resp := httptest.NewRecorder()
-				handlers.Application.ServeHTTP(resp, req)
-				assert.Equal(t, tc.want, resp.Code)
-			}
-		})
-	}
+
+	t.Run("status route disabled without admin token", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodGet, "/maintenance", "", "", http.StatusNotFound)
+	})
+
+	t.Run("prune route disabled without admin token", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/prune", "", "", http.StatusNotFound)
+	})
+
+	t.Run("optimize route disabled without admin token", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/optimize", "", "", http.StatusNotFound)
+	})
+
+	t.Run("status rejects missing credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodGet, "/maintenance", "admin", "", http.StatusUnauthorized)
+	})
+
+	t.Run("prune rejects missing credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/prune", "admin", "", http.StatusUnauthorized)
+	})
+
+	t.Run("optimize rejects missing credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/optimize", "admin", "", http.StatusUnauthorized)
+	})
+
+	t.Run("status rejects invalid credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodGet, "/maintenance", "admin", "wrong", http.StatusUnauthorized)
+	})
+
+	t.Run("prune rejects invalid credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/prune", "admin", "wrong", http.StatusUnauthorized)
+	})
+
+	t.Run("optimize rejects invalid credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/optimize", "admin", "wrong", http.StatusUnauthorized)
+	})
+
+	t.Run("status accepts valid credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodGet, "/maintenance", "admin", "admin", http.StatusOK)
+	})
+
+	t.Run("prune accepts valid credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/prune", "admin", "admin", http.StatusOK)
+	})
+
+	t.Run("optimize accepts valid credential", func(t *testing.T) {
+		t.Parallel()
+
+		assertMaintenanceRoute(t, http.MethodPost, "/maintenance/optimize", "admin", "admin", http.StatusOK)
+	})
 }

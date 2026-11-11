@@ -12,6 +12,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/command/ban"
 	"github.com/gi8lino/keycloak-warden/internal/command/inspect"
 	"github.com/gi8lino/keycloak-warden/internal/command/listactive"
+	"github.com/gi8lino/keycloak-warden/internal/command/maintenance"
 	"github.com/gi8lino/keycloak-warden/internal/command/serve"
 	"github.com/gi8lino/keycloak-warden/internal/command/unban"
 	"github.com/gi8lino/keycloak-warden/internal/output"
@@ -40,6 +41,7 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 	inspect.Register(root, serverFlags, encode)
 	ban.Register(root, serverFlags, encode)
 	unban.Register(root, serverFlags, encode)
+	maintenance.Register(root, serverFlags, encode)
 
 	runner, err := root.ParseRunner(args)
 	if err != nil {

@@ -13,6 +13,7 @@ import (
 func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode output.Encoder) {
 	command := root.Command("list-active", "List active security decisions via the authenticated application API")
 	command.HideEnvs()
+	command.ExactPositional(0)
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)

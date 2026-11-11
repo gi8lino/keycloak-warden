@@ -33,9 +33,18 @@ func newApplication(config Config) http.Handler {
 
 	if config.AdminToken != "" && config.Maintenance != nil {
 		guard := middleware.AuthenticateAdmin(config.AdminToken)
-		mux.Handle("GET /maintenance", httpkitmiddleware.Chain(endpoint.MaintenanceStatus(config.Maintenance), guard))
-		mux.Handle("POST /maintenance/prune", httpkitmiddleware.Chain(endpoint.RunMaintenance(config.Maintenance, config.Logger, "prune"), guard))
-		mux.Handle("POST /maintenance/optimize", httpkitmiddleware.Chain(endpoint.RunMaintenance(config.Maintenance, config.Logger, "optimize"), guard))
+		mux.Handle("GET /maintenance", httpkitmiddleware.Chain(
+			endpoint.MaintenanceStatus(config.Maintenance),
+			guard,
+		))
+		mux.Handle("POST /maintenance/prune", httpkitmiddleware.Chain(
+			endpoint.RunMaintenance(config.Maintenance, config.Logger, "prune"),
+			guard,
+		))
+		mux.Handle("POST /maintenance/optimize", httpkitmiddleware.Chain(
+			endpoint.RunMaintenance(config.Maintenance, config.Logger, "optimize"),
+			guard,
+		))
 	}
 
 	if config.AccessLog {

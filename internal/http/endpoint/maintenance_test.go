@@ -37,34 +37,72 @@ func (s *scriptedMaintenance) Trigger(_ context.Context, operation maintenance.O
 
 func TestMaintenanceHandlers(t *testing.T) {
 	t.Parallel()
+
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+
 	t.Run("status", func(t *testing.T) {
 		t.Parallel()
+
+		service := &scriptedMaintenance{}
+		request := httptest.NewRequest(http.MethodGet, "/maintenance", nil)
 		response := httptest.NewRecorder()
-		endpoint.MaintenanceStatus(&scriptedMaintenance{})(response, httptest.NewRequest(http.MethodGet, "/maintenance", nil))
-		assert.Equal(t, http.StatusOK, response.Code)
+
+		endpoint.MaintenanceStatus(service)(response, request)
+
+		require.Equal(t, http.StatusOK, response.Code)
 		assert.Contains(t, response.Body.String(), `"pruneInterval":"1h0m0s"`)
 	})
-	for _, tc := range []struct {
-		name string
-		err  error
-		want int
-	}{
-		{"success", nil, http.StatusOK},
-		{"busy", maintenance.ErrBusy, http.StatusConflict},
-		{"canceled", context.Canceled, http.StatusServiceUnavailable},
-		{"failure", errors.New("secret database error"), http.StatusInternalServerError},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			t.Parallel()
-			service := &scriptedMaintenance{err: tc.err}
-			response := httptest.NewRecorder()
-			endpoint.RunMaintenance(service, logger, maintenance.OperationPrune)(response, httptest.NewRequest(http.MethodPost, "/maintenance/prune", nil))
-			require.Equal(t, tc.want, response.Code)
-			assert.Equal(t, maintenance.OperationPrune, service.called)
-			if tc.err != nil {
-				assert.NotContains(t, response.Body.String(), "secret database error")
-			}
-		})
-	}
+
+	t.Run("successful prune", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedMaintenance{}
+		request := httptest.NewRequest(http.MethodPost, "/maintenance/prune", nil)
+		response := httptest.NewRecorder()
+
+		endpoint.RunMaintenance(service, logger, maintenance.OperationPrune)(response, request)
+
+		require.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, maintenance.OperationPrune, service.called)
+	})
+
+	t.Run("busy prune", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedMaintenance{err: maintenance.ErrBusy}
+		request := httptest.NewRequest(http.MethodPost, "/maintenance/prune", nil)
+		response := httptest.NewRecorder()
+
+		endpoint.RunMaintenance(service, logger, maintenance.OperationPrune)(response, request)
+
+		require.Equal(t, http.StatusConflict, response.Code)
+		assert.Equal(t, maintenance.OperationPrune, service.called)
+	})
+
+	t.Run("canceled prune", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedMaintenance{err: context.Canceled}
+		request := httptest.NewRequest(http.MethodPost, "/maintenance/prune", nil)
+		response := httptest.NewRecorder()
+
+		endpoint.RunMaintenance(service, logger, maintenance.OperationPrune)(response, request)
+
+		require.Equal(t, http.StatusServiceUnavailable, response.Code)
+		assert.Equal(t, maintenance.OperationPrune, service.called)
+	})
+
+	t.Run("failed prune does not leak internal errors", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedMaintenance{err: errors.New("secret database error")}
+		request := httptest.NewRequest(http.MethodPost, "/maintenance/prune", nil)
+		response := httptest.NewRecorder()
+
+		endpoint.RunMaintenance(service, logger, maintenance.OperationPrune)(response, request)
+
+		require.Equal(t, http.StatusInternalServerError, response.Code)
+		assert.Equal(t, maintenance.OperationPrune, service.called)
+		assert.NotContains(t, response.Body.String(), "secret database error")
+	})
 }
