@@ -14,7 +14,7 @@ favicon = "assets/favicon.png"
 
 [[external_links]]
 label = "Repository"
-url = "https://github.com/kumbuka-me/kumbuka"
+url = "https://github.com/gi8lino/keycloak-warden"
 icon = "github-simple"
 description = "GitHub"
 hover_text = "{{label}} | {{description}}"

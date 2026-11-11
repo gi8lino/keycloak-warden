@@ -93,9 +93,12 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 	}
 
 	want := rule{
-		Mode:          "block",
-		Notes:         "warden:" + d.ID,
-		Configuration: filter{target, addr.String()},
+		Mode:  "block",
+		Notes: "warden:" + d.ID,
+		Configuration: filter{
+			Target: target,
+			Value:  addr.String(),
+		},
 	}
 
 	owned, err := p.find(ctx, want)

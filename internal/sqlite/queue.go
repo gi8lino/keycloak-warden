@@ -17,28 +17,8 @@ func (s *Store) Maintain(ctx context.Context, now time.Time) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, `
-SELECT DISTINCT ip
-FROM ban_sources
-WHERE expires <= ?
-`, now.UnixMilli())
+	expiredIPs, err := readExpiredSourceIPs(ctx, tx, now)
 	if err != nil {
-		return err
-	}
-	var expired []string
-	for rows.Next() {
-		var ip string
-		if err := rows.Scan(&ip); err != nil {
-			_ = rows.Close()
-			return err
-		}
-		expired = append(expired, ip)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return err
-	}
-	if err := rows.Close(); err != nil {
 		return err
 	}
 
@@ -48,13 +28,43 @@ WHERE expires <= ?
 `, now.UnixMilli()); err != nil {
 		return err
 	}
-	for _, ip := range expired {
+	for _, ip := range expiredIPs {
 		if _, _, err := reconcileDecision(ctx, tx, ip, now, s.targets); err != nil {
 			return err
 		}
 	}
 
 	return tx.Commit()
+}
+
+// readExpiredSourceIPs finds affected addresses before their expired sources are deleted.
+func readExpiredSourceIPs(ctx context.Context, tx *sql.Tx, now time.Time) ([]string, error) {
+	rows, err := tx.QueryContext(ctx, `
+SELECT DISTINCT ip
+FROM ban_sources
+WHERE expires <= ?
+`, now.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+
+	var expiredIPs []string
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		expiredIPs = append(expiredIPs, ip)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	return expiredIPs, nil
 }
 
 // Prune removes old observations independently of delivery activity.
@@ -175,13 +185,18 @@ ON CONFLICT (destination) DO UPDATE SET delay_ms = excluded.delay_ms, retry_at =
 func (s *Store) NextDeadline(ctx context.Context) (deadline time.Time, err error) {
 	var due sql.NullInt64
 	err = s.db.QueryRowContext(ctx, `
-SELECT MIN(deadline) FROM (
- SELECT MIN(expires) AS deadline FROM ban_sources
- UNION ALL
- SELECT MIN(MAX(q.retry_at, COALESCE(b.retry_at, 0)))
- FROM deliveries q JOIN decisions d USING (ip)
- LEFT JOIN destination_backoff b ON b.destination = q.destination
- WHERE q.acknowledged < d.revision
+SELECT MIN(deadline)
+FROM (
+    SELECT MIN(expires) AS deadline
+    FROM ban_sources
+
+    UNION ALL
+
+    SELECT MIN(MAX(q.retry_at, COALESCE(b.retry_at, 0))) AS deadline
+    FROM deliveries AS q
+    JOIN decisions AS d USING (ip)
+    LEFT JOIN destination_backoff AS b ON b.destination = q.destination
+    WHERE q.acknowledged < d.revision
 )`).Scan(&due)
 	if err != nil || !due.Valid {
 		return time.Time{}, err

@@ -22,7 +22,7 @@ import (
 )
 
 // defaultClientTimeout limits the duration of outbound provider HTTP requests.
-var defaultClientTimeout = 5 * time.Second
+const defaultClientTimeout = 5 * time.Second
 
 // Destinations constructs each named provider and returns stable provider-qualified names.
 func Destinations(targets config.Targets) (providers map[string]actions.Provider, names []string, err error) {
