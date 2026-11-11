@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.28
 
 # Build on the build machine while targeting the requested image platform.
-FROM --platform=$BUILDPLATFORM golang:1.27.3 AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4 AS build
 
 ENV CGO_ENABLED=0
 WORKDIR /src
