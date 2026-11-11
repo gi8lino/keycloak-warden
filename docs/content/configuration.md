@@ -24,7 +24,6 @@ targets:
         Authorization: env:WARDEN_WEBHOOK_AUTHORIZATION
         X-Source: warden
 ```
-
 {code highlight="2-4,8-10,12-16" note="2:Number of failed logins needed to trigger a ban." note="3:Rolling detection window, counted per client IP." note="4:Duration of an automatic ban." note="8-10:Named Cloudflare destination; zone ID and token resolve from the environment." note="12-16:Named webhook destination with a required URL and optional request headers." reference-position="right" reference-color="blue" line-numbers="true"}
 
 **At least one destination is required.** Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
