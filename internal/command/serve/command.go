@@ -9,13 +9,13 @@ import (
 	appkitlogging "github.com/containeroo/appkit/logging"
 
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/endpoint"
+	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 
 	"github.com/gi8lino/keycloak-warden/internal/config"
 )
 
 // Register adds the serve command and its operational flags to the command tree.
-func Register(root *tinyflags.Command, flags endpoint.Flags, stdout io.Writer, version string) {
+func Register(root *tinyflags.Command, flags appflags.Flags, stdout io.Writer, version string) {
 	command := root.Command("serve", "Start authenticated event ingestion and action delivery")
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")

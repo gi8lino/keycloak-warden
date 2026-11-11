@@ -37,16 +37,6 @@ The administrative API, `list-active`, and `inspect` return the same record shap
 
 A webhook receives only the desired decision (`id`, `revision`, `ipAddress`, `state`, and `expiresAt`). Failure observations are retained internally for detection and replay protection, not exported as part of the decision.
 
-## Package responsibilities
-
-- `internal/application`: detection, event ingestion, bans, and action-delivery orchestration.
-- `internal/sqlite`: persisted observations, decisions, sources, delivery acknowledgements, and migrations.
-- `internal/providers`: Cloudflare and webhook delivery implementations.
-- `internal/http`: authenticated application endpoints and separate operational routes.
-- `internal/metrics`: Prometheus metrics, with disabled registries acting as no-ops.
-- `internal/maintenance`: independent pruning and SQLite optimization schedules.
-- `internal/command`: CLI commands and startup orchestration.
-
 ## Two listeners
 
 The application listener serves `POST /events` and, when an admin token is configured, authenticated `/bans` routes. The independent management listener serves `/healthz`, `/readyz`, and optionally `/metrics`.

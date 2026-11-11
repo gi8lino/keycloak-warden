@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/netip"
 	"net/url"
 	"strings"
 	"time"
@@ -113,31 +112,13 @@ func (c *Client) Ban(ctx context.Context, request bans.ManualBanRequest) (bans.R
 	})
 }
 
-// Unban removes all active ban sources using a decision ID or canonical IP address.
-func (c *Client) Unban(ctx context.Context, identifier string) (bans.Record, error) {
-	if strings.TrimSpace(identifier) == "" {
-		return bans.Record{}, errors.New("decision ID or IP address is required")
+// Unban removes every active source for the specified decision ID.
+func (c *Client) Unban(ctx context.Context, decisionID string) (bans.Record, error) {
+	if strings.TrimSpace(decisionID) == "" {
+		return bans.Record{}, errors.New("decision ID is required")
 	}
 
-	if address, err := netip.ParseAddr(identifier); err == nil {
-		list, err := c.List(ctx)
-		if err != nil {
-			return bans.Record{}, err
-		}
-
-		identifier = ""
-		for _, view := range list {
-			if view.Decision.IP == address.Unmap().String() {
-				identifier = view.Decision.ID
-				break
-			}
-		}
-		if identifier == "" {
-			return bans.Record{}, bans.ErrNotFound
-		}
-	}
-
-	return c.request(ctx, http.MethodDelete, "/bans/"+url.PathEscape(identifier), nil)
+	return c.request(ctx, http.MethodDelete, "/bans/"+url.PathEscape(decisionID), nil)
 }
 
 // List fetches effective bans with their automatic and manual sources.

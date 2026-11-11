@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/adminclient"
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 )
 
 // responseClient creates a client backed by one scripted HTTP response.

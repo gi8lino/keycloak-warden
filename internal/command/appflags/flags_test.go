@@ -1,10 +1,10 @@
-package endpoint_test
+package appflags_test
 
 import (
 	"testing"
 
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/endpoint"
+	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -14,7 +14,7 @@ func TestApplicationURLFlag(t *testing.T) {
 	t.Setenv("WARDEN__ROUTE_PREFIX", "/warden")
 	cmd := tinyflags.NewCommand("test", tinyflags.ContinueOnError)
 	cmd.EnvPrefix("WARDEN_")
-	flags := endpoint.Register(cmd)
+	flags := appflags.Register(cmd)
 	address := flags.ApplicationURLFlag(cmd.Command("ban", "Ban an IP"))
 
 	t.Run("finalizes omitted flag from server environment", func(t *testing.T) {

@@ -87,7 +87,7 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 		AdminToken: "admin-token",
 		Readiness:  store,
 		Processor:  noopProcessor{},
-		Bans:       service,
+		BanAdmin:   service,
 	})
 	return h.Application, h.Management
 }
@@ -228,7 +228,7 @@ func TestNewApplication(t *testing.T) {
 			Secret:     "snitch",
 			AdminToken: "admin-token",
 			Logger:     slog.Default(),
-			Bans:       service,
+			BanAdmin:   service,
 			Processor:  ingest,
 			Readiness:  store,
 		}).Application
@@ -283,7 +283,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			Bans:       noOpBanAdministration{},
+			BanAdmin:   noOpBanAdministration{},
 		})
 		req := httptest.NewRequest(http.MethodPost, "/bans", nil)
 		req.Header.Add("Authorization", "Bearer admin")
@@ -303,7 +303,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			Bans:       noOpBanAdministration{},
+			BanAdmin:   noOpBanAdministration{},
 		})
 		req := httptest.NewRequest(http.MethodGet, "/bans", nil)
 		req.Header.Set("Authorization", "Basic admin")
@@ -322,7 +322,7 @@ func TestNewApplication(t *testing.T) {
 			Processor:  noopProcessor{},
 			Readiness:  readiness(true),
 			AdminToken: "admin",
-			Bans:       noOpBanAdministration{},
+			BanAdmin:   noOpBanAdministration{},
 		})
 
 		assert.Equal(t, http.StatusUnauthorized, adminRequest(h.Application, http.MethodGet, "/bans", "secret", "").Code)
@@ -379,7 +379,13 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		defer store.Close() //nolint:errcheck
-		destinations := map[string]actions.Provider{"notify": webhook.Provider{URL: target.URL, Client: target.Client(), Headers: http.Header{"X-Api-Key": {"expected"}}}}
+		destinations := map[string]actions.Provider{
+			"notify": webhook.Provider{
+				URL:     target.URL,
+				Client:  target.Client(),
+				Headers: http.Header{"X-Api-Key": {"expected"}},
+			},
+		}
 		runner := actions.Start(t.Context(), store, destinations, slog.Default())
 		defer func() { require.NoError(t, runner.Close()) }()
 		body := `{"id":"real-format","timestamp":"2026-11-05T00:00:00Z","schemaVersion":1,"source":"keycloak","type":"LOGIN_ERROR","ipAddress":"203.0.113.8"}`

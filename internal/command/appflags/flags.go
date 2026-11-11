@@ -1,5 +1,5 @@
-// Package endpoint defines flags shared by Warden subcommands.
-package endpoint
+// Package appflags defines application endpoint flags shared by Warden subcommands.
+package appflags
 
 import (
 	"fmt"
@@ -8,7 +8,7 @@ import (
 
 	"github.com/containeroo/httpkit/prefix"
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/adminclient"
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 )
 
 // Flags holds the global application listener settings parsed by tinyflags.

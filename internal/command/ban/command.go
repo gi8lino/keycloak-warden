@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/endpoint"
+	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 
@@ -15,7 +15,7 @@ import (
 )
 
 // Register adds the authenticated manual-ban command and its flags.
-func Register(root *tinyflags.Command, flags endpoint.Flags, encode output.Encoder) {
+func Register(root *tinyflags.Command, flags appflags.Flags, encode output.Encoder) {
 	command := root.Command("ban", "Manually ban one or more IP addresses via the authenticated application API")
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")

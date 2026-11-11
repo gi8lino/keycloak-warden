@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/command/adminclient"
 )
 
 func TestNew(t *testing.T) {
@@ -206,86 +206,55 @@ func TestClientBan(t *testing.T) {
 func TestClientUnban(t *testing.T) {
 	t.Parallel()
 
-	t.Run("unbans by decision ID", func(t *testing.T) {
+	t.Run("deletes only the requested decision ID", func(t *testing.T) {
 		t.Parallel()
 
+		var calls atomic.Int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
 			assert.Equal(t, http.MethodDelete, r.Method)
 			assert.Equal(t, "/bans/decision-id", r.URL.Path)
 			assert.Equal(t, "Bearer admin-secret", r.Header.Get("Authorization"))
 			_, _ = w.Write([]byte(`{"decision":{"id":"decision-id"},"sources":[],"deliveries":[]}`))
 		}))
 		defer server.Close()
+
 		client, err := adminclient.New(server.URL, "admin-secret")
+		require.NoError(t, err)
+		record, err := client.Unban(t.Context(), "decision-id")
 
 		require.NoError(t, err)
-		view, err := client.Unban(t.Context(), "decision-id")
-
-		require.NoError(t, err)
-		assert.Equal(t, "decision-id", view.Decision.ID)
+		assert.Equal(t, "decision-id", record.Decision.ID)
+		assert.EqualValues(t, 1, calls.Load())
 	})
 
-	t.Run("resolves IP to stable decision ID", func(t *testing.T) {
-		t.Parallel()
-
-		var getCalled atomic.Bool
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			assert.Equal(t, "Bearer admin-secret", r.Header.Get("Authorization"))
-			switch r.Method {
-			case http.MethodGet:
-				getCalled.Store(true)
-				_, _ = w.Write([]byte(`[{"decision":{"id":"stable-id","ipAddress":"203.0.113.22","state":"banned"},"sources":[{"kind":"manual"}],"deliveries":[]}]`))
-			case http.MethodDelete:
-				assert.Equal(t, "/bans/stable-id", r.URL.Path)
-				_, _ = w.Write([]byte(`{"decision":{"id":"stable-id","state":"unbanned"},"sources":[],"deliveries":[]}`))
-			default:
-				w.WriteHeader(http.StatusMethodNotAllowed)
-			}
-		}))
-		defer server.Close()
-		client, err := adminclient.New(server.URL, "admin-secret")
-
-		require.NoError(t, err)
-		view, err := client.Unban(t.Context(), "::ffff:203.0.113.22")
-
-		require.NoError(t, err)
-		assert.True(t, getCalled.Load())
-		assert.Equal(t, "stable-id", view.Decision.ID)
-	})
-
-	t.Run("rejects empty identifier", func(t *testing.T) {
+	t.Run("rejects missing decision ID without network request", func(t *testing.T) {
 		t.Parallel()
 
 		client, err := adminclient.New("http://localhost:8081", "admin")
-
 		require.NoError(t, err)
 		_, err = client.Unban(t.Context(), "  ")
-
 		require.ErrorContains(t, err, "decision ID")
 	})
 
-	t.Run("resolves and deletes IP under route prefix", func(t *testing.T) {
+	t.Run("deletes a decision beneath the application route prefix", func(t *testing.T) {
 		t.Parallel()
 
+		var calls atomic.Int32
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodGet:
-				assert.Equal(t, "/warden/bans", r.URL.Path)
-				_, _ = w.Write([]byte(`[{"decision":{"id":"stable","ipAddress":"203.0.113.22"}}]`))
-			case http.MethodDelete:
-				assert.Equal(t, "/warden/bans/stable", r.URL.Path)
-				_, _ = w.Write([]byte(`{"decision":{"id":"stable"}}`))
-			default:
-				w.WriteHeader(http.StatusMethodNotAllowed)
-			}
+			calls.Add(1)
+			assert.Equal(t, http.MethodDelete, r.Method)
+			assert.Equal(t, "/warden/bans/stable", r.URL.Path)
+			_, _ = w.Write([]byte(`{"decision":{"id":"stable"},"sources":[],"deliveries":[]}`))
 		}))
 		defer server.Close()
 
 		client, err := adminclient.New(server.URL+"/warden", "admin")
 		require.NoError(t, err)
+		record, err := client.Unban(t.Context(), "stable")
 
-		view, err := client.Unban(t.Context(), "203.0.113.22")
 		require.NoError(t, err)
-		assert.Equal(t, "stable", view.Decision.ID)
+		assert.EqualValues(t, 1, calls.Load())
+		assert.Equal(t, "stable", record.Decision.ID)
 	})
 }
