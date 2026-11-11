@@ -262,3 +262,54 @@ func TestClientUnban(t *testing.T) {
 		assert.Equal(t, "stable", record.Decision.ID)
 	})
 }
+
+func TestClientGet(t *testing.T) {
+	t.Parallel()
+
+	t.Run("gets one decision with authorization and application prefix", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodGet, r.Method)
+			assert.Equal(t, "/warden/bans/decision-id", r.URL.Path)
+			assert.Equal(t, "Bearer admin-secret", r.Header.Get("Authorization"))
+			_, _ = w.Write([]byte(`{"decision":{"id":"decision-id"},"sources":[],"deliveries":[]}`))
+		}))
+		defer server.Close()
+
+		client, err := adminclient.New(server.URL+"/warden", "admin-secret")
+		require.NoError(t, err)
+		record, err := client.Get(t.Context(), "decision-id")
+		require.NoError(t, err)
+		assert.Equal(t, "decision-id", record.Decision.ID)
+	})
+
+	t.Run("does not send request for blank decision ID", func(t *testing.T) {
+		t.Parallel()
+		var calls atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			calls.Add(1)
+			w.WriteHeader(http.StatusInternalServerError)
+		}))
+		defer server.Close()
+
+		client, err := adminclient.New(server.URL, "admin-secret")
+		require.NoError(t, err)
+		_, err = client.Get(t.Context(), " ")
+		require.ErrorContains(t, err, "decision ID")
+		assert.Zero(t, calls.Load())
+	})
+
+	t.Run("propagates missing decision HTTP status", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"missing"}`))
+		}))
+		defer server.Close()
+
+		client, err := adminclient.New(server.URL, "admin-secret")
+		require.NoError(t, err)
+		_, err = client.Get(t.Context(), "missing-id")
+		require.ErrorContains(t, err, "404")
+	})
+}

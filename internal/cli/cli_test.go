@@ -12,12 +12,9 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/output"
-	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -72,24 +69,28 @@ func TestRun(t *testing.T) {
 		assert.Contains(t, stderr.String(), "route-prefix")
 	})
 
-	t.Run("inspect help requires only database", func(t *testing.T) {
+	t.Run("inspect help exposes remote administration flags", func(t *testing.T) {
 		t.Parallel()
 
 		var stdout bytes.Buffer
 
 		require.NoError(t, Run(t.Context(), []string{"inspect", "--help"}, "test", &stdout, io.Discard))
-		assert.Contains(t, stdout.String(), "--database")
+		assert.Contains(t, stdout.String(), "--admin-token")
+		assert.Contains(t, stdout.String(), "--application-url")
+		assert.NotContains(t, stdout.String(), "--database")
 		assert.NotContains(t, stdout.String(), "--config")
 		assert.NotContains(t, stdout.String(), "--snitch-secret")
 	})
 
-	t.Run("list-active help requires only database", func(t *testing.T) {
+	t.Run("list-active help exposes remote administration flags", func(t *testing.T) {
 		t.Parallel()
 
 		var stdout bytes.Buffer
 
 		require.NoError(t, Run(t.Context(), []string{"list-active", "--help"}, "test", &stdout, io.Discard))
-		assert.Contains(t, stdout.String(), "--database")
+		assert.Contains(t, stdout.String(), "--admin-token")
+		assert.Contains(t, stdout.String(), "--application-url")
+		assert.NotContains(t, stdout.String(), "--database")
 		assert.NotContains(t, stdout.String(), "--config")
 	})
 
@@ -533,33 +534,32 @@ func TestRun(t *testing.T) {
 	})
 }
 
-// inspectTestDatabase creates two persisted decisions for CLI inspection tests.
-func inspectTestDatabase(t *testing.T) (string, []string) {
+// adminReadServer simulates the authenticated administrative read endpoints.
+func adminReadServer(t *testing.T) *httptest.Server {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "warden.db")
-	store, err := sqlite.Open(path, detection.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       time.Minute,
-	}, nil)
-	require.NoError(t, err)
-	t.Cleanup(func() { assert.NoError(t, store.Close()) })
-	service, err := bans.NewAdminService(store)
-	require.NoError(t, err)
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	first, err := service.BanManual(t.Context(), bans.ManualBanRequest{
-		IP:       "203.0.113.10",
-		Duration: time.Hour,
-		Reason:   "incident one",
-	}, now)
-	require.NoError(t, err)
-	second, err := service.BanManual(t.Context(), bans.ManualBanRequest{
-		IP:       "203.0.113.11",
-		Duration: time.Hour,
-		Reason:   "incident two",
-	}, now)
-	require.NoError(t, err)
-	return path, []string{first.Decision.ID, second.Decision.ID}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "Bearer admin-secret" {
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		switch r.URL.Path {
+		case "/bans/id-one":
+			_, _ = w.Write([]byte(`{"decision":{"id":"id-one","ipAddress":"203.0.113.10","state":"banned"},"sources":[{"kind":"manual","reason":"incident one"}],"deliveries":[]}`))
+		case "/bans/id-two":
+			_, _ = w.Write([]byte(`{"decision":{"id":"id-two","ipAddress":"203.0.113.11","state":"banned"},"sources":[{"kind":"manual","reason":"incident two"}],"deliveries":[]}`))
+		case "/bans":
+			_, _ = w.Write([]byte(`[{"decision":{"id":"id-one","ipAddress":"203.0.113.10","state":"banned"},"sources":[{"kind":"manual","reason":"incident one"}],"deliveries":[]}]`))
+		default:
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte(`{"error":"not found"}`))
+		}
+	}))
+	t.Cleanup(server.Close)
+	return server
 }
 
 func TestInspectMultiple(t *testing.T) {
@@ -568,15 +568,15 @@ func TestInspectMultiple(t *testing.T) {
 	t.Run("default YAML displays multiple decisions in request order", func(t *testing.T) {
 		t.Parallel()
 
-		path, ids := inspectTestDatabase(t)
+		server := adminReadServer(t)
 		var stdout, stderr bytes.Buffer
-		err := Run(t.Context(), []string{"inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
+		err := Run(t.Context(), []string{"inspect", "id-two", "id-one", "--application-url", server.URL, "--admin-token", "admin-secret"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
 		var views []bans.Record
 		require.NoError(t, yaml.Load(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
-		assert.Equal(t, ids[1], views[0].Decision.ID)
-		assert.Equal(t, ids[0], views[1].Decision.ID)
+		assert.Equal(t, "id-two", views[0].Decision.ID)
+		assert.Equal(t, "id-one", views[1].Decision.ID)
 		require.Len(t, views[0].Sources, 1)
 		assert.Equal(t, bans.SourceManual, views[0].Sources[0].Kind)
 	})
@@ -584,16 +584,15 @@ func TestInspectMultiple(t *testing.T) {
 	t.Run("JSON always returns an array, including for one ID", func(t *testing.T) {
 		t.Parallel()
 
-		path, ids := inspectTestDatabase(t)
+		server := adminReadServer(t)
 		var stdout, stderr bytes.Buffer
-		err := Run(t.Context(), []string{"inspect", ids[0], "--database", path, "--output", "json"}, "test", &stdout, &stderr)
+		err := Run(t.Context(), []string{"inspect", "id-one", "--application-url", server.URL, "--admin-token", "admin-secret", "--output", "json"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
 		var views []bans.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 1)
-		assert.Equal(t, ids[0], views[0].Decision.ID)
+		assert.Equal(t, "id-one", views[0].Decision.ID)
 		require.Len(t, views[0].Sources, 1)
-		assert.Equal(t, bans.SourceManual, views[0].Sources[0].Kind)
 		assert.Equal(t, "incident one", views[0].Sources[0].Reason)
 		assert.NotContains(t, stdout.String(), `"failures"`)
 	})
@@ -601,52 +600,92 @@ func TestInspectMultiple(t *testing.T) {
 	t.Run("JSON preserves requested order for multiple IDs", func(t *testing.T) {
 		t.Parallel()
 
-		path, ids := inspectTestDatabase(t)
+		server := adminReadServer(t)
 		var stdout, stderr bytes.Buffer
-		err := Run(t.Context(), []string{"--output", "json", "inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
+		err := Run(t.Context(), []string{"--output", "json", "inspect", "id-two", "id-one", "--application-url", server.URL, "--admin-token", "admin-secret"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
 		var views []bans.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
-		assert.Equal(t, ids[1], views[0].Decision.ID)
-		require.Len(t, views[0].Sources, 1)
+		assert.Equal(t, "id-two", views[0].Decision.ID)
 		assert.Equal(t, "incident two", views[0].Sources[0].Reason)
-		assert.Equal(t, ids[0], views[1].Decision.ID)
+		assert.Equal(t, "id-one", views[1].Decision.ID)
 	})
 
 	t.Run("YAML returns a sequence", func(t *testing.T) {
 		t.Parallel()
 
-		path, ids := inspectTestDatabase(t)
+		server := adminReadServer(t)
 		var stdout, stderr bytes.Buffer
-		err := Run(t.Context(), []string{"inspect", ids[0], ids[1], "--database", path, "--output", "yaml"}, "test", &stdout, &stderr)
+		err := Run(t.Context(), []string{"inspect", "id-one", "id-two", "--application-url", server.URL, "--admin-token", "admin-secret", "--output", "yaml"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []struct {
-			Decision struct {
-				ID string `yaml:"id"`
-			} `yaml:"decision"`
-		}
+		var views []bans.Record
 		require.NoError(t, yaml.Load(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
-		assert.Equal(t, ids[0], views[0].Decision.ID)
-		assert.Equal(t, ids[1], views[1].Decision.ID)
+		assert.Equal(t, "id-one", views[0].Decision.ID)
+		assert.Equal(t, "id-two", views[1].Decision.ID)
 	})
 
 	t.Run("missing ID fails without partial output", func(t *testing.T) {
 		t.Parallel()
 
-		path, ids := inspectTestDatabase(t)
+		server := adminReadServer(t)
 		var stdout, stderr bytes.Buffer
-		err := Run(t.Context(), []string{"inspect", ids[0], "missing-id", "--database", path, "--output", "json"}, "test", &stdout, &stderr)
+		err := Run(t.Context(), []string{"inspect", "id-one", "missing-id", "--application-url", server.URL, "--admin-token", "admin-secret", "--output", "json"}, "test", &stdout, &stderr)
 		require.ErrorContains(t, err, "missing-id")
 		assert.Empty(t, stdout.String())
 	})
 
-	t.Run("blank database flag fails parsing", func(t *testing.T) {
+	t.Run("missing administrator token is rejected", func(t *testing.T) {
+		t.Parallel()
+
+		server := adminReadServer(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"inspect", "id-one", "--application-url", server.URL}, "test", &stdout, &stderr)
+		require.ErrorContains(t, err, "admin-token")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("database flag is no longer accepted", func(t *testing.T) {
 		t.Parallel()
 
 		var stderr bytes.Buffer
-		err := Run(t.Context(), []string{"inspect", "decision", "--database", "  "}, "test", io.Discard, &stderr)
-		require.ErrorContains(t, err, "must not be blank")
+		err := Run(t.Context(), []string{"inspect", "id-one", "--database", "warden.db"}, "test", io.Discard, &stderr)
+		require.Error(t, err)
+		assert.Contains(t, stderr.String(), "database")
+	})
+}
+
+func TestListActiveHTTP(t *testing.T) {
+	t.Parallel()
+
+	t.Run("retrieves active bans with authenticated GET", func(t *testing.T) {
+		t.Parallel()
+		server := adminReadServer(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"list-active", "--application-url", server.URL, "--admin-token", "admin-secret", "-o", "json"}, "test", &stdout, &stderr)
+		require.NoError(t, err, stderr.String())
+		var views []bans.Record
+		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
+		require.Len(t, views, 1)
+		assert.Equal(t, "id-one", views[0].Decision.ID)
+		assert.Equal(t, "incident one", views[0].Sources[0].Reason)
+	})
+
+	t.Run("unauthenticated requests fail without output", func(t *testing.T) {
+		t.Parallel()
+		server := adminReadServer(t)
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"list-active", "--application-url", server.URL, "--admin-token", "wrong"}, "test", &stdout, &stderr)
+		require.ErrorContains(t, err, "401")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("database flag is no longer accepted", func(t *testing.T) {
+		t.Parallel()
+		var stderr bytes.Buffer
+		err := Run(t.Context(), []string{"list-active", "--database", "warden.db"}, "test", io.Discard, &stderr)
+		require.Error(t, err)
+		assert.Contains(t, stderr.String(), "database")
 	})
 }

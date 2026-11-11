@@ -1,6 +1,6 @@
 # HTTP API
 
-The application listener handles Snitch event ingestion and optional manual ban operations. Health and metrics are exposed separately on the management listener.
+The application listener handles Snitch event ingestion and authenticated administrative operations. Health and metrics are exposed separately on the management listener.
 
 ## Event ingestion
 

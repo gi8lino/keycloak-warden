@@ -58,11 +58,6 @@ func TestBulkBanListing(t *testing.T) {
 			assert.NotNil(t, view.Deliveries)
 		}
 
-		// The standalone reader must produce identical results in read-only mode.
-		readonly, err := sqlite.ListActiveBans(ctx, path, now)
-		require.NoError(t, err)
-		assert.Equal(t, views, readonly)
-
 		// A release must not appear in the bulk list or leak its deliveries.
 		_, err = store.ReleaseAllSources(ctx, second.Decision.ID, now.Add(time.Second))
 		require.NoError(t, err)

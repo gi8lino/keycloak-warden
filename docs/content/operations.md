@@ -49,7 +49,9 @@ Back up persistent databases before replacing migration files and keep the previ
 Enable request logs with `--access-log` and additional diagnostics with `--debug`. Choose `--log-format=json` (default) or `--log-format=text`. Inspect a decision and its destination acknowledgements with:
 
 ```sh
-warden inspect DECISION_ID --database=/data/warden.db --output=json
+warden inspect DECISION_ID --admin-token="$WARDEN_ADMIN_TOKEN" -o json
 ```
+
+The `inspect` and `list-active` commands use the authenticated application API and require a running Warden instance. Direct SQLite reads are not supported by administrative CLI commands.
 
 See [Architecture](architecture.md) for why a `banned` decision does not automatically prove Cloudflare has applied the block.

@@ -44,8 +44,8 @@ wait_http() {
 active_bans() {
   compose exec -T warden /keycloak-warden \
     list-active \
-    --database /data/warden.db \
-    --output json
+    --admin-token development-admin-token \
+    -o json
 }
 
 receiver_logs() {
@@ -56,8 +56,8 @@ wait_for_active_ban() {
   attempt=0
   while [ "$attempt" -lt 30 ]; do
     bans=$(active_bans)
-    if printf '%s' "$bans" | grep -Fq '"state":"banned"' &&
-      printf '%s' "$bans" | grep -Fq '"kind":"automatic"'; then
+    if printf '%s' "$bans" | grep -Eq '"state"[[:space:]]*:[[:space:]]*"banned"' &&
+      printf '%s' "$bans" | grep -Eq '"kind"[[:space:]]*:[[:space:]]*"automatic"'; then
       printf '%s\n' "$bans"
       return 0
     fi
@@ -119,7 +119,7 @@ for attempt in 1 2; do
 done
 
 bans=$(wait_for_active_ban)
-ip=$(printf '%s' "$bans" | sed -n 's/.*"ipAddress":"\([^"]*\)".*/\1/p')
+ip=$(printf '%s' "$bans" | sed -n 's/.*"ipAddress"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p')
 if [ -z "$ip" ]; then
   printf 'Could not find banned IP in Warden response: %s\n' "$bans" >&2
   exit 1
@@ -134,7 +134,7 @@ compose exec -T warden /keycloak-warden unban "$ip" \
   --output json
 
 wait_for_webhook unbanned
-if active_bans | grep -Fq '"state":"banned"'; then
+if active_bans | grep -Eq '"state"[[:space:]]*:[[:space:]]*"banned"'; then
   printf 'Warden still reports an active ban after unban\n' >&2
   exit 1
 fi

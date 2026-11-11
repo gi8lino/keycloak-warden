@@ -1,17 +1,20 @@
-// Package listactive prints active decisions with their ban sources.
+// Package listactive retrieves active decisions from Warden's authenticated HTTP API.
 package listactive
 
 import (
 	"context"
-	"time"
 
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/output"
-	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
-// Run lists active decision records including sources and deliveries without modifying SQLite.
-func Run(ctx context.Context, database string, encode output.Encoder) error {
-	records, err := sqlite.ListActiveBans(ctx, database, time.Now())
+// Run retrieves current active bans through the application API and encodes the result.
+func Run(ctx context.Context, applicationURL, token string, encode output.Encoder) error {
+	client, err := adminclient.New(applicationURL, token)
+	if err != nil {
+		return err
+	}
+	records, err := client.List(ctx)
 	if err != nil {
 		return err
 	}

@@ -68,3 +68,11 @@ func connectHost(host string) string {
 	}
 	return host
 }
+
+// AdminTokenFlag registers a protected application API credential on an administrative command.
+func AdminTokenFlag(cmd *tinyflags.Command) *string {
+	return cmd.String("admin-token", "", "Application API administrator bearer token").
+		Placeholder("SECRET").
+		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
+		Value()
+}

@@ -22,7 +22,7 @@ func newApplication(config Config) http.Handler {
 		middleware.AuthenticateSnitch(config.Secret),
 	))
 
-	// An absent administrator credential disables every manual-ban route.
+	// An absent administrator credential disables every administrative route.
 	if config.AdminToken != "" && config.BanAdmin != nil {
 		guard := middleware.AuthenticateAdmin(config.AdminToken)
 		mux.Handle("POST /bans", httpkitmiddleware.Chain(endpoint.CreateBan(config.BanAdmin, config.Logger), guard))

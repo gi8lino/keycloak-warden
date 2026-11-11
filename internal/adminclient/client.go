@@ -123,6 +123,14 @@ func (c *Client) Unban(ctx context.Context, decisionID string) (bans.Record, err
 	return c.request(ctx, http.MethodDelete, "/bans/"+url.PathEscape(decisionID), nil)
 }
 
+// Get retrieves one persisted decision, including released records and delivery acknowledgements.
+func (c *Client) Get(ctx context.Context, decisionID string) (bans.Record, error) {
+	if strings.TrimSpace(decisionID) == "" {
+		return bans.Record{}, errors.New("decision ID is required")
+	}
+	return c.request(ctx, http.MethodGet, "/bans/"+url.PathEscape(decisionID), nil)
+}
+
 // List fetches effective bans with their automatic and manual sources.
 func (c *Client) List(ctx context.Context) ([]bans.Record, error) {
 	var list []bans.Record

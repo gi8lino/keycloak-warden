@@ -21,10 +21,7 @@ func Register(root *tinyflags.Command, flags appflags.Flags, encode output.Encod
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
 
 	applicationURL := flags.ApplicationURLFlag(command)
-	token := command.String("admin-token", "", "Application API administrator bearer token").
-		Placeholder("SECRET").
-		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
-		Value()
+	token := appflags.AdminTokenFlag(command)
 	duration := command.Duration("duration", 0, "Manual ban lifetime").
 		Required().
 		Validate(tinyflags.Between(bans.MinDuration, bans.MaxDuration)).

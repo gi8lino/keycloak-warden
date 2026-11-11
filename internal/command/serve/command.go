@@ -42,7 +42,7 @@ func Register(root *tinyflags.Command, flags appflags.Flags, stdout io.Writer, v
 	adminToken := command.String(
 		"admin-token",
 		"",
-		"Bearer token enabling manual-ban API routes on the application listener",
+		"Bearer token enabling administrative API routes on the application listener",
 	).
 		Placeholder("SECRET").
 		OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).

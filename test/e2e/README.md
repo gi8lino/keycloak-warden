@@ -41,11 +41,11 @@ To inspect authenticated outbound webhook requests:
 docker compose -p keycloak-warden-e2e -f test/e2e/compose.yaml logs -f receiver
 ```
 
-To inspect the active bans in SQLite:
+To inspect active bans through the authenticated application API:
 
 ```sh
 docker compose -p keycloak-warden-e2e -f test/e2e/compose.yaml exec warden \
-    /keycloak-warden list-active --database /data/warden.db --output json
+    /keycloak-warden list-active --admin-token development-admin-token -o json
 ```
 
 ## What `make e2e-test` verifies

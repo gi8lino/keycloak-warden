@@ -56,21 +56,21 @@ warden serve \
 
 {code highlight="4-7,9-10" note="4-5:Separate listeners for ingestion and management endpoints." note="6:Required shared HMAC secret for incoming Snitch events." note="7:Optional bearer token enabling the manual-ban HTTP API." note="9-10:Independent pruning and optimization schedules; neither changes data retention." reference-position="right" reference-color="blue" line-numbers="true"}
 
-| Flag                          | Default          | Purpose                                     |
-| ----------------------------- | ---------------- | ------------------------------------------- |
-| `--config`                    | `warden.yaml`    | YAML rules and destinations                 |
-| `--database`                  | `warden.db`      | SQLite database path                        |
-| `--snitch-secret`             | Required         | Shared Snitch HMAC key                      |
-| `--admin-token`               | Empty            | Enables protected manual-ban API when set   |
-| `--listen-address`            | `127.0.0.1:8080` | Application listener                        |
-| `--management-listen-address` | `127.0.0.1:8081` | Health and metrics listener                 |
-| `--route-prefix`              | Empty            | Prefix for application routes               |
-| `--metrics`                   | Off              | Prometheus exposition and instrumentation   |
-| `--access-log`                | Off              | HTTP access logs                            |
-| `--debug`                     | Off              | Diagnostic logging                          |
-| `--log-format`                | `json`           | `json` or `text`                            |
-| `--prune-interval`            | `1h`             | Observation cleanup frequency               |
-| `--optimize-interval`         | `24h`            | SQLite query-planner optimization frequency |
+| Flag                          | Default          | Purpose                                           |
+| ----------------------------- | ---------------- | ------------------------------------------------- |
+| `--config`                    | `warden.yaml`    | YAML rules and destinations                       |
+| `--database`                  | `warden.db`      | SQLite database path                              |
+| `--snitch-secret`             | Required         | Shared Snitch HMAC key                            |
+| `--admin-token`               | Empty            | Enables authenticated administrative API when set |
+| `--listen-address`            | `127.0.0.1:8080` | Application listener                              |
+| `--management-listen-address` | `127.0.0.1:8081` | Health and metrics listener                       |
+| `--route-prefix`              | Empty            | Prefix for application routes                     |
+| `--metrics`                   | Off              | Prometheus exposition and instrumentation         |
+| `--access-log`                | Off              | HTTP access logs                                  |
+| `--debug`                     | Off              | Diagnostic logging                                |
+| `--log-format`                | `json`           | `json` or `text`                                  |
+| `--prune-interval`            | `1h`             | Observation cleanup frequency                     |
+| `--optimize-interval`         | `24h`            | SQLite query-planner optimization frequency       |
 
 Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables, replacing hyphens with underscores. For example, `WARDEN__SNITCH_SECRET` and `WARDEN__OPTIMIZE_INTERVAL`.
 

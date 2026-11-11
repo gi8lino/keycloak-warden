@@ -31,7 +31,7 @@ Press Ctrl+C to stop following the logs, then run `make e2e-down` to stop the st
 
 ## CLI Commands
 
-Warden provides commands for running the server, managing IP bans, and inspecting persisted decisions.
+Warden provides commands for running the server, managing IP bans, and inspecting persisted decisions. All administrative commands use the authenticated HTTP API of a running Warden instance.
 
 | Command       | Description                                                              |
 | :------------ | :----------------------------------------------------------------------- |
@@ -48,19 +48,19 @@ Warden provides commands for running the server, managing IP bans, and inspectin
 warden serve --config warden.yaml
 
 # Manually ban an IP
-warden ban 203.0.113.10 --duration 1h --reason "Suspicious activity"
+warden ban 203.0.113.10 --duration 1h --reason "Suspicious activity" --admin-token "$WARDEN_ADMIN_TOKEN"
 
 # Ban multiple IPs
-warden ban 203.0.113.10 203.0.113.11 --duration 1h --reason "Investigation"
+warden ban 203.0.113.10 203.0.113.11 --duration 1h --reason "Investigation" --admin-token "$WARDEN_ADMIN_TOKEN"
 
 # Remove bans
-warden unban 203.0.113.10 203.0.113.11
+warden unban 203.0.113.10 203.0.113.11 --admin-token "$WARDEN_ADMIN_TOKEN"
 
 # List active bans
-warden list-active -o json
+warden list-active --admin-token="$WARDEN_ADMIN_TOKEN" -o json
 
 # Inspect multiple decisions
-warden inspect ID1 ID2 --output json
+warden inspect ID1 ID2 --admin-token="$WARDEN_ADMIN_TOKEN" -o json
 ```
 
 Use `warden --help` to see the available commands, or `warden <command> --help` for command-specific flags and environment variables.

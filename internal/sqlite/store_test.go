@@ -156,20 +156,19 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, pending)
 		assert.Equal(t, *extended, pending.Decision)
-		active, err := sqlite.ListActiveBans(ctx, path, later)
+		active, err := store.ListActive(ctx, later)
 
 		require.NoError(t, err)
 		require.Len(t, active, 1)
 		assert.Equal(t, extended, &active[0].Decision)
-		views, err := sqlite.InspectMany(ctx, path, []string{extended.ID})
+		view, err := store.GetDecision(ctx, extended.ID, later)
 
 		require.NoError(t, err)
-		require.Len(t, views, 1)
-		assert.Equal(t, *extended, views[0].Decision)
+		assert.Equal(t, *extended, view.Decision)
 		assert.Equal(
 			t,
 			[]decisions.Acknowledgement{{Destination: "a", Revision: 1}, {Destination: "b", Revision: 1}},
-			views[0].Deliveries,
+			view.Deliveries,
 		)
 
 		now = extended.ExpiresAt
@@ -191,7 +190,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
 		require.NoError(t, store.Finish(ctx, *release, true, now))
-		active, err = sqlite.ListActiveBans(ctx, path, now)
+		active, err = store.ListActive(ctx, now)
 
 		require.NoError(t, err)
 		assert.Empty(t, active)

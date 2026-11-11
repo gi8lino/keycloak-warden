@@ -35,8 +35,8 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 
 	flags := appflags.Register(root)
 	serve.Register(root, flags, stdout, version)
-	listactive.Register(root, encode)
-	inspect.Register(root, encode)
+	listactive.Register(root, flags, encode)
+	inspect.Register(root, flags, encode)
 	ban.Register(root, flags, encode)
 	unban.Register(root, flags, encode)
 
