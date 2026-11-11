@@ -14,6 +14,7 @@ import (
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 )
 
+// maxBanBodyBytes limits administrative ban requests to 16 KiB.
 const maxBanBodyBytes = 16 << 10
 
 // BanAdministration exposes validated administrative ban operations independently of HTTP.

@@ -14,7 +14,10 @@ import (
 )
 
 const (
-	maxEventBodyBytes  = 64 << 10
+	// maxEventBodyBytes limits signed Snitch event bodies to 64 KiB.
+	maxEventBodyBytes = 64 << 10
+
+	// requestReadTimeout bounds how long the server waits to read a signed event body.
 	requestReadTimeout = 5 * time.Second
 )
 

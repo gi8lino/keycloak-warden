@@ -20,8 +20,10 @@ import (
 )
 
 const (
+	// maxAdminResponseBytes limits successful administrative API response bodies to one MiB.
 	maxAdminResponseBytes = 1 << 20
-	clientTimeout         = 10 * time.Second
+	// clientTimeout bounds the total duration of an administrative HTTP request.
+	clientTimeout = 10 * time.Second
 )
 
 // Client authenticates administrative requests against the running Warden server.
