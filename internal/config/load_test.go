@@ -56,6 +56,7 @@ targets:
 
 	t.Run("loaded configuration validates headers before provider construction", func(t *testing.T) {
 		t.Parallel()
+
 		cfg, err := Load(writeConfig(t, `
 rule:
   threshold: 2
@@ -74,84 +75,98 @@ targets:
 
 	t.Run("rejects old flat target format", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "targets:\n  edge:\n    provider: cloudflare\n    zone-id: example\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects provider fields inside webhook", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "targets:\n  webhook:\n    ops:\n      url: https://example.org\n      provider: webhook\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects signing secret field", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "targets:\n  webhook:\n    ops:\n      url: https://example.org\n      signing-secret: old\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects unknown provider group", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "targets:\n  other:\n    edge:\n      url: https://example.org\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects unknown fields", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "typo: invalid\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects duplicate keys", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "rule: {}\nrule: {}\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects duplicate nested keys", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "targets:\n  webhook:\n    ops:\n      headers:\n        X-Key: a\n        X-Key: b\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects multiple documents", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "rule: {}\n---\nrule: {}\n"))
 		require.ErrorContains(t, err, "expected one YAML document")
 	})
 
 	t.Run("rejects invalid duration", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "rule:\n  window: not-a-duration\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects listener in YAML", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "listen-address: ':8081'\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects management listener in YAML", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "management-listen-address: ':8082'\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects database in YAML", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "database: secret.db\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects incoming secret in YAML", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(writeConfig(t, "snitch-secret: shared\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("does not silently default detection rule", func(t *testing.T) {
 		t.Parallel()
+
 		cfg, err := Load(writeConfig(t, "targets: {}\n"))
 		require.NoError(t, err)
 		assert.Zero(t, cfg.Rule.Threshold)
@@ -160,6 +175,7 @@ targets:
 
 	t.Run("rejects missing file", func(t *testing.T) {
 		t.Parallel()
+
 		_, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
 		require.Error(t, err)
 	})

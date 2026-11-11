@@ -102,6 +102,7 @@ func TestNew(t *testing.T) {
 		})
 		return h.Application, h.Management
 	}
+
 	t.Run("management liveness", func(t *testing.T) {
 		t.Parallel()
 
@@ -227,6 +228,7 @@ func TestNew(t *testing.T) {
 
 		assert.Equal(t, http.StatusNoContent, rec.Code)
 	})
+
 	t.Run("disabled metrics expose no route", func(t *testing.T) {
 		t.Parallel()
 

@@ -17,7 +17,11 @@ func TestRuleValidate(t *testing.T) {
 	t.Run("accepts minimum values", func(t *testing.T) {
 		t.Parallel()
 
-		require.NoError(t, (Rule{Threshold: 1, Window: time.Second, Ban: time.Second}).Validate())
+		require.NoError(t, (Rule{
+			Threshold: 1,
+			Window:    time.Second,
+			Ban:       time.Second,
+		}).Validate())
 	})
 
 	t.Run("rejects zero threshold", func(t *testing.T) {
@@ -31,7 +35,11 @@ func TestRuleValidate(t *testing.T) {
 
 		require.EqualError(
 			t,
-			(Rule{Threshold: -1, Window: time.Second, Ban: time.Second}).Validate(),
+			(Rule{
+				Threshold: -1,
+				Window:    time.Second,
+				Ban:       time.Second,
+			}).Validate(),
 			"threshold must be positive",
 		)
 	})
@@ -41,7 +49,11 @@ func TestRuleValidate(t *testing.T) {
 
 		require.EqualError(
 			t,
-			(Rule{Threshold: 1, Window: time.Second - 1, Ban: time.Second}).Validate(),
+			(Rule{
+				Threshold: 1,
+				Window:    time.Second - 1,
+				Ban:       time.Second,
+			}).Validate(),
 			"window and ban must be at least one second",
 		)
 	})
@@ -51,7 +63,11 @@ func TestRuleValidate(t *testing.T) {
 
 		require.EqualError(
 			t,
-			(Rule{Threshold: 1, Window: time.Second, Ban: time.Second - 1}).Validate(),
+			(Rule{
+				Threshold: 1,
+				Window:    time.Second,
+				Ban:       time.Second - 1,
+			}).Validate(),
 			"window and ban must be at least one second",
 		)
 	})
@@ -104,7 +120,12 @@ func TestRuleHasValidDurations(t *testing.T) {
 func TestRuleMatches(t *testing.T) {
 	t.Parallel()
 
-	valid := events.Event{Source: "keycloak", Kind: "LOGIN_ERROR", IP: netip.MustParseAddr("203.0.113.1")}
+	valid := events.Event{
+		Source: "keycloak",
+		Kind:   "LOGIN_ERROR",
+		IP:     netip.MustParseAddr("203.0.113.1"),
+	}
+
 	t.Run("matches Keycloak login failure with IP", func(t *testing.T) {
 		t.Parallel()
 

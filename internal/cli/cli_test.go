@@ -537,15 +537,27 @@ func TestRun(t *testing.T) {
 func inspectTestDatabase(t *testing.T) (string, []string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "warden.db")
-	store, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, nil)
+	store, err := sqlite.Open(path, detection.Rule{
+		Threshold: 2,
+		Window:    time.Minute,
+		Ban:       time.Minute,
+	}, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
 	service, err := bans.NewAdminService(store)
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	first, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "incident one"}, now)
+	first, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		IP:       "203.0.113.10",
+		Duration: time.Hour,
+		Reason:   "incident one",
+	}, now)
 	require.NoError(t, err)
-	second, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.11", Duration: time.Hour, Reason: "incident two"}, now)
+	second, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		IP:       "203.0.113.11",
+		Duration: time.Hour,
+		Reason:   "incident two",
+	}, now)
 	require.NoError(t, err)
 	return path, []string{first.Decision.ID, second.Decision.ID}
 }
@@ -555,6 +567,7 @@ func TestInspectMultiple(t *testing.T) {
 
 	t.Run("default YAML displays multiple decisions in request order", func(t *testing.T) {
 		t.Parallel()
+
 		path, ids := inspectTestDatabase(t)
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
@@ -570,6 +583,7 @@ func TestInspectMultiple(t *testing.T) {
 
 	t.Run("JSON always returns an array, including for one ID", func(t *testing.T) {
 		t.Parallel()
+
 		path, ids := inspectTestDatabase(t)
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", ids[0], "--database", path, "--output", "json"}, "test", &stdout, &stderr)
@@ -586,6 +600,7 @@ func TestInspectMultiple(t *testing.T) {
 
 	t.Run("JSON preserves requested order for multiple IDs", func(t *testing.T) {
 		t.Parallel()
+
 		path, ids := inspectTestDatabase(t)
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"--output", "json", "inspect", ids[1], ids[0], "--database", path}, "test", &stdout, &stderr)
@@ -601,6 +616,7 @@ func TestInspectMultiple(t *testing.T) {
 
 	t.Run("YAML returns a sequence", func(t *testing.T) {
 		t.Parallel()
+
 		path, ids := inspectTestDatabase(t)
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", ids[0], ids[1], "--database", path, "--output", "yaml"}, "test", &stdout, &stderr)
@@ -618,6 +634,7 @@ func TestInspectMultiple(t *testing.T) {
 
 	t.Run("missing ID fails without partial output", func(t *testing.T) {
 		t.Parallel()
+
 		path, ids := inspectTestDatabase(t)
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", ids[0], "missing-id", "--database", path, "--output", "json"}, "test", &stdout, &stderr)
@@ -627,6 +644,7 @@ func TestInspectMultiple(t *testing.T) {
 
 	t.Run("blank database flag fails parsing", func(t *testing.T) {
 		t.Parallel()
+
 		var stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", "decision", "--database", "  "}, "test", io.Discard, &stderr)
 		require.ErrorContains(t, err, "must not be blank")

@@ -79,16 +79,25 @@ func TestAdminServiceBanManual(t *testing.T) {
 		require.ErrorIs(t, err, bans.ErrInvalid)
 		assert.Empty(t, store.ip)
 	}
+
 	t.Run("rejects invalid address", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{IP: "not-an-address", Duration: time.Hour, Reason: "incident"})
+		invalid(t, bans.ManualBanRequest{
+			IP:       "not-an-address",
+			Duration: time.Hour,
+			Reason:   "incident",
+		})
 	})
 
 	t.Run("rejects unspecified address", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{IP: "0.0.0.0", Duration: time.Hour, Reason: "incident"})
+		invalid(t, bans.ManualBanRequest{
+			IP:       "0.0.0.0",
+			Duration: time.Hour,
+			Reason:   "incident",
+		})
 	})
 
 	t.Run("rejects missing reason", func(t *testing.T) {
@@ -106,7 +115,11 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects duration above maximum", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{IP: "203.0.113.1", Duration: 31 * 24 * time.Hour, Reason: "incident"})
+		invalid(t, bans.ManualBanRequest{
+			IP:       "203.0.113.1",
+			Duration: 31 * 24 * time.Hour,
+			Reason:   "incident",
+		})
 	})
 
 	t.Run("canonicalizes IPv4-mapped address and trims reason", func(t *testing.T) {
@@ -117,7 +130,11 @@ func TestAdminServiceBanManual(t *testing.T) {
 
 		require.NoError(t, err)
 		now := time.Now()
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "::ffff:203.0.113.1", Duration: time.Hour, Reason: " incident "}, now)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP:       "::ffff:203.0.113.1",
+			Duration: time.Hour,
+			Reason:   " incident ",
+		}, now)
 
 		require.NoError(t, err)
 		assert.Equal(t, "203.0.113.1", store.ip)

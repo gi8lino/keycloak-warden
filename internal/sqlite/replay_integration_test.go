@@ -21,6 +21,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 
 	t.Run("reconciles an already applied block and release without duplicating remote changes", func(t *testing.T) {
 		t.Parallel()
+
 		var mu sync.Mutex
 		var remote []map[string]any
 		var created, deleted int
@@ -51,7 +52,11 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := cloudflare.Provider{RulesURL: server.URL + "/rules", Token: "secret", Client: server.Client()}
+		provider := cloudflare.Provider{
+			RulesURL: server.URL + "/rules",
+			Token:    "secret",
+			Client:   server.Client(),
+		}
 		path := filepath.Join(t.TempDir(), "state.db")
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)

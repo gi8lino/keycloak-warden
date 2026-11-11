@@ -19,8 +19,17 @@ func TestProviderApply(t *testing.T) {
 	t.Run("apply retries discover owned IPv6 block and release only that block", func(t *testing.T) {
 		t.Parallel()
 
-		d := decisions.Decision{ID: "decision-one", IP: "2001:db8::1", State: decisions.StateBanned}
-		var rules = []rule{{ID: "foreign", Mode: "block", Notes: "manual", Configuration: filter{"ip6", d.IP}}}
+		d := decisions.Decision{
+			ID:    "decision-one",
+			IP:    "2001:db8::1",
+			State: decisions.StateBanned,
+		}
+		var rules = []rule{{
+			ID:            "foreign",
+			Mode:          "block",
+			Notes:         "manual",
+			Configuration: filter{"ip6", d.IP},
+		}}
 		var created, deleted int
 		var mu sync.Mutex
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -60,7 +69,11 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 
-		p := Provider{RulesURL: server.URL + "/rules", Client: server.Client(), Token: "secret"}
+		p := Provider{
+			RulesURL: server.URL + "/rules",
+			Client:   server.Client(),
+			Token:    "secret",
+		}
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
@@ -78,12 +91,14 @@ func TestProviderApply(t *testing.T) {
 
 	t.Run("rejects unknown desired state before calling Cloudflare", func(t *testing.T) {
 		t.Parallel()
+
 		p := Provider{}
 		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1"}), "invalid decision state")
 	})
 
 	t.Run("forbidden response includes the numeric Cloudflare code", func(t *testing.T) {
 		t.Parallel()
+
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusForbidden)
 			_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":10000,"message":"private detail"}]}`))
@@ -98,7 +113,11 @@ func TestProviderApply(t *testing.T) {
 
 		s := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(429) }))
 		defer s.Close()
-		p := Provider{RulesURL: s.URL, Client: s.Client(), Token: "secret"}
+		p := Provider{
+			RulesURL: s.URL,
+			Client:   s.Client(),
+			Token:    "secret",
+		}
 
 		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisions.StateBanned}), "429")
 	})

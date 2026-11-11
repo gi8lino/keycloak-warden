@@ -84,6 +84,7 @@ func TestRunnerWait(t *testing.T) {
 
 	t.Run("wait blocks until completion", func(t *testing.T) {
 		t.Parallel()
+
 		q := &blockingQueue{started: make(chan struct{}), stopped: make(chan struct{})}
 		runner := Start(t.Context(), q, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		defer func() { require.NoError(t, runner.Close()) }()
@@ -103,6 +104,7 @@ func TestRunnerWait(t *testing.T) {
 
 	t.Run("reports terminal errors to every waiter", func(t *testing.T) {
 		t.Parallel()
+
 		terminalErr := errors.New("terminal failure")
 		finished := make(chan struct{})
 		runner := &Runner{done: finished}
@@ -204,6 +206,7 @@ func TestDrainReady(t *testing.T) {
 
 func TestWorkerWakeups(t *testing.T) {
 	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		q := &scriptedQueue{changes: make(chan struct{}, 1), deadlines: []time.Time{{}, time.Now().Add(11 * time.Minute)}}
 		r := Start(t.Context(), q, nil, slog.Default())
@@ -225,6 +228,7 @@ func TestWorkerWakeups(t *testing.T) {
 
 func TestWaitUntilNoDeadline(t *testing.T) {
 	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()

@@ -17,6 +17,7 @@ func TestBulkBanListing(t *testing.T) {
 
 	t.Run("preserves order, independent sources, acknowledgements and nonnil empty slices", func(t *testing.T) {
 		t.Parallel()
+
 		path := filepath.Join(t.TempDir(), "warden.db")
 		store, processor := openStore(t, path, "zeta", "alpha")
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })

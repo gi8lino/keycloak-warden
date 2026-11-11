@@ -30,6 +30,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("accepts one JSON response", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, `[{"decision":{"id":"one"},"sources":[],"deliveries":[]}]`)
 		list, err := client.List(t.Context())
 		require.NoError(t, err)
@@ -39,6 +40,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("accepts trailing JSON whitespace", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, "[] \n\t")
 		list, err := client.List(t.Context())
 		require.NoError(t, err)
@@ -47,6 +49,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("rejects second JSON document", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, "[] []")
 		_, err := client.List(t.Context())
 		require.ErrorContains(t, err, "decode application response")
@@ -54,6 +57,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("rejects junk after JSON document", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, "[]garbage")
 		_, err := client.List(t.Context())
 		require.ErrorContains(t, err, "decode application response")
@@ -61,6 +65,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("rejects oversized response even if extra bytes are whitespace", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, "[]"+strings.Repeat(" ", 1<<20))
 		_, err := client.List(t.Context())
 		require.ErrorContains(t, err, "application response exceeds")
@@ -68,6 +73,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("accepts response exactly at byte limit", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, "[]"+strings.Repeat(" ", (1<<20)-2))
 		list, err := client.List(t.Context())
 		require.NoError(t, err)
@@ -76,6 +82,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("rejects empty success response", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusOK, "")
 		_, err := client.List(t.Context())
 		require.ErrorContains(t, err, "decode application response")
@@ -83,6 +90,7 @@ func TestAdminResponseValidation(t *testing.T) {
 
 	t.Run("preserves unsuccessful HTTP status", func(t *testing.T) {
 		t.Parallel()
+
 		client := responseClient(t, http.StatusForbidden, `{"error":"forbidden"}`)
 		_, err := client.List(t.Context())
 		require.ErrorContains(t, err, "application HTTP 403")

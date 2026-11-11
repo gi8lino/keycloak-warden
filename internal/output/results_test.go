@@ -17,10 +17,15 @@ func TestBatchYAML(t *testing.T) {
 
 	t.Run("includes successes and failures in a single document", func(t *testing.T) {
 		t.Parallel()
-		batch := Batch{Operation: "ban", Results: []Item{
-			{IPAddress: "203.0.113.10", Success: true},
-			{IPAddress: "203.0.113.20", Error: "rejected"},
-		}, Succeeded: 1, Failed: 1}
+
+		batch := Batch{
+			Operation: "ban", Results: []Item{
+				{IPAddress: "203.0.113.10", Success: true},
+				{IPAddress: "203.0.113.20", Error: "rejected"},
+			},
+			Succeeded: 1,
+			Failed:    1,
+		}
 
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(batch))
@@ -33,14 +38,22 @@ func TestBatchYAML(t *testing.T) {
 
 	t.Run("preserves nested ban response field names", func(t *testing.T) {
 		t.Parallel()
-		batch := Batch{Operation: "ban", Results: []Item{{
-			IPAddress: "203.0.113.10",
-			Success:   true,
-			Ban: &bans.Record{
-				Decision:   decisions.Decision{ID: "decision-one", IP: "203.0.113.10", Revision: 4},
-				Deliveries: []decisions.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
-			},
-		}}, Succeeded: 1}
+
+		batch := Batch{
+			Operation: "ban", Results: []Item{{
+				IPAddress: "203.0.113.10",
+				Success:   true,
+				Ban: &bans.Record{
+					Decision: decisions.Decision{
+						ID:       "decision-one",
+						IP:       "203.0.113.10",
+						Revision: 4,
+					},
+					Deliveries: []decisions.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
+				},
+			}},
+			Succeeded: 1,
+		}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(batch))
 		assert.Contains(t, output.String(), "ipAddress:")
@@ -55,7 +68,12 @@ func TestBatchYAML(t *testing.T) {
 
 	t.Run("omits empty optional fields", func(t *testing.T) {
 		t.Parallel()
-		batch := Batch{Operation: "unban", Results: []Item{{IPAddress: "203.0.113.10", Success: true}}, Succeeded: 1}
+
+		batch := Batch{
+			Operation: "unban",
+			Results:   []Item{{IPAddress: "203.0.113.10", Success: true}},
+			Succeeded: 1,
+		}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(batch))
 		assert.NotContains(t, output.String(), "ban:")

@@ -72,7 +72,11 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 	t.Helper()
 	store, err := sqlite.Open(
 		filepath.Join(t.TempDir(), "warden.db"),
-		detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute},
+		detection.Rule{
+			Threshold: 2,
+			Window:    time.Minute,
+			Ban:       time.Minute,
+		},
 		[]string{"edge"},
 	)
 
@@ -195,7 +199,11 @@ func TestNewApplication(t *testing.T) {
 	t.Run("lists automatic source and unbans it through the application API", func(t *testing.T) {
 		t.Parallel()
 
-		rule := detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}
+		rule := detection.Rule{
+			Threshold: 2,
+			Window:    time.Minute,
+			Ban:       time.Minute,
+		}
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"), rule, []string{"edge"})
 
 		require.NoError(t, err)
@@ -374,7 +382,11 @@ func TestNewApplication(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer target.Close()
-		rule := detection.Rule{Window: time.Minute, Threshold: 1, Ban: 3 * time.Second}
+		rule := detection.Rule{
+			Window:    time.Minute,
+			Threshold: 1,
+			Ban:       3 * time.Second,
+		}
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"), rule, []string{"notify"})
 
 		require.NoError(t, err)
@@ -398,7 +410,12 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		rec := httptest.NewRecorder()
-		newTestServer(server.Config{Secret: "inbound", Logger: slog.Default(), Processor: processor, Readiness: store}).Application.ServeHTTP(rec, req)
+		newTestServer(server.Config{
+			Secret:    "inbound",
+			Logger:    slog.Default(),
+			Processor: processor,
+			Readiness: store,
+		}).Application.ServeHTTP(rec, req)
 
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		block := awaitDecision(t, received)

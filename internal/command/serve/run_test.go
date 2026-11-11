@@ -34,8 +34,13 @@ func TestRun(t *testing.T) {
 
 func TestRunRejectsInvalidMaintenanceSchedule(t *testing.T) {
 	t.Parallel()
+
 	cfg := config.Config{
-		Rule: detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute},
+		Rule: detection.Rule{
+			Threshold: 2,
+			Window:    time.Minute,
+			Ban:       time.Minute,
+		},
 		Targets: config.Targets{Webhook: map[string]config.WebhookTarget{
 			"local": {URL: "http://127.0.0.1:8090/hook"},
 		}},

@@ -30,6 +30,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("json uses json tags", func(t *testing.T) {
 		t.Parallel()
+
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatJSON), &output)(sampleResult{IP: "203.0.113.10"}))
 
@@ -41,6 +42,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("yaml uses yaml tags directly", func(t *testing.T) {
 		t.Parallel()
+
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(sampleResult{IP: "203.0.113.10"}))
 
@@ -53,6 +55,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("text is a yaml alias", func(t *testing.T) {
 		t.Parallel()
+
 		value := sampleResult{IP: "203.0.113.10", Reason: "Manual review"}
 		var textOutput, yamlOutput bytes.Buffer
 		require.NoError(t, New(ptr(FormatText), &textOutput)(value))
@@ -62,6 +65,7 @@ func TestNew(t *testing.T) {
 
 	t.Run("uses the format selected after encoder creation", func(t *testing.T) {
 		t.Parallel()
+
 		var output bytes.Buffer
 		format := FormatYAML
 		encode := New(&format, &output)
@@ -75,17 +79,20 @@ func TestNew(t *testing.T) {
 
 	t.Run("rejects nil format", func(t *testing.T) {
 		t.Parallel()
+
 		require.ErrorContains(t, New(nil, io.Discard)(sampleResult{}), "output format is not configured")
 	})
 
 	t.Run("rejects an unsupported format", func(t *testing.T) {
 		t.Parallel()
+
 		require.ErrorContains(t, New(ptr("xml"), io.Discard)(sampleResult{}), "unsupported output format")
 	})
 
 	for _, format := range []string{FormatJSON, FormatYAML, FormatText} {
 		t.Run("propagates "+format+" write errors", func(t *testing.T) {
 			t.Parallel()
+
 			err := New(ptr(format), failingWriter{})(sampleResult{IP: "203.0.113.10"})
 			require.ErrorContains(t, err, "write failed")
 		})
@@ -100,6 +107,7 @@ func (failingWriter) Write([]byte) (int, error) { return 0, errors.New("write fa
 
 func TestYAMLIntegerPrecision(t *testing.T) {
 	t.Parallel()
+
 	var output bytes.Buffer
 	input := map[string]int64{"revision": 9007199254740993}
 
@@ -114,15 +122,27 @@ func ptr(format string) *string { return &format }
 
 func TestBanRecordsYAML(t *testing.T) {
 	t.Parallel()
+
 	deadline := time.Date(2026, 11, 6, 12, 0, 0, 0, time.UTC)
 
 	t.Run("round trips decisions sources and acknowledgements", func(t *testing.T) {
 		t.Parallel()
+
 		records := []bans.Record{{
-			Decision: decisions.Decision{ID: "one", IP: "203.0.113.10", State: decisions.StateBanned, Revision: 4, ExpiresAt: deadline},
+			Decision: decisions.Decision{
+				ID:        "one",
+				IP:        "203.0.113.10",
+				State:     decisions.StateBanned,
+				Revision:  4,
+				ExpiresAt: deadline,
+			},
 			Sources: []bans.Source{
 				{Kind: bans.SourceAutomatic, ExpiresAt: deadline},
-				{Kind: bans.SourceManual, ExpiresAt: deadline, Reason: "Incident"},
+				{
+					Kind:      bans.SourceManual,
+					ExpiresAt: deadline,
+					Reason:    "Incident",
+				},
 			},
 			Deliveries: []decisions.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
 		}}
@@ -144,6 +164,7 @@ func TestBanRecordsYAML(t *testing.T) {
 
 	t.Run("includes released historical decisions", func(t *testing.T) {
 		t.Parallel()
+
 		records := []bans.Record{{Decision: decisions.Decision{ID: "released", State: decisions.StateUnbanned}}}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(records))
@@ -155,6 +176,7 @@ func TestBanRecordsYAML(t *testing.T) {
 
 	t.Run("preserves record order", func(t *testing.T) {
 		t.Parallel()
+
 		records := []bans.Record{{Decision: decisions.Decision{ID: "one"}}, {Decision: decisions.Decision{ID: "two"}}}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(records))
@@ -167,6 +189,7 @@ func TestBanRecordsYAML(t *testing.T) {
 
 	t.Run("empty records encode as empty sequence", func(t *testing.T) {
 		t.Parallel()
+
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)([]bans.Record{}))
 		var decoded []bans.Record
@@ -177,6 +200,7 @@ func TestBanRecordsYAML(t *testing.T) {
 
 func TestSingleBanRecordYAML(t *testing.T) {
 	t.Parallel()
+
 	record := bans.Record{Decision: decisions.Decision{ID: "one", IP: "203.0.113.10"}}
 	var output bytes.Buffer
 	require.NoError(t, New(ptr(FormatYAML), &output)(record))

@@ -21,7 +21,11 @@ import (
 // openStore constructs an isolated store and matching application ingestion use case.
 func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *ingestion.Service) {
 	t.Helper()
-	rule := detection.Rule{Threshold: 2, Window: time.Minute, Ban: 2 * time.Minute}
+	rule := detection.Rule{
+		Threshold: 2,
+		Window:    time.Minute,
+		Ban:       2 * time.Minute,
+	}
 	store, err := sqlite.Open(path, rule, targets)
 
 	require.NoError(t, err)
@@ -34,7 +38,10 @@ func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *in
 // failed constructs a distinct Keycloak failed login from one stable client address.
 func failed(id string) events.Envelope {
 	return events.Envelope{
-		ID: id, Source: "keycloak", Kind: "LOGIN_ERROR", Version: 1,
+		ID:        id,
+		Source:    "keycloak",
+		Kind:      "LOGIN_ERROR",
+		Version:   1,
 		Timestamp: time.Date(2026, time.November, 5, 15, 0, 0, 0, time.UTC),
 		IP:        "203.0.113.1",
 	}
@@ -193,6 +200,7 @@ func TestOpen(t *testing.T) {
 
 func TestDestinationBackoff(t *testing.T) {
 	t.Parallel()
+
 	ctx := t.Context()
 	path := filepath.Join(t.TempDir(), "state.db")
 	store, processor := openStore(t, path, "edge")
@@ -254,6 +262,7 @@ func TestWorkerSchedule(t *testing.T) {
 
 	t.Run("only committed decisions wake the worker", func(t *testing.T) {
 		t.Parallel()
+
 		ctx := t.Context()
 		now := time.Now()
 		store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"), "receiver")
@@ -283,6 +292,7 @@ func TestWorkerSchedule(t *testing.T) {
 
 	t.Run("restart schedules the earlier of source expiry and destination retry", func(t *testing.T) {
 		t.Parallel()
+
 		ctx := t.Context()
 		path := filepath.Join(t.TempDir(), "state.db")
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -316,6 +326,7 @@ func TestWorkerSchedule(t *testing.T) {
 
 func TestOptimize(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openStore(t, filepath.Join(t.TempDir(), "optimize.db"))
 	require.NoError(t, store.Optimize(t.Context()))
 	require.NoError(t, store.Close())
@@ -325,6 +336,7 @@ func TestOptimize(t *testing.T) {
 // TestAdditionalFailureDoesNotReviseUnchangedBan ensures observation counts do not trigger delivery revisions.
 func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	t.Parallel()
+
 	store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"), "receiver")
 	defer store.Close() //nolint:errcheck
 	ctx := t.Context()

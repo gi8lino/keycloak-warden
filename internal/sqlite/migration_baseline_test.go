@@ -53,6 +53,7 @@ func TestMigrationBaseline(t *testing.T) {
 
 	t.Run("fresh database applies consolidated baseline and later migration", func(t *testing.T) {
 		t.Parallel()
+
 		db := baselineDatabase(t)
 		require.NoError(t, migrateFrom(t.Context(), db, replacementFixture()))
 		var value string
@@ -65,6 +66,7 @@ func TestMigrationBaseline(t *testing.T) {
 
 	t.Run("existing database skips baseline SQL but preserves its records", func(t *testing.T) {
 		t.Parallel()
+
 		db := baselineDatabase(t)
 		require.NoError(t, migrateFrom(t.Context(), db, baselineFixture()))
 		_, err := db.Exec("INSERT INTO samples (id, value) VALUES (2, 'live data')")
@@ -83,6 +85,7 @@ func TestMigrationBaseline(t *testing.T) {
 
 	t.Run("incomplete historical database cannot silently adopt baseline", func(t *testing.T) {
 		t.Parallel()
+
 		db := baselineDatabase(t)
 		old := baselineFixture()
 		delete(old, "migrations/0002_index.sql")
@@ -97,6 +100,7 @@ func TestMigrationBaseline(t *testing.T) {
 
 	t.Run("invalid baseline marker fails before touching database", func(t *testing.T) {
 		t.Parallel()
+
 		db := baselineDatabase(t)
 		bad := replacementFixture()
 		bad["migrations/0003_baseline.sql"] = &fstest.MapFile{Data: []byte(`-- warden:replaces-through=1

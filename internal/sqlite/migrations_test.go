@@ -92,6 +92,7 @@ SELECT EXISTS (
 
 	t.Run("omits aggregate failure count but preserves observation generation", func(t *testing.T) {
 		t.Parallel()
+
 		db := openMigratedDatabase(t)
 		var count int
 		err := db.QueryRowContext(t.Context(), `
@@ -134,7 +135,11 @@ SELECT EXISTS (
 // migrateTestDatabase initializes or reopens a database with the current migrations.
 func migrateTestDatabase(t *testing.T, path string) {
 	t.Helper()
-	rule := detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}
+	rule := detection.Rule{
+		Threshold: 2,
+		Window:    time.Minute,
+		Ban:       time.Minute,
+	}
 	store, err := sqlite.Open(path, rule, nil)
 
 	require.NoError(t, err)
@@ -179,6 +184,7 @@ SELECT version, applied_at FROM schema_migrations
 // TestUpgradeLegacyDecision verifies migration 4 retains existing bans, sources, deliveries, and replay generations.
 func TestUpgradeLegacyDecision(t *testing.T) {
 	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	old, err := sql.Open("sqlite", path)
 	require.NoError(t, err)
@@ -215,7 +221,11 @@ VALUES ('keycloak', 'event-one', '203.0.113.10', ?, 3)
 	require.NoError(t, err)
 	require.NoError(t, old.Close())
 
-	store, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, []string{"webhook.receiver"})
+	store, err := sqlite.Open(path, detection.Rule{
+		Threshold: 2,
+		Window:    time.Minute,
+		Ban:       time.Minute,
+	}, []string{"webhook.receiver"})
 	require.NoError(t, err)
 	record, err := store.GetDecision(t.Context(), "legacy-decision", now)
 	require.NoError(t, err)
@@ -241,7 +251,11 @@ VALUES ('keycloak', 'event-one', '203.0.113.10', ?, 3)
 	require.NoError(t, upgraded.Close())
 
 	// Opening an already upgraded database should never rerun the migration.
-	reopened, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, []string{"webhook.receiver"})
+	reopened, err := sqlite.Open(path, detection.Rule{
+		Threshold: 2,
+		Window:    time.Minute,
+		Ban:       time.Minute,
+	}, []string{"webhook.receiver"})
 	require.NoError(t, err)
 	require.NoError(t, reopened.Close())
 }

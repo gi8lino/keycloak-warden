@@ -28,7 +28,11 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		created, err := service.BanManual(
 			ctx,
-			bans.ManualBanRequest{IP: "::ffff:203.0.113.7", Duration: time.Minute, Reason: "operator investigation"},
+			bans.ManualBanRequest{
+				IP:       "::ffff:203.0.113.7",
+				Duration: time.Minute,
+				Reason:   "operator investigation",
+			},
 			now,
 		)
 
@@ -51,7 +55,11 @@ func TestStoreApplyManualBan(t *testing.T) {
 		assert.Equal(t, created.Decision.ID, views[0].Decision.ID)
 
 		// An extension must not inadvertently shorten an active manual ban.
-		updated, err := service.BanManual(ctx, bans.ManualBanRequest{IP: "203.0.113.7", Duration: 10 * time.Second, Reason: "still investigating"}, now)
+		updated, err := service.BanManual(ctx, bans.ManualBanRequest{
+			IP:       "203.0.113.7",
+			Duration: 10 * time.Second,
+			Reason:   "still investigating",
+		}, now)
 
 		require.NoError(t, err)
 		assert.Equal(t, created.Decision.ExpiresAt, updated.Decision.ExpiresAt)
@@ -89,7 +97,11 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
-		manual, err := service.BanManual(ctx, bans.ManualBanRequest{IP: auto.IP, Duration: time.Hour, Reason: "long ban"}, now)
+		manual, err := service.BanManual(ctx, bans.ManualBanRequest{
+			IP:       auto.IP,
+			Duration: time.Hour,
+			Reason:   "long ban",
+		}, now)
 
 		require.NoError(t, err)
 		require.NoError(t, store.Maintain(ctx, auto.ExpiresAt))
@@ -125,7 +137,11 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, auto)
 
-		manual, err := service.BanManual(ctx, bans.ManualBanRequest{IP: auto.IP, Duration: time.Hour, Reason: "Incident"}, now)
+		manual, err := service.BanManual(ctx, bans.ManualBanRequest{
+			IP:       auto.IP,
+			Duration: time.Hour,
+			Reason:   "Incident",
+		}, now)
 
 		require.NoError(t, err)
 		assert.Equal(t, auto.ID, manual.Decision.ID)
@@ -213,7 +229,11 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "Incident"}, now)
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP:       "203.0.113.10",
+			Duration: time.Hour,
+			Reason:   "Incident",
+		}, now)
 
 		require.NoError(t, err)
 
@@ -243,7 +263,11 @@ func TestStoreListActive(t *testing.T) {
 		_, err = ingestion.Process(t.Context(), failed("second"), now)
 
 		require.NoError(t, err)
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour, Reason: "manual review"}, now)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP:       "203.0.113.1",
+			Duration: time.Hour,
+			Reason:   "manual review",
+		}, now)
 
 		require.NoError(t, err)
 		views, err := service.ListActive(t.Context(), now)
@@ -267,7 +291,11 @@ func TestRetiredDestination(t *testing.T) {
 
 	require.NoError(t, err)
 	now := time.Now()
-	request := bans.ManualBanRequest{IP: "203.0.113.40", Duration: time.Hour, Reason: "incident"}
+	request := bans.ManualBanRequest{
+		IP:       "203.0.113.40",
+		Duration: time.Hour,
+		Reason:   "incident",
+	}
 	view, err := service.BanManual(ctx, request, now)
 
 	require.NoError(t, err)
@@ -301,13 +329,18 @@ func TestRetiredDestination(t *testing.T) {
 // TestIdempotentManualBan verifies that unchanged desired state does not schedule a new delivery.
 func TestIdempotentManualBan(t *testing.T) {
 	t.Parallel()
+
 	store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
 	service, err := bans.NewAdminService(store)
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	request := bans.ManualBanRequest{IP: "203.0.113.8", Duration: time.Hour, Reason: "incident"}
+	request := bans.ManualBanRequest{
+		IP:       "203.0.113.8",
+		Duration: time.Hour,
+		Reason:   "incident",
+	}
 	first, err := service.BanManual(t.Context(), request, now)
 	require.NoError(t, err)
 
@@ -346,6 +379,7 @@ func TestIdempotentManualBan(t *testing.T) {
 // TestExpiringShorterSourceIsNoOp verifies a surviving source keeps the same desired revision.
 func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	t.Parallel()
+
 	store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
 	service, err := bans.NewAdminService(store)
@@ -358,7 +392,9 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	require.NoError(t, err)
 
 	manual, err := service.BanManual(t.Context(), bans.ManualBanRequest{
-		IP: "203.0.113.1", Duration: time.Hour, Reason: "extended review",
+		IP:       "203.0.113.1",
+		Duration: time.Hour,
+		Reason:   "extended review",
 	}, now)
 	require.NoError(t, err)
 	assert.Len(t, manual.Sources, 2)

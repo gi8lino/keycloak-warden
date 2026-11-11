@@ -53,7 +53,11 @@ func TestMigrateRejectsNewerDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	rule := detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}
+	rule := detection.Rule{
+		Threshold: 2,
+		Window:    time.Minute,
+		Ban:       time.Minute,
+	}
 	store, err := sqlite.Open(path, rule, nil)
 	if store != nil {
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })

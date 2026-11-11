@@ -10,6 +10,7 @@ import (
 
 func TestStateValid(t *testing.T) {
 	t.Parallel()
+
 	assert.True(t, StateBanned.Valid())
 	assert.True(t, StateUnbanned.Valid())
 	assert.False(t, State("").Valid())

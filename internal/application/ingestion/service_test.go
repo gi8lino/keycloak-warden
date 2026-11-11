@@ -65,7 +65,11 @@ func TestNew(t *testing.T) {
 	t.Run("rejects missing repository", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ingestion.New(nil, detection.Rule{Threshold: 1, Window: time.Minute, Ban: time.Minute})
+		_, err := ingestion.New(nil, detection.Rule{
+			Threshold: 1,
+			Window:    time.Minute,
+			Ban:       time.Minute,
+		})
 
 		require.ErrorContains(t, err, "repository")
 	})
@@ -96,7 +100,11 @@ func processEvent(t *testing.T, event events.Envelope, count int, inserted bool)
 	t.Helper()
 	tx := &fakeTx{inserted: inserted, count: count}
 	repo := &fakeRepository{tx: tx}
-	service, err := ingestion.New(repo, detection.Rule{Threshold: 5, Window: time.Minute, Ban: 15 * time.Minute})
+	service, err := ingestion.New(repo, detection.Rule{
+		Threshold: 5,
+		Window:    time.Minute,
+		Ban:       15 * time.Minute,
+	})
 
 	require.NoError(t, err)
 	decision, err := service.Process(t.Context(), event, time.Now())

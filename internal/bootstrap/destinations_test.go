@@ -20,6 +20,7 @@ func TestDestinations(t *testing.T) {
 
 	t.Run("groups use stable provider-qualified names", func(t *testing.T) {
 		t.Parallel()
+
 		providers, names, err := Destinations(config.Targets{
 			Webhook: map[string]config.WebhookTarget{
 				"edge": {URL: "https://example.org/a"},
@@ -37,6 +38,7 @@ func TestDestinations(t *testing.T) {
 
 	t.Run("supports custom names and dot-separated identifiers", func(t *testing.T) {
 		t.Parallel()
+
 		providers, names, err := Destinations(config.Targets{
 			Webhook: map[string]config.WebhookTarget{
 				"custom-name-a": {URL: "https://example.org/a"},
@@ -58,31 +60,37 @@ func TestDestinations(t *testing.T) {
 
 	t.Run("rejects empty webhook target name", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidWebhookTargetName(t, "")
 	})
 
 	t.Run("rejects whitespace-only webhook target name", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidWebhookTargetName(t, "  ")
 	})
 
 	t.Run("rejects padded webhook target name", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidWebhookTargetName(t, " padded")
 	})
 
 	t.Run("rejects webhook target name containing spaces", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidWebhookTargetName(t, "foo bar")
 	})
 
 	t.Run("rejects webhook target name containing a newline", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidWebhookTargetName(t, "foo\nbar")
 	})
 
 	t.Run("accepts slashes in webhook target names", func(t *testing.T) {
 		t.Parallel()
+
 		providers, names, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"ops/alerts": {URL: "https://example.org/events"},
 		}})
@@ -93,6 +101,7 @@ func TestDestinations(t *testing.T) {
 
 	t.Run("accepts slashes in cloudflare target names", func(t *testing.T) {
 		t.Parallel()
+
 		providers, names, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
 			"primary/zone": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
 		}})
@@ -116,21 +125,25 @@ func TestResolveWebhookURL(t *testing.T) {
 
 	t.Run("accepts literal HTTPS URL", func(t *testing.T) {
 		t.Parallel()
+
 		assertResolvedWebhookURL(t, "https://example.org/events?key=a:b", "https://example.org/events?key=a:b")
 	})
 
 	t.Run("accepts literal loopback HTTP URL", func(t *testing.T) {
 		t.Parallel()
+
 		assertResolvedWebhookURL(t, "http://127.0.0.1:8090/header", "http://127.0.0.1:8090/header")
 	})
 
 	t.Run("accepts explicit literal reference", func(t *testing.T) {
 		t.Parallel()
+
 		assertResolvedWebhookURL(t, "literal:https://example.org/events", "https://example.org/events")
 	})
 
 	t.Run("rejects unknown URL reference scheme", func(t *testing.T) {
 		t.Parallel()
+
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"edge": {URL: "htps://example.org/events"},
 		}})
@@ -153,41 +166,49 @@ func TestAllowedWebhook(t *testing.T) {
 
 	t.Run("accepts HTTPS with path and query", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "https://receiver.example.com/events?key=123", true)
 	})
 
 	t.Run("accepts local HTTP", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "http://localhost:8080/events", true)
 	})
 
 	t.Run("accepts IPv6 loopback HTTP", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "http://[::1]:8080/events", true)
 	})
 
 	t.Run("rejects remote HTTP", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "http://receiver.example.com/events", false)
 	})
 
 	t.Run("rejects embedded credentials", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "https://user:secret@receiver.example.com/events", false)
 	})
 
 	t.Run("rejects fragments", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "https://receiver.example.com/events#fragment", false)
 	})
 
 	t.Run("rejects missing host", func(t *testing.T) {
 		t.Parallel()
+
 		assertAllowedWebhook(t, "https:///events", false)
 	})
 
 	t.Run("rejects nil URL", func(t *testing.T) {
 		t.Parallel()
+
 		assert.False(t, allowedWebhook(nil))
 	})
 }
@@ -386,15 +407,19 @@ func assertInvalidZoneID(t *testing.T, reference string) {
 
 func TestDestinationsProviderValidation(t *testing.T) {
 	t.Parallel()
+
 	t.Run("invalid Cloudflare zone ID is reported before token lookup", func(t *testing.T) {
 		t.Parallel()
+
 		_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
 			"edge": {ZoneID: "invalid", APIToken: "env:WARDEN_TEST_UNDEFINED_TOKEN"},
 		}})
 		require.ErrorContains(t, err, "zone-id: expected a 32-character hexadecimal")
 	})
+
 	t.Run("webhook URL must use an allowed transport", func(t *testing.T) {
 		t.Parallel()
+
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"receiver": {URL: "http://remote.example/events"},
 		}})
@@ -405,21 +430,25 @@ func TestDestinationsProviderValidation(t *testing.T) {
 func TestWebhookHeaderValueValidation(t *testing.T) {
 	t.Run("rejects CRLF header injection", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidHeaderValue(t, "evil\r\nX-Test: yes")
 	})
 
 	t.Run("rejects NUL header byte", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidHeaderValue(t, "\x00bad")
 	})
 
 	t.Run("rejects DEL header byte", func(t *testing.T) {
 		t.Parallel()
+
 		assertInvalidHeaderValue(t, "bad\x7f")
 	})
 
 	t.Run("allows transport-related headers other than Content-Type", func(t *testing.T) {
 		t.Parallel()
+
 		providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"edge": {URL: "https://example.org", Headers: map[string]string{
 				"Host": "example.org", "Content-Length": "123", "Transfer-Encoding": "chunked",
@@ -431,13 +460,16 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 		assert.Equal(t, "123", p.Headers.Get("Content-Length"))
 		assert.Equal(t, "chunked", p.Headers.Get("Transfer-Encoding"))
 	})
+
 	t.Run("accepts tabs in resolved header values", func(t *testing.T) {
 		t.Parallel()
+
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"edge": {URL: "https://example.org", Headers: map[string]string{"X-Key": "abc\tdef"}},
 		}})
 		require.NoError(t, err)
 	})
+
 	t.Run("validates resolved header value", func(t *testing.T) {
 		t.Setenv("WARDEN_TEST_BAD_HEADER_VALUE", "oops\r\nInjected: yes")
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
@@ -445,8 +477,10 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 		}})
 		require.ErrorContains(t, err, "invalid HTTP header value")
 	})
+
 	t.Run("direct initialization rejects malformed struct configuration", func(t *testing.T) {
 		t.Parallel()
+
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
 			"edge": {URL: "https://example.org", Headers: map[string]string{"Content-Type": "text/plain"}},
 		}})

@@ -148,8 +148,10 @@ func scrape(t *testing.T, registry *Registry) string {
 
 func TestMethodLabelCardinality(t *testing.T) {
 	t.Parallel()
+
 	t.Run("arbitrary methods share one label", func(t *testing.T) {
 		t.Parallel()
+
 		registry := NewRegistry(true, "test")
 		handler := registry.InstrumentHTTP(http.NotFoundHandler())
 		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("CUSTOM-A", "/", nil))

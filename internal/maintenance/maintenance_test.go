@@ -53,6 +53,7 @@ func TestScheduleValidate(t *testing.T) {
 
 	t.Run("accepts configured intervals", func(t *testing.T) {
 		t.Parallel()
+
 		sched := Schedule{
 			PruneInterval:    MinInterval,
 			OptimizeInterval: time.Hour,
@@ -74,6 +75,7 @@ func TestScheduleValidate(t *testing.T) {
 
 	t.Run("rejects short optimize interval", func(t *testing.T) {
 		t.Parallel()
+
 		sched := Schedule{
 			PruneInterval:    MinInterval,
 			OptimizeInterval: time.Millisecond,
@@ -84,6 +86,7 @@ func TestScheduleValidate(t *testing.T) {
 
 	t.Run("rejects overlong intervals", func(t *testing.T) {
 		t.Parallel()
+
 		sched := Schedule{
 			PruneInterval:    MaxInterval + time.Second,
 			OptimizeInterval: time.Hour,
@@ -95,6 +98,7 @@ func TestScheduleValidate(t *testing.T) {
 
 func TestRecurringMaintenance(t *testing.T) {
 	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
 		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Minute, OptimizeInterval: 2 * time.Minute}, discardLogger())
@@ -118,6 +122,7 @@ func TestRecurringMaintenance(t *testing.T) {
 
 func TestMaintenanceRetry(t *testing.T) {
 	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{
 			pruneFailure:    true,
@@ -150,6 +155,7 @@ func TestMaintenanceRetry(t *testing.T) {
 
 func TestMaintenanceClose(t *testing.T) {
 	t.Parallel()
+
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
 		sched := Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}
