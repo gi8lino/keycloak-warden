@@ -25,6 +25,7 @@ services:
       - --database=/data/warden.db
       - --management-listen-address=:8081
       - --access-log
+      - --log-format=text
       - --debug
       - --metrics
 
