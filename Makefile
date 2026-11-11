@@ -17,7 +17,7 @@ KUMBUKA_CLI_ASSET ?= kumbuka-cli_{version}_{os}_{arch}.tar.gz
 # renovate: datasource=github-releases depName=gi8lino/keycloak-snitch
 SNITCH_VERSION ?= v1.0.0
 SNITCH_RELEASE := $(patsubst v%,%,$(SNITCH_VERSION))
-SNITCH_JAR := examples/e2e/snitch/keycloak-snitch-$(SNITCH_RELEASE).jar
+SNITCH_JAR := test/e2e/snitch/keycloak-snitch-$(SNITCH_RELEASE).jar
 SNITCH_URL := https://github.com/gi8lino/keycloak-snitch/releases/download/$(SNITCH_VERSION)/keycloak-snitch-$(SNITCH_RELEASE).jar
 
 ##@ Assets
@@ -53,11 +53,11 @@ E2E_WARDEN_PORT ?= 18081
 E2E_MANAGEMENT_PORT ?= 18082
 E2E_RECEIVER_PORT ?= 18090
 
-E2E_KEYCLOAK_REALM_FILE := examples/e2e/realm/warden-e2e.json
+E2E_KEYCLOAK_REALM_FILE := test/e2e/realm/warden-e2e.json
 E2E_KEYCLOAK_REALM := $(shell sed -n 's/^[[:space:]]*"realm"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' $(E2E_KEYCLOAK_REALM_FILE))
 E2E_KEYCLOAK_URL := http://127.0.0.1:$(E2E_KC_PORT)/realms/$(E2E_KEYCLOAK_REALM)/account/
 
-E2E_COMPOSE := docker compose -p $(E2E_PROJECT) -f examples/e2e/compose.yaml
+E2E_COMPOSE := docker compose -p $(E2E_PROJECT) -f test/e2e/compose.yaml
 
 export SNITCH_VERSION SNITCH_RELEASE
 export E2E_PROJECT E2E_KC_PORT E2E_WARDEN_PORT E2E_MANAGEMENT_PORT E2E_RECEIVER_PORT
@@ -217,7 +217,7 @@ e2e-reset: ## Stop the stack and delete its dedicated SQLite volume.
 e2e-test: ## Run the real Keycloak -> Snitch -> Warden -> webhook E2E flow.
 	$(MAKE) e2e-reset
 	$(MAKE) e2e-up
-	sh examples/e2e/test.sh
+	sh test/e2e/test.sh
 
 ##@ Testing
 

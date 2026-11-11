@@ -1,0 +1,13 @@
+# Deliberately low threshold for end-to-end testing.
+rule:
+  threshold: 2
+  window: 1m
+  ban: 15m
+
+targets:
+  webhook:
+    receiver:
+      # Receiver shares Warden's network namespace (loopback HTTP is allowed).
+      url: env:WARDEN_E2E_WEBHOOK_URL
+      headers:
+        X-API-Key: env:WARDEN_E2E_WEBHOOK_KEY
