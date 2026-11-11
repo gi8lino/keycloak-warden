@@ -4,15 +4,15 @@ Warden is a single Go service backed by a persistent SQLite database. Deploy **o
 
 ## Kubernetes example
 
-The repository includes complete [Kubernetes manifests](https://github.com/gi8lino/keycloak-warden/tree/main/examples/kubernetes) for a Deployment, Service, persistent volume claim, configuration, and secret template.
+The repository includes complete [Kubernetes manifests](https://github.com/gi8lino/keycloak-warden/tree/main/deploy/kubernetes) for a Deployment, Service, persistent volume claim, configuration, and secret template.
 
-1. Set the release image tag in `examples/kubernetes/deployment.yaml`.
+1. Set the release image tag in `deploy/kubernetes/deployment.yaml`.
 2. Provide the Warden administrator token, Snitch signing secret, and provider credentials through Kubernetes Secrets.
-3. Edit `examples/kubernetes/warden.yaml` to configure your rule and destinations.
+3. Edit `deploy/kubernetes/warden.yaml` to configure your rule and destinations.
 4. Apply the manifests.
 
 ```sh
-kubectl apply -k examples/kubernetes
+kubectl apply -k deploy/kubernetes
 kubectl -n keycloak rollout status deployment/keycloak-warden
 ```
 

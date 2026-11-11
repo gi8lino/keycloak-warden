@@ -1,5 +1,0 @@
-# Keep this Keycloak version aligned with the Snitch build's Keycloak SPI.
-FROM quay.io/keycloak/keycloak:26.8.2
-
-ARG SNITCH_VERSION
-COPY snitch/keycloak-snitch-${SNITCH_VERSION}.jar /opt/keycloak/providers/

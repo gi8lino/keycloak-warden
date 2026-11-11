@@ -7,7 +7,7 @@ Run one Warden instance next to Keycloak, using SQLite for persistent storage. T
 Set the image version in `deployment.yaml`. Then copy the Secret template **outside the repository** and replace every placeholder:
 
 ```sh
-cp examples/kubernetes/secret.example.yaml /tmp/keycloak-warden-secrets.yaml
+cp deploy/kubernetes/secret.example.yaml /tmp/keycloak-warden-secrets.yaml
 chmod 600 /tmp/keycloak-warden-secrets.yaml
 # Edit the copied file before applying it.
 kubectl apply -f /tmp/keycloak-warden-secrets.yaml
@@ -58,7 +58,7 @@ Both Keycloak and Warden must use the **same Snitch signing key**.
 From the repository root:
 
 ```sh
-kubectl apply -k examples/kubernetes
+kubectl apply -k deploy/kubernetes
 kubectl -n keycloak rollout status deployment/keycloak-warden
 ```
 
