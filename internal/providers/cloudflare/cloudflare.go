@@ -15,8 +15,12 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-// maxRulePages bounds the number of Cloudflare list requests in one reconciliation.
-const maxRulePages = 100
+const (
+	// maxRulePages bounds the number of Cloudflare list requests in one reconciliation.
+	maxRulePages = 100
+	// maxResponseBytes bounds each Cloudflare response before JSON decoding.
+	maxResponseBytes = 1 << 20
+)
 
 // Provider manages blocks in one Cloudflare zone.
 type Provider struct {
@@ -183,9 +187,18 @@ func (p Provider) call(ctx context.Context, method, endpoint string, body any) (
 	}
 	defer resp.Body.Close() // nolint:errcheck
 
-	decodeErr := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&out)
-	if decodeErr != nil && isSuccessfulStatus(resp.StatusCode) {
-		return out, decodeErr
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return out, errors.New("Cloudflare response read failed") // nolint:staticcheck
+	}
+	if len(data) > maxResponseBytes {
+		return out, fmt.Errorf("Cloudflare response exceeds %d bytes", maxResponseBytes) // nolint:staticcheck
+	}
+	if err := json.Unmarshal(data, &out); err != nil {
+		if !isSuccessfulStatus(resp.StatusCode) {
+			return out, out.rejection(resp.StatusCode)
+		}
+		return out, fmt.Errorf("decode Cloudflare response: %w", err)
 	}
 	if !isSuccessfulStatus(resp.StatusCode) || !out.Success {
 		return out, out.rejection(resp.StatusCode)
