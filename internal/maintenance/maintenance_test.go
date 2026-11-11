@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -16,9 +17,9 @@ import (
 // fakeStore records each maintenance attempt and optionally fails the first one.
 type fakeStore struct {
 	// pruneCalls counts observation cleanup attempts.
-	pruneCalls int
+	pruneCalls atomic.Int32
 	// optimizeCalls counts planner optimization attempts.
-	optimizeCalls int
+	optimizeCalls atomic.Int32
 	// pruneFailure causes the first cleanup attempt to fail.
 	pruneFailure bool
 	// optimizeFailure causes the first optimization attempt to fail.
@@ -27,8 +28,8 @@ type fakeStore struct {
 
 // Prune records a cleanup attempt and optionally injects a transient failure.
 func (s *fakeStore) Prune(context.Context, time.Time) error {
-	s.pruneCalls++
-	if s.pruneFailure && s.pruneCalls == 1 {
+	attempt := s.pruneCalls.Add(1)
+	if s.pruneFailure && attempt == 1 {
 		return errors.New("prune failed")
 	}
 	return nil
@@ -36,8 +37,8 @@ func (s *fakeStore) Prune(context.Context, time.Time) error {
 
 // Optimize records an optimization attempt and optionally injects a transient failure.
 func (s *fakeStore) Optimize(context.Context) error {
-	s.optimizeCalls++
-	if s.optimizeFailure && s.optimizeCalls == 1 {
+	attempt := s.optimizeCalls.Add(1)
+	if s.optimizeFailure && attempt == 1 {
 		return errors.New("optimize failed")
 	}
 	return nil
@@ -107,18 +108,18 @@ func TestRecurringMaintenance(t *testing.T) {
 		defer runner.Close()
 
 		synctest.Wait()
-		assert.Equal(t, 1, store.pruneCalls, "pruning runs immediately")
-		assert.Zero(t, store.optimizeCalls, "opening SQLite already performs the initial optimization")
+		assert.Equal(t, int32(1), store.pruneCalls.Load(), "pruning runs immediately")
+		assert.Zero(t, store.optimizeCalls.Load(), "opening SQLite already performs the initial optimization")
 
 		time.Sleep(time.Minute)
 		synctest.Wait()
-		assert.Equal(t, 2, store.pruneCalls)
-		assert.Zero(t, store.optimizeCalls)
+		assert.Equal(t, int32(2), store.pruneCalls.Load())
+		assert.Zero(t, store.optimizeCalls.Load())
 
 		time.Sleep(time.Minute)
 		synctest.Wait()
-		assert.Equal(t, 3, store.pruneCalls)
-		assert.Equal(t, 1, store.optimizeCalls)
+		assert.Equal(t, int32(3), store.pruneCalls.Load())
+		assert.Equal(t, int32(1), store.optimizeCalls.Load())
 	})
 }
 
@@ -138,20 +139,20 @@ func TestMaintenanceRetry(t *testing.T) {
 		defer runner.Close()
 
 		synctest.Wait()
-		assert.Equal(t, 1, store.pruneCalls)
+		assert.Equal(t, int32(1), store.pruneCalls.Load())
 
 		time.Sleep(time.Second)
 		synctest.Wait()
-		assert.Equal(t, 1, store.optimizeCalls)
+		assert.Equal(t, int32(1), store.optimizeCalls.Load())
 
 		time.Sleep(4 * time.Second)
 		synctest.Wait()
-		assert.Equal(t, 2, store.pruneCalls, "failed prune retried after five seconds")
-		assert.Equal(t, 1, store.optimizeCalls, "failed optimization is retried independently")
+		assert.Equal(t, int32(2), store.pruneCalls.Load(), "failed prune retried after five seconds")
+		assert.Equal(t, int32(1), store.optimizeCalls.Load(), "failed optimization is retried independently")
 
 		time.Sleep(time.Second)
 		synctest.Wait()
-		assert.Equal(t, 2, store.optimizeCalls)
+		assert.Equal(t, int32(2), store.optimizeCalls.Load())
 	})
 }
 
@@ -165,7 +166,7 @@ func TestMaintenanceClose(t *testing.T) {
 		synctest.Wait()
 		runner.Close()
 		runner.Close()
-		assert.Equal(t, 1, store.pruneCalls)
-		assert.Zero(t, store.optimizeCalls)
+		assert.Equal(t, int32(1), store.pruneCalls.Load())
+		assert.Zero(t, store.optimizeCalls.Load())
 	})
 }
