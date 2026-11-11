@@ -29,10 +29,7 @@ func Run(ctx context.Context, applicationURL, token string, inputs []string, enc
 		return fmt.Errorf("list active bans: %w", err)
 	}
 
-	ids := make(map[string]string, len(active))
-	for _, view := range active {
-		ids[view.Decision.IP] = view.Decision.ID
-	}
+	ids := decisionIDsByIP(active)
 
 	var failures []error
 	batch := output.Batch{Operation: "unban", Results: make([]output.Item, 0, len(addresses))}
@@ -50,7 +47,7 @@ func Run(ctx context.Context, applicationURL, token string, inputs []string, enc
 			continue
 		}
 
-		view, err := client.Unban(ctx, id)
+		record, err := client.Unban(ctx, id)
 		if err != nil {
 			failures = append(failures, fmt.Errorf("failed %s: %w", ip, err))
 			batch.Failed++
@@ -58,13 +55,21 @@ func Run(ctx context.Context, applicationURL, token string, inputs []string, enc
 			continue
 		}
 
-		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &view})
+		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &record})
 		batch.Succeeded++
 	}
 
 	if err := encode(batch); err != nil {
-		return errors.Join(append(failures, err)...)
+		failures = append(failures, err)
 	}
-
 	return errors.Join(failures...)
+}
+
+// decisionIDsByIP indexes active decisions for CLI address-based unban requests.
+func decisionIDsByIP(records []bans.Record) map[string]string {
+	ids := make(map[string]string, len(records))
+	for _, record := range records {
+		ids[record.Decision.IP] = record.Decision.ID
+	}
+	return ids
 }

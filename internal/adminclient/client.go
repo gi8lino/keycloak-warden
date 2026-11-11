@@ -26,7 +26,7 @@ const (
 
 // Client authenticates administrative requests against the running Warden server.
 type Client struct {
-	// url is the validated administrative API origin.
+	// url is the validated administrative API base URL, including its optional route prefix.
 	url *url.URL
 	// token authenticates requests to the administrative API.
 	token string

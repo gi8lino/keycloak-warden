@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/output"
-
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 

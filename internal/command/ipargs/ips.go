@@ -4,8 +4,9 @@ package ipargs
 import (
 	"errors"
 	"fmt"
-	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 	"net/netip"
+
+	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 )
 
 // Validate requires a single unicast IPv4 or IPv6 address without a zone.

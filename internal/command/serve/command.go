@@ -4,14 +4,12 @@ import (
 	"context"
 	"io"
 
-	"github.com/gi8lino/keycloak-warden/internal/maintenance"
-
 	appkitlogging "github.com/containeroo/appkit/logging"
-
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 
+	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/internal/config"
+	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
 
 // Register adds the serve command and its operational flags to the command tree.

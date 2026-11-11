@@ -10,7 +10,7 @@ type Item struct {
 	IPAddress string `json:"ipAddress" yaml:"ipAddress"`
 	// Success reports whether the API accepted the operation.
 	Success bool `json:"success" yaml:"success"`
-	// Ban is the returned decision and source view when successful.
+	// Ban is the returned decision record and sources when successful.
 	Ban *bans.Record `json:"ban,omitempty" yaml:"ban,omitempty"`
 	// Error is the per-address error when unsuccessful.
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`

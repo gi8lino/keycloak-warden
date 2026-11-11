@@ -44,7 +44,7 @@ func Run(
 			break
 		}
 
-		view, err := client.Ban(ctx, bans.ManualBanRequest{
+		record, err := client.Ban(ctx, bans.ManualBanRequest{
 			IP:       ip,
 			Duration: duration,
 			Reason:   reason,
@@ -56,13 +56,12 @@ func Run(
 			continue
 		}
 
-		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &view})
+		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &record})
 		batch.Succeeded++
 	}
 
 	if err := encode(batch); err != nil {
-		return errors.Join(append(failures, err)...)
+		failures = append(failures, err)
 	}
-
 	return errors.Join(failures...)
 }
