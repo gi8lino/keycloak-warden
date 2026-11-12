@@ -17,7 +17,7 @@ id = "me.kumbuka.mermaid"
 repository = "kumbuka-me/plugins"
 tag_prefix = "mermaid/v"
 asset = "mermaid"
-version = "1.10.0"
+version = "1.11.1"
 
 [[plugin]]
 id = "me.kumbuka.code-annotations"
