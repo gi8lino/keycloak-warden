@@ -9,7 +9,7 @@ import (
 	"github.com/containeroo/httpkit/prefix"
 	"github.com/containeroo/tinyflags"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // ServerFlags holds the global application listener settings parsed by tinyflags.
@@ -66,7 +66,7 @@ func RegisterAdmin(cmd *tinyflags.Command, server ServerFlags) AdminFlags {
 			}
 			*flags.ApplicationURL = base.String()
 		}
-		return adminclient.ValidateURL(*flags.ApplicationURL)
+		return client.ValidateURL(*flags.ApplicationURL)
 	})
 	return flags
 }

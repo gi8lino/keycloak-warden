@@ -11,8 +11,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	housekeeping "github.com/gi8lino/keycloak-warden/internal/maintenance"
 	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 func TestRun(t *testing.T) {
@@ -29,11 +29,11 @@ func TestRun(t *testing.T) {
 		}))
 		defer server.Close()
 
-		var value housekeeping.Status
+		var value client.Maintenance
 
 		require.NoError(t, Run(t.Context(), server.URL, "admin-secret", ActionStatus, func(result any) error {
 			var ok bool
-			value, ok = result.(housekeeping.Status)
+			value, ok = result.(client.Maintenance)
 			require.True(t, ok)
 			return nil
 		}))

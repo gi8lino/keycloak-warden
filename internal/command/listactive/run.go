@@ -4,13 +4,13 @@ package listactive
 import (
 	"context"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // Run prepares the authenticated client and encodes the retrieved active decisions.
 func Run(ctx context.Context, applicationURL, token string, encode output.Encoder) error {
-	client, err := adminclient.New(applicationURL, token)
+	client, err := client.New(applicationURL, token)
 	if err != nil {
 		return err
 	}

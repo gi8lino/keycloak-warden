@@ -4,13 +4,13 @@ package inspect
 import (
 	"context"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // Run prepares an authenticated client and encodes decisions only after all reads succeed.
 func Run(ctx context.Context, applicationURL, token string, ids []string, encode output.Encoder) error {
-	client, err := adminclient.New(applicationURL, token)
+	client, err := client.New(applicationURL, token)
 	if err != nil {
 		return err
 	}

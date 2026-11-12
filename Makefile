@@ -242,7 +242,7 @@ fmt: ## Format Go source code.
 
 .PHONY: check-format
 check-format: ## Verify Go source formatting and whitespace.
-	@set -e; unformatted="$$(gofmt -l cmd internal)"; \
+	@set -e; unformatted="$$(gofmt -l cmd internal pkg)"; \
 	if [ -n "$$unformatted" ]; then \
 		printf 'Go files need formatting:\n%s\n' "$$unformatted"; \
 		exit 1; \
@@ -298,4 +298,3 @@ cli: $(KUMBUKA_CLI) ## Install the pinned Kumbuka CLI.
 
 $(SVG_TO_PNG): | $(DEV_TOOLS_BIN)
 	$(call download-dev-tool,svg-to-png,$@)
-

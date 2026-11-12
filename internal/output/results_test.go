@@ -8,8 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 func TestBatchYAML(t *testing.T) {
@@ -43,13 +42,13 @@ func TestBatchYAML(t *testing.T) {
 			Operation: "ban", Results: []Item{{
 				IPAddress: "203.0.113.10",
 				Success:   true,
-				Ban: &bans.Record{
-					Decision: decisions.Decision{
+				Ban: &client.Record{
+					Decision: client.Decision{
 						ID:       "decision-one",
 						IP:       "203.0.113.10",
 						Revision: 4,
 					},
-					Deliveries: []decisions.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
+					Deliveries: []client.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
 				},
 			}},
 			Succeeded: 1,

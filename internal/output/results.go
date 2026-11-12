@@ -1,7 +1,7 @@
 package output
 
 import (
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // Item describes the outcome of one requested IP operation.
@@ -11,7 +11,7 @@ type Item struct {
 	// Success reports whether the API accepted the operation.
 	Success bool `json:"success" yaml:"success"`
 	// Ban is the returned decision record and sources when successful.
-	Ban *bans.Record `json:"ban,omitempty" yaml:"ban,omitempty"`
+	Ban *client.Record `json:"ban,omitempty" yaml:"ban,omitempty"`
 	// Error is the per-address error when unsuccessful.
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }

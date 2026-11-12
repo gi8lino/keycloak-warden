@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 func TestRun(t *testing.T) {
@@ -26,10 +26,10 @@ func TestRun(t *testing.T) {
 		}))
 		defer server.Close()
 
-		var records []bans.Record
+		var records []client.Record
 		err := Run(t.Context(), server.URL+"/warden", "admin-secret", func(value any) error {
 			var ok bool
-			records, ok = value.([]bans.Record)
+			records, ok = value.([]client.Record)
 			require.True(t, ok)
 			return nil
 		})

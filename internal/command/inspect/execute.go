@@ -4,19 +4,18 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // execute fetches decisions in argument order and fails without returning a partial result.
-func execute(ctx context.Context, client *adminclient.Client, ids []string) ([]bans.Record, error) {
-	records := make([]bans.Record, 0, len(ids))
+func execute(ctx context.Context, api *client.Client, ids []string) ([]client.Record, error) {
+	records := make([]client.Record, 0, len(ids))
 	for _, id := range ids {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
 
-		record, err := client.Get(ctx, id)
+		record, err := api.Get(ctx, id)
 		if err != nil {
 			return nil, fmt.Errorf("inspect decision %q: %w", id, err)
 		}

@@ -5,9 +5,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
-	housekeeping "github.com/gi8lino/keycloak-warden/internal/maintenance"
 	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // Action identifies a supported remote maintenance command.
@@ -24,19 +23,19 @@ const (
 
 // Run calls the authenticated application API and encodes the returned status.
 func Run(ctx context.Context, applicationURL, token string, action Action, encode output.Encoder) error {
-	client, err := adminclient.New(applicationURL, token)
+	api, err := client.New(applicationURL, token)
 	if err != nil {
 		return err
 	}
 
-	var status housekeeping.Status
+	var status client.Maintenance
 	switch action {
 	case ActionStatus:
-		status, err = client.MaintenanceStatus(ctx)
+		status, err = api.MaintenanceStatus(ctx)
 	case ActionPrune:
-		status, err = client.PruneObservations(ctx)
+		status, err = api.PruneObservations(ctx)
 	case ActionOptimize:
-		status, err = client.OptimizeDatabase(ctx)
+		status, err = api.OptimizeDatabase(ctx)
 	default:
 		return fmt.Errorf("unsupported maintenance action %q", action)
 	}

@@ -6,9 +6,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // Run validates the requested IPs, prepares the client, and reports batch results.
@@ -25,7 +25,7 @@ func Run(
 		return err
 	}
 
-	client, err := adminclient.New(applicationURL, token)
+	client, err := client.New(applicationURL, token)
 	if err != nil {
 		return err
 	}
