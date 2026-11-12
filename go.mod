@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/containeroo/appkit v0.7.0
 	github.com/containeroo/httpkit v0.1.1
-	github.com/containeroo/resolver v0.4.0
+	github.com/containeroo/resolver v0.4.1
 	github.com/containeroo/tinyflags v0.11.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/stretchr/testify v1.12.1
@@ -30,7 +30,7 @@ require (
 	golang.org/x/sync v0.24.0 // indirect
 	golang.org/x/sys v0.49.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
-	gopkg.in/ini.v1 v1.67.3 // indirect
+	gopkg.in/ini.v1 v1.68.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
