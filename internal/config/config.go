@@ -40,5 +40,8 @@ func (cfg Config) Validate() error {
 	if err := cfg.Rule.Validate(); err != nil {
 		return err
 	}
-	return cfg.Targets.Validate()
+	if err := cfg.Targets.Validate(); err != nil {
+		return err
+	}
+	return nil
 }
