@@ -1,4 +1,4 @@
-# syntax=docker/dockerfile:1.28
+# syntax=docker/dockerfile:1.29
 
 # Build on the build machine while targeting the requested image platform.
 FROM --platform=$BUILDPLATFORM golang:1.27.4 AS build
