@@ -128,7 +128,7 @@ func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, er
 }
 
 // readActiveBans selects active decisions in IP order and indexes their positions.
-func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, map[string]int, error) {
+func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) (list []bans.Record, byIP map[string]int, err error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT id, revision, ip, active, expires
 FROM decisions
@@ -139,8 +139,8 @@ ORDER BY ip
 		return nil, nil, err
 	}
 
-	list := []bans.Record{}
-	byIP := make(map[string]int)
+	list = []bans.Record{}
+	byIP = make(map[string]int)
 	for rows.Next() {
 		record := bans.Record{
 			Sources:    []bans.Source{},

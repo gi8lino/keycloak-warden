@@ -58,7 +58,7 @@ func reconcileDecision(
 	ip string,
 	now time.Time,
 	targets []string,
-) (decisions.Decision, bool, error) {
+) (decision decisions.Decision, changed bool, err error) {
 	previous, err := readDecisionByIP(ctx, tx, ip)
 	if err != nil {
 		return decisions.Decision{}, false, err
@@ -68,7 +68,7 @@ func reconcileDecision(
 		return decisions.Decision{}, false, err
 	}
 
-	decision, changed := bans.Reconcile(previous, sources, now)
+	decision, changed = bans.Reconcile(previous, sources, now)
 	if changed {
 		if _, err := tx.ExecContext(ctx, `
 UPDATE decisions

@@ -64,7 +64,7 @@ func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, 
 }
 
 // validateManualBanRequest validates and normalizes a manual ban request.
-func validateManualBanRequest(request ManualBanRequest) (string, string, error) {
+func validateManualBanRequest(request ManualBanRequest) (canonicalIP, reason string, err error) {
 	ip, err := ipaddress.ParseUnicast(strings.TrimSpace(request.IP))
 	if err != nil {
 		return "", "", fmt.Errorf("%w: ipAddress must be a single unicast address", ErrInvalid)
@@ -74,7 +74,7 @@ func validateManualBanRequest(request ManualBanRequest) (string, string, error) 
 		return "", "", fmt.Errorf("%w: duration must be between %s and %s", ErrInvalid, MinDuration, MaxDuration)
 	}
 
-	reason := strings.TrimSpace(request.Reason)
+	reason = strings.TrimSpace(request.Reason)
 	if !validReason(reason, MaxReasonLength) {
 		return "", "", fmt.Errorf("%w: reason must contain 1–%d bytes", ErrInvalid, MaxReasonLength)
 	}
