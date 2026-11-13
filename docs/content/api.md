@@ -68,7 +68,7 @@ For example, an active manual ban that has been acknowledged by a webhook might 
 
 ## Webhook delivery
 
-Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry.
+Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry. When a target defines `body-template`, Warden renders a custom JSON body using those same fields; the default payload remains unchanged for other targets.
 
 Webhook responses in the `2xx` range acknowledge a delivery. An unsuccessful delivery is retried; a successful webhook response means the **receiver accepted the notification**, not necessarily that an external firewall has already reconciled the state.
 
@@ -96,3 +96,5 @@ curl -fsS -X POST -H "Authorization: Bearer $WARDEN_ADMIN_TOKEN" http://127.0.0.
 ```
 
 With a route prefix, these routes are prefixed like `/bans`; the management listener remains separate.
+
+

@@ -34,6 +34,7 @@ targets:
   webhook:
     ops:
       url: env:WEBHOOK_URL
+      body-template: file:/config/slack.tmpl
       headers:
         Authorization: env:WEBHOOK_AUTHORIZATION
         X-Source: warden
@@ -48,6 +49,7 @@ targets:
 		assert.Equal(t, 2, cfg.Rule.Threshold)
 		assert.Equal(t, 3*time.Minute, cfg.Rule.Ban)
 		assert.Equal(t, "env:WEBHOOK_URL", cfg.Targets.Webhook["ops"].URL)
+		assert.Equal(t, "file:/config/slack.tmpl", cfg.Targets.Webhook["ops"].BodyTemplate)
 		assert.Equal(t, "env:WEBHOOK_AUTHORIZATION", cfg.Targets.Webhook["ops"].Headers["Authorization"])
 		assert.Equal(t, "warden", cfg.Targets.Webhook["ops"].Headers["X-Source"])
 		assert.Equal(t, "env:CLOUDFLARE_ZONE_ID", cfg.Targets.Cloudflare["primary"].ZoneID)

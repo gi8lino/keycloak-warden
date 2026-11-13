@@ -8,3 +8,12 @@ targets:
     edge:
       zone-id: env:CLOUDFLARE_ZONE_ID
       api-token: env:CLOUDFLARE_API_TOKEN
+  webhook:
+    slack:
+      url: env:SLACK_WEBHOOK_URL
+      body-template: file:/config/templates/slack.json.tmpl
+    # Optional: enable Microsoft Teams after adding MSTEAMS_WEBHOOK_URL
+    # to the keycloak-warden Secret. The template is already mounted.
+    # msteams:
+    #   url: env:MSTEAMS_WEBHOOK_URL
+    #   body-template: file:/config/templates/msteams.json.tmpl

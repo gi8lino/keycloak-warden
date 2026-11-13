@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
 	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
@@ -529,5 +530,130 @@ func TestDeterministicDestinations(t *testing.T) {
 		}}
 		_, _, err := Destinations(targets)
 		require.ErrorContains(t, err, "headers A-Key:")
+	})
+}
+
+func TestWebhookBodyTemplate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses a file reference", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "slack.json.tmpl")
+		require.NoError(t, os.WriteFile(path, []byte(`{"text": {{ json .IP }}}`), 0o600))
+
+		providers, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"slack": {
+					URL:          "https://example.org/webhook",
+					BodyTemplate: "file:" + path,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		provider, ok := providers["webhook.slack"].(webhook.Provider)
+		require.True(t, ok)
+		require.NotNil(t, provider.Template)
+
+		body, err := provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
+
+		// Templates are compiled at startup, not re-read on delivery.
+		require.NoError(t, os.WriteFile(path, []byte(`{"text":"changed"}`), 0o600))
+		body, err = provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
+	})
+
+	t.Run("accepts an explicit literal template", func(t *testing.T) {
+		t.Parallel()
+
+		providers, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"slack": {
+					URL:          "https://example.org/webhook",
+					BodyTemplate: `literal:{"text": {{ json .IP }}}`,
+				},
+			},
+		})
+		require.NoError(t, err)
+
+		provider := providers["webhook.slack"].(webhook.Provider)
+		require.NotNil(t, provider.Template)
+		body, err := provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
+	})
+
+	t.Run("does not require a template", func(t *testing.T) {
+		t.Parallel()
+
+		providers, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"plain": {URL: "https://example.org/webhook"},
+			},
+		})
+		require.NoError(t, err)
+		assert.Nil(t, providers["webhook.plain"].(webhook.Provider).Template)
+	})
+
+	t.Run("rejects an unreadable template file", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"slack": {
+					URL:          "https://example.org/webhook",
+					BodyTemplate: "file:" + filepath.Join(t.TempDir(), "missing.tmpl"),
+				},
+			},
+		})
+		require.ErrorContains(t, err, "body-template")
+		assert.ErrorContains(t, err, `webhook.slack`)
+	})
+
+	t.Run("rejects a malformed template", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"slack": {
+					URL:          "https://example.org/webhook",
+					BodyTemplate: `literal:{{ if .IP }}`,
+				},
+			},
+		})
+		require.ErrorContains(t, err, "body-template")
+	})
+
+	t.Run("rejects invalid rendered JSON at startup", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"slack": {
+					URL:          "https://example.org/webhook",
+					BodyTemplate: `literal:{"text":`,
+				},
+			},
+		})
+		require.ErrorContains(t, err, "body-template")
+		assert.ErrorContains(t, err, "invalid JSON")
+	})
+
+	t.Run("rejects blank optional template source", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"slack": {
+					URL:          "https://example.org/webhook",
+					BodyTemplate: "   ",
+				},
+			},
+		})
+		require.ErrorContains(t, err, "body-template")
 	})
 }

@@ -17,6 +17,9 @@ type WebhookTarget struct {
 	URL string `yaml:"url"`
 	// Headers maps literal HTTP header names to resolvable values.
 	Headers map[string]string `yaml:"headers"`
+	// BodyTemplate optionally resolves to a Go text/template for the JSON request body.
+	// When unset, webhooks receive the unchanged decision JSON.
+	BodyTemplate string `yaml:"body-template"`
 }
 
 // CloudflareTarget configures one Cloudflare zone destination.

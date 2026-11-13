@@ -23,16 +23,33 @@ targets:
       headers:
         Authorization: env:WARDEN_WEBHOOK_AUTHORIZATION
         X-Source: warden
+    slack:
+      url: env:SLACK_WEBHOOK_URL
+      body-template: file:/config/templates/slack.json.tmpl
 ```
-{code highlight="2-4,8-10,12-16" note="2:Number of failed logins needed to trigger a ban." note="3:Rolling detection window, counted per client IP." note="4:Duration of an automatic ban." note="8-10:Named Cloudflare destination; zone ID and token resolve from the environment." note="12-16:Named webhook destination with a required URL and optional request headers." reference-position="right" reference-color="blue" line-numbers="true"}
+{code highlight="2-4,8-9,11-19" note="2:Number of failed logins needed to trigger a ban." note="3:Rolling detection window, counted per client IP." note="4:Duration of an automatic ban." note="8-9:Cloudflare credentials resolve from the environment." note="11-19:Named webhook destinations with optional headers and body templates." reference-position="right" reference-color="blue" line-numbers="true"}
 
 **At least one destination is required.** Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
+
+### Templated webhook bodies
+
+`body-template` is optional for each webhook target. Without it, Warden sends its original decision JSON unchanged. With it, Warden resolves the **template contents** at startup (`file:`, `env:`, or `literal:`), compiles them with [Notifykit text templates](https://github.com/containeroo/notifykit), and renders JSON separately for each desired decision. Restart Warden to reload template files.
+
+For example, `/config/templates/slack.json.tmpl` (a complete example is included at `examples/templates/slack.json.tmpl`):
+
+```json
+{"text": {{ if eq .State "banned" }}{{ json (printf "Warden blocked %s (revision %d)" .IP .Revision) }}{{ else }}{{ json (printf "Warden released %s" .IP) }}{{ end }}}
+```
+
+The template context is the existing decision with fields `.ID`, `.Revision`, `.IP`, `.State`, and `.ExpiresAt`. Use the `json` helper for all dynamic strings to ensure correct escaping. Rendered bodies must be valid JSON and cannot exceed 64 KiB. Warden checks both `banned` and `unbanned` outputs at startup; later rendering errors are reported as delivery failures and retried by the existing worker.
+
+Slack incoming webhooks accept JSON objects containing `text`. The `examples/templates/teams.json.tmpl` sample emits an Adaptive Card message envelope; check that it matches the input format of your selected Microsoft Teams Workflow trigger. Notification receivers may see duplicate messages when a response is lost and Warden retries—Warden continues to acknowledge revisions only on HTTP 2xx.
 
 ## Secrets and value resolution
 
 Warden resolves destination values once on startup using [Resolver](https://github.com/containeroo/resolver). Use `env:NAME`, `file:/path/to/secret`, or a literal value. `literal:` escapes a value that would otherwise look like a resolver reference.
 
-For webhook targets, **HTTPS is required** except when explicitly addressing loopback hosts such as `localhost` or `127.0.0.1`. Redirects are not followed. The `Content-Type` header is reserved; Warden sends JSON with `application/json`. Webhooks have no built-in outbound signing, so supply an authentication header if needed.
+For webhook targets, **HTTPS is required** except when explicitly addressing loopback hosts such as `localhost` or `127.0.0.1`. Redirects are not followed. The `Content-Type` header is reserved; Warden sends JSON with `application/json`. Webhooks have no built-in outbound signing, so supply an authentication header if needed. Templates should be treated as trusted configuration, not user-supplied content.
 
 Inbound requests from Snitch are separately protected by the `--snitch-secret` HMAC key. **Never expose this secret in the public documentation or commit it to the repository.**
 
@@ -76,3 +93,5 @@ Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables
 The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
 
 Consult `warden serve --help` for the definitive list of supported flags for your installed release.
+
+

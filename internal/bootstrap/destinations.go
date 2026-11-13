@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containeroo/notifykit/templates"
 	"github.com/containeroo/resolver"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
@@ -105,11 +106,29 @@ func buildWebhook(
 		headers.Set(canonical, value)
 	}
 
-	return webhook.Provider{
-		URL:     endpoint,
-		Headers: headers,
-		Client:  client,
-	}, nil
+	var bodyTemplate *templates.Template
+	if target.BodyTemplate != "" {
+		source, err := values.ResolveVariable(target.BodyTemplate)
+		if err != nil {
+			return nil, fmt.Errorf("body-template: %w", err)
+		}
+		bodyTemplate, err = templates.ParseTemplate("webhook-body", source, templates.WithDefaultFuncs())
+		if err != nil {
+			return nil, fmt.Errorf("body-template: %w", err)
+		}
+	}
+
+	provider := webhook.Provider{
+		URL:      endpoint,
+		Headers:  headers,
+		Client:   client,
+		Template: bodyTemplate,
+	}
+	if err := provider.ValidateTemplate(); err != nil {
+		return nil, fmt.Errorf("body-template: %w", err)
+	}
+
+	return provider, nil
 }
 
 // buildCloudflare resolves zone configuration once before constructing a provider.

@@ -5,6 +5,7 @@ go 1.27.3
 require (
 	github.com/containeroo/appkit v0.7.0
 	github.com/containeroo/httpkit v0.1.1
+	github.com/containeroo/notifykit v0.7.0
 	github.com/containeroo/resolver v0.4.1
 	github.com/containeroo/tinyflags v0.12.0
 	github.com/prometheus/client_golang v1.25.0
@@ -16,6 +17,7 @@ require (
 require (
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/containeroo/tmplfuncs v0.0.2 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/mattn/go-isatty v0.0.24 // indirect

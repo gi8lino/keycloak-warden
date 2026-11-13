@@ -9,35 +9,129 @@ Set the image version in `deployment.yaml`. Then copy the Secret template **outs
 ```sh
 cp deploy/kubernetes/secret.example.yaml /tmp/keycloak-warden-secrets.yaml
 chmod 600 /tmp/keycloak-warden-secrets.yaml
+
 # Edit the copied file before applying it.
 kubectl apply -f /tmp/keycloak-warden-secrets.yaml
 ```
 
-The template includes the Cloudflare token, administrator token, and the shared Snitch signing key. The non-secret rule and destination settings live in `warden.yaml` and are generated into a ConfigMap by Kustomize. If Keycloak already manages the `keycloak-snitch` Secret, remove that Secret from your copy instead of overwriting it.
+The template includes the Cloudflare token, Slack incoming webhook URL, administrator token, and shared Snitch signing key. If Keycloak already manages the `keycloak-snitch` Secret, remove that Secret from your copy instead of overwriting it.
 
-For Cloudflare, give the [API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** and scope it to the specific zone you want to protect. Set `CLOUDFLARE_ZONE_ID` (32 hexadecimal characters) and `CLOUDFLARE_API_TOKEN` in your copied Kubernetes Secret. The example configures `targets.cloudflare.edge`; Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Additional Cloudflare accounts/zones can be configured as separate named targets.
+### Cloudflare
 
-To configure an optional outbound webhook, add an entry under `targets.webhook` in `warden.yaml`:
+Give the [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) **Zone → Firewall Services → Edit** permissions, scoped to the specific zone you want to protect.
+
+Set `CLOUDFLARE_ZONE_ID` (32 hexadecimal characters) and `CLOUDFLARE_API_TOKEN` in your copied Kubernetes Secret.
+
+The example configures `targets.cloudflare.edge`; Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Additional Cloudflare accounts or zones can be configured as separate named targets.
+
+### Webhook notification templates
+
+The example enables Slack notifications alongside Cloudflare bans. Microsoft Teams is included as an optional destination.
+
+The Kubernetes directory contains:
+
+```text
+deploy/kubernetes/
+├── README.md
+├── deployment.yaml
+├── kustomization.yaml
+├── persistentvolumeclaim.yaml
+├── secret.example.yaml
+├── service.yaml
+├── warden.yaml
+└── templates/
+    ├── slack.json.tmpl
+    └── msteams.json.tmpl
+```
+
+Kustomize generates two separate ConfigMaps:
+
+- `keycloak-warden-config` — contains `warden.yaml` with detection rules and destinations.
+- `keycloak-warden-templates` — contains `slack.json.tmpl` and `msteams.json.tmpl`.
+
+The generators are defined in `kustomization.yaml`:
+
+```yaml
+configMapGenerator:
+  - name: keycloak-warden-config
+    files:
+      - warden.yaml
+
+  - name: keycloak-warden-templates
+    files:
+      - templates/slack.json.tmpl
+      - templates/msteams.json.tmpl
+```
+
+The Deployment mounts them separately:
+
+```yaml
+volumeMounts:
+  - name: config
+    mountPath: /config
+    readOnly: true
+  - name: templates
+    mountPath: /config/templates
+    readOnly: true
+```
+
+The resulting container paths are:
+
+```text
+/config/
+├── warden.yaml
+└── templates/
+    ├── slack.json.tmpl
+    └── msteams.json.tmpl
+```
+
+The corresponding webhook targets in `warden.yaml` reference these files:
 
 ```yaml
 targets:
   webhook:
-    ops:
-      url: env:WARDEN_WEBHOOK_URL
-      headers:
-        Authorization: env:WARDEN_WEBHOOK_AUTHORIZATION
-        X-Source: warden
+    slack:
+      url: env:SLACK_WEBHOOK_URL
+      body-template: file:/config/templates/slack.json.tmpl
+
+    # Optional Microsoft Teams destination:
+    # msteams:
+    #   url: env:MSTEAMS_WEBHOOK_URL
+    #   body-template: file:/config/templates/msteams.json.tmpl
 ```
 
-Merge this `webhook` group into the existing `targets` mapping rather than adding a second root `targets` key. Provide its environment variables through a Kubernetes Secret and `env`/`secretKeyRef` entries in `deployment.yaml`, or use `file:` references to mounted Secret files.
+Merge this `webhook` group into the existing `targets` mapping rather than creating a second root `targets` key.
 
-Webhook `url`, every webhook `headers` value, Cloudflare `zone-id`, and `api-token` support literal strings, `env:VARIABLE`, `file:/path/to/value`, and other [Resolver](https://github.com/containeroo/resolver) sources. Use `literal:` to preserve values that would otherwise look like references. Every configured target is active. Required values must resolve to nonblank strings, and invalid references fail startup. Header names are literal and validated, transport-managed headers cannot be overridden, and Warden requires HTTPS webhook URLs except for explicit loopback hosts. Warden does not sign outbound notifications automatically; use headers for receiver authentication.
+**Slack:** Set `SLACK_WEBHOOK_URL` in the `keycloak-warden` Secret. Warden sends both ban and unban decisions to Slack. The template displays **Expires At** only when the decision state is `banned`.
 
-Do not commit real tokens or credentials to Git or store them in the ConfigMap. **Inbound Snitch event HMAC verification is independent from outbound webhook authentication.** Restart Warden after changing any resolver-backed values.
+**Microsoft Teams:** Uncomment the `msteams` target and add `MSTEAMS_WEBHOOK_URL` to the Secret. The provided MessageCard template requires an endpoint that accepts this legacy format; verify compatibility with your Teams workflow before enabling it.
+
+### Value resolution
+
+Webhook `url`, `body-template`, and `headers` values, along with Cloudflare `zone-id` and `api-token`, support:
+
+- Literal strings
+- `env:VARIABLE`
+- `file:/path/to/value`
+- Other supported [Resolver](https://github.com/containeroo/resolver) sources
+
+Use `literal:` to preserve values that would otherwise be interpreted as resolver references.
+
+Every configured target is active. Required values must resolve to nonblank strings, and invalid references fail startup.
+
+Header names are literal and validated. Transport-managed headers cannot be overridden, and Warden requires HTTPS webhook URLs except for explicit loopback hosts.
+
+Warden does not automatically sign outbound notifications; use authentication headers when required by the receiver.
+
+The `body-template` setting requires a Warden build supporting templated webhook bodies. Older releases send only the default decision JSON and do not recognize this setting.
+
+**Security:** Never commit real credentials or store them in ConfigMaps. Inbound Snitch event HMAC verification is independent of outbound webhook authentication.
+
+Warden resolves its configuration and compiles notification templates during startup.
 
 ## 2. Connect Keycloak Snitch
 
-Install [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch), enable the `snitch` event listener in your realm, and add these environment variables to Keycloak:
+Install [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch), enable the `snitch` event listener in your realm, and configure the following environment variables in Keycloak:
 
 ```yaml
 - name: KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL
@@ -62,26 +156,48 @@ kubectl apply -k deploy/kubernetes
 kubectl -n keycloak rollout status deployment/keycloak-warden
 ```
 
-The Service exposes Warden at `http://keycloak-warden:8080`. Health checks and optional Prometheus metrics use port `8081` on the Pod, not the application Service. `/readyz` requires both a responsive SQLite database and a running action worker; ordinary retryable delivery errors do not make it unready.
+The Service exposes Warden at `http://keycloak-warden:8080`.
+
+Health checks and optional Prometheus metrics use port `8081` on the Pod, not the application Service.
+
+The `/readyz` endpoint requires a responsive SQLite database and a running action worker. Ordinary retryable delivery errors do not make the service unready.
 
 ## Manual bans
+
+Create a manual ban:
 
 ```sh
 kubectl -n keycloak exec deployment/keycloak-warden -- \
   /keycloak-warden ban 203.0.113.42 --duration 1h --reason "Investigation"
+```
 
+Remove a ban:
+
+```sh
 kubectl -n keycloak exec deployment/keycloak-warden -- \
   /keycloak-warden unban 203.0.113.42
 ```
 
-Unbanning clears both manual and automatic bans for that IP. If you customize the application port or route prefix, set `WARDEN__LISTEN_ADDRESS` and `WARDEN__ROUTE_PREFIX` in the container environment so the CLI and server share them.
+Unbanning clears both manual and automatic bans for that IP address.
+
+If you customize the application port or route prefix, set `WARDEN__LISTEN_ADDRESS` and `WARDEN__ROUTE_PREFIX` in the container environment so the CLI and server share them.
 
 ## Good to know
 
-- **Keep one replica.** Warden uses a single SQLite database on a persistent volume. Upgrades use `Recreate`, with a short interruption.
-- **Storage:** If your cluster has no default StorageClass, choose one in `persistentvolumeclaim.yaml`.
-- **Route prefix:** If you enable `--route-prefix=/warden`, change Snitch's URL to `http://keycloak-warden:8080/warden/events`. Health and metrics paths stay unchanged.
-- **Changed Secrets or ConfigMap?** Warden resolves settings only at startup. Restart Warden to apply changed values if your cluster doesn't reload them automatically:
+- **Replicas:** Keep one replica. Warden uses a single SQLite database on persistent storage. Upgrades use `Recreate`, with a short interruption.
+- **Storage:** If your cluster has no default StorageClass, configure `storageClassName` in `persistentvolumeclaim.yaml`.
+- **Route prefix:** If you enable `--route-prefix=/warden`, change Snitch's URL to `http://keycloak-warden:8080/warden/events`. Health and metrics paths remain unchanged.
+- **ConfigMaps:** Kustomize generates content-hashed names for both ConfigMaps. Updating `warden.yaml` changes the configuration ConfigMap hash; updating either notification template changes the templates ConfigMap hash. Applying the manifests updates the corresponding Deployment references and triggers a rollout.
+- **Secrets:** Updating a Secret does not automatically restart Warden unless an additional controller handles this.
+
+To apply configuration or template changes:
+
+```sh
+kubectl apply -k deploy/kubernetes
+kubectl -n keycloak rollout status deployment/keycloak-warden
+```
+
+To reload Secret-backed settings when automatic restarts are not configured:
 
 ```sh
 kubectl -n keycloak rollout restart deployment/keycloak-warden
