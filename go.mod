@@ -5,7 +5,7 @@ go 1.27.3
 require (
 	github.com/containeroo/appkit v0.7.0
 	github.com/containeroo/httpkit v0.1.1
-	github.com/containeroo/notifykit v0.7.0
+	github.com/containeroo/notifykit v0.11.0
 	github.com/containeroo/resolver v0.4.1
 	github.com/containeroo/tinyflags v0.12.0
 	github.com/prometheus/client_golang v1.25.0
