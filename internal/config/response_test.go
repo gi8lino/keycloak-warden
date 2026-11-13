@@ -137,7 +137,7 @@ func TestWebhookResponseRule(t *testing.T) {
 		t.Parallel()
 
 		_, err := loadResponseRule(t, "        status-codes: '200-99999999'\n")
-		require.ErrorContains(t, err, "100–599")
+		require.ErrorContains(t, err, "allowed range 200-599")
 	})
 
 	t.Run("rejects invalid status expressions", func(t *testing.T) {

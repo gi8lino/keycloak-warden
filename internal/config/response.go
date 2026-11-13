@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/containeroo/httpkit/parse"
 	"github.com/containeroo/notifykit/response"
