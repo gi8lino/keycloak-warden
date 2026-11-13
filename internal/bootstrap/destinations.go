@@ -66,18 +66,11 @@ func Destinations(targets config.Targets) (providers map[string]actions.Provider
 }
 
 // noRedirect prevents credentials from being forwarded to another endpoint.
-func noRedirect(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse }
-
-// validZoneID checks Cloudflare's canonical 16-byte hexadecimal zone identifier.
-func validZoneID(value string) bool {
-	if len(value) != 32 {
-		return false
-	}
-	_, err := hex.DecodeString(value)
-	return err == nil
+func noRedirect(_ *http.Request, _ []*http.Request) error {
+	return http.ErrUseLastResponse
 }
 
-// buildWebhook resolves all endpoint settings once before constructing a provider.
+// buildWebhook resolves and validates endpoint settings before constructing a provider.
 func buildWebhook(
 	target config.WebhookTarget,
 	client *http.Client,
@@ -88,35 +81,14 @@ func buildWebhook(
 		return nil, err
 	}
 
-	u, err := url.Parse(endpoint)
-	if err != nil || !allowedWebhook(u) {
-		return nil, errors.New("url: expected HTTPS webhook URL (HTTP allowed on loopback)")
+	headers, err := resolveWebhookHeaders(values, target.Headers)
+	if err != nil {
+		return nil, err
 	}
 
-	headers := make(http.Header, len(target.Headers))
-	for _, name := range slices.Sorted(maps.Keys(target.Headers)) {
-		reference := target.Headers[name]
-		canonical := http.CanonicalHeaderKey(name)
-		value, err := values.ResolveVariable(reference)
-		if err != nil {
-			return nil, fmt.Errorf("headers %s: %w", name, err)
-		}
-		if !validHeaderValue(value) {
-			return nil, fmt.Errorf("headers %q: invalid HTTP header value", name)
-		}
-		headers.Set(canonical, value)
-	}
-
-	var bodyTemplate *templates.Template
-	if target.BodyTemplate != "" {
-		source, err := values.ResolveVariable(target.BodyTemplate)
-		if err != nil {
-			return nil, fmt.Errorf("body-template: %w", err)
-		}
-		bodyTemplate, err = templates.ParseTemplate("webhook-body", source, templates.WithDefaultFuncs())
-		if err != nil {
-			return nil, fmt.Errorf("body-template: %w", err)
-		}
+	bodyTemplate, err := parseWebhookBodyTemplate(values, target.BodyTemplate)
+	if err != nil {
+		return nil, err
 	}
 
 	var responseRule *response.Rule
@@ -135,11 +107,103 @@ func buildWebhook(
 		Template: bodyTemplate,
 		Response: responseRule,
 	}
+
 	if err := provider.ValidateTemplate(); err != nil {
 		return nil, fmt.Errorf("body-template: %w", err)
 	}
 
 	return provider, nil
+}
+
+// resolveWebhookURL resolves and validates a webhook endpoint.
+// Literal HTTP(S) URLs are supported alongside resolver references.
+func resolveWebhookURL(
+	values *resolver.Registry,
+	reference string,
+) (string, error) {
+	if strings.HasPrefix(reference, "https://") || strings.HasPrefix(reference, "http://") {
+		// HTTP(S) URL schemes are not resolver schemes; treat them as literals.
+		reference = "literal:" + reference
+	}
+
+	endpoint, err := values.ResolveVariable(reference)
+	if err != nil {
+		return "", fmt.Errorf("url: %w", err)
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil || !allowedWebhook(u) {
+		return "", errors.New("url: expected HTTPS webhook URL (HTTP allowed on loopback)")
+	}
+
+	return endpoint, nil
+}
+
+// allowedWebhook checks webhook-specific URL restrictions and the shared transport policy.
+func allowedWebhook(u *url.URL) bool {
+	return u != nil &&
+		u.Hostname() != "" &&
+		u.User == nil &&
+		u.Fragment == "" &&
+		urlpolicy.AllowedTransport(u)
+}
+
+// resolveWebhookHeaders resolves and validates configured HTTP headers.
+func resolveWebhookHeaders(
+	values *resolver.Registry,
+	configured map[string]string,
+) (http.Header, error) {
+	headers := make(http.Header, len(configured))
+
+	for _, name := range slices.Sorted(maps.Keys(configured)) {
+		value, err := values.ResolveVariable(configured[name])
+		if err != nil {
+			return nil, fmt.Errorf("headers %s: %w", name, err)
+		}
+		if !validHeaderValue(value) {
+			return nil, fmt.Errorf("headers %q: invalid HTTP header value", name)
+		}
+
+		headers.Set(name, value)
+	}
+
+	return headers, nil
+}
+
+// validHeaderValue rejects control characters, including CR and LF injection.
+func validHeaderValue(value string) bool {
+	for i := range len(value) {
+		if value[i] < ' ' && value[i] != '\t' || value[i] == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
+// parseWebhookBodyTemplate resolves and parses the configured body template.
+func parseWebhookBodyTemplate(
+	values *resolver.Registry,
+	reference string,
+) (*templates.Template, error) {
+	if reference == "" {
+		return nil, nil
+	}
+
+	source, err := values.ResolveVariable(reference)
+	if err != nil {
+		return nil, fmt.Errorf("body-template: %w", err)
+	}
+
+	bodyTemplate, err := templates.ParseTemplate(
+		"webhook-body",
+		source,
+		templates.WithDefaultFuncs(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("body-template: %w", err)
+	}
+
+	return bodyTemplate, nil
 }
 
 // buildCloudflare resolves zone configuration once before constructing a provider.
@@ -169,35 +233,12 @@ func buildCloudflare(
 	}, nil
 }
 
-// resolveWebhookURL accepts literal HTTP(S) URLs and resolver references.
-func resolveWebhookURL(values *resolver.Registry, reference string) (string, error) {
-	if strings.HasPrefix(reference, "https://") || strings.HasPrefix(reference, "http://") {
-		// HTTP(S) URL schemes are not resolver schemes; treat them as literals.
-		reference = "literal:" + reference
-	}
-	value, err := values.ResolveVariable(reference)
-	if err != nil {
-		return "", fmt.Errorf("url: %w", err)
+// validZoneID checks Cloudflare's canonical 16-byte hexadecimal zone identifier.
+func validZoneID(value string) bool {
+	if len(value) != 32 {
+		return false
 	}
 
-	return value, nil
-}
-
-// validHeaderValue rejects control characters, including CR and LF injection.
-func validHeaderValue(value string) bool {
-	for i := range len(value) {
-		if value[i] < ' ' && value[i] != '\t' || value[i] == 0x7f {
-			return false
-		}
-	}
-	return true
-}
-
-// allowedWebhook checks webhook-specific URL restrictions and the shared transport policy.
-func allowedWebhook(u *url.URL) bool {
-	return u != nil &&
-		u.Hostname() != "" &&
-		u.User == nil &&
-		u.Fragment == "" &&
-		urlpolicy.AllowedTransport(u)
+	_, err := hex.DecodeString(value)
+	return err == nil
 }
