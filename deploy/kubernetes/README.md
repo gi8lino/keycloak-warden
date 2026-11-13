@@ -40,14 +40,15 @@ deploy/kubernetes/
 ├── service.yaml
 ├── warden.yaml
 └── templates/
-    ├── slack.json.tmpl
+    ├── slack-api.json.tmpl
+    ├── slack-bot.json.tmpl
     └── msteams.json.tmpl
 ```
 
 Kustomize generates two separate ConfigMaps:
 
 - `keycloak-warden-config` — contains `warden.yaml` with detection rules and destinations.
-- `keycloak-warden-templates` — contains `slack.json.tmpl` and `msteams.json.tmpl`.
+- `keycloak-warden-templates` — contains `slack-api.json.tmpl`, `slack-bot.json.tmpl`, and `msteams.json.tmpl`.
 
 The generators are defined in `kustomization.yaml`:
 
@@ -59,7 +60,8 @@ configMapGenerator:
 
   - name: keycloak-warden-templates
     files:
-      - templates/slack.json.tmpl
+      - templates/slack-api.json.tmpl
+      - templates/slack-bot.json.tmpl
       - templates/msteams.json.tmpl
 ```
 
@@ -81,7 +83,8 @@ The resulting container paths are:
 /config/
 ├── warden.yaml
 └── templates/
-    ├── slack.json.tmpl
+    ├── slack-api.json.tmpl
+    ├── slack-bot.json.tmpl
     └── msteams.json.tmpl
 ```
 
@@ -90,9 +93,20 @@ The corresponding webhook targets in `warden.yaml` reference these files:
 ```yaml
 targets:
   webhook:
-    slack:
+    slack-api:
       url: env:SLACK_WEBHOOK_URL
-      body-template: file:/config/templates/slack.json.tmpl
+      body-template: file:/config/templates/slack-api.json.tmpl
+
+    slack-bot:
+      url: https://slack.com/api/chat.postMessage
+      headers:
+        Authorization: env:SLACK_AUTHORIZATION
+      body-template: file:/config/templates/slack-bot.json.tmpl
+      response:
+        json:
+          pointer: /ok
+          equals: true
+          error-pointer: /error
 
     # Optional Microsoft Teams destination:
     # msteams:
@@ -102,7 +116,9 @@ targets:
 
 Merge this `webhook` group into the existing `targets` mapping rather than creating a second root `targets` key.
 
-**Slack:** Set `SLACK_WEBHOOK_URL` in the `keycloak-warden` Secret. Warden sends both ban and unban decisions to Slack. The template displays **Expires At** only when the decision state is `banned`.
+**Slack incoming webhook:** Set `SLACK_WEBHOOK_URL` in the `keycloak-warden` Secret. This target requires no authorization header or response-body check.
+
+**Slack Bot API:** Set `SLACK_AUTHORIZATION` to `Bearer xoxb-...` in the Secret and update the `channel` value in `slack-bot.json.tmpl`. This target uses Notifykit's opt-in JSON response validation: HTTP 200 with `{"ok":false}` is a failure, and `error-pointer: /error` supplies a bounded error message to Warden's delivery log. If you only want one Slack delivery, disable the other Slack target in `warden.yaml`. Both templates display **Expires At** only when the state is `banned`.
 
 **Microsoft Teams:** Uncomment the `msteams` target and add `MSTEAMS_WEBHOOK_URL` to the Secret. The provided MessageCard template requires an endpoint that accepts this legacy format; verify compatibility with your Teams workflow before enabling it.
 

@@ -7,16 +7,22 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"time"
 
+	"github.com/containeroo/notifykit/response"
 	"github.com/containeroo/notifykit/templates"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-// maxBodyBytes limits a rendered JSON webhook notification to 64 KiB.
-const maxBodyBytes = 64 << 10
+const (
+	// maxBodyBytes limits a rendered JSON webhook notification to 64 KiB.
+	maxBodyBytes = 64 << 10
+	// maxResponseBytes limits untrusted webhook response bodies inspected by a rule.
+	maxResponseBytes = 64 << 10
+)
 
 // Provider posts decision updates to one configured endpoint.
 type Provider struct {
@@ -29,6 +35,9 @@ type Provider struct {
 	// Template optionally renders custom JSON from the decision fields.
 	// A nil template preserves the original decision JSON payload.
 	Template *templates.Template
+	// Response optionally checks the HTTP status and body with Notifykit rules.
+	// When nil, only HTTP 2xx is accepted and the body is not inspected.
+	Response *response.Rule
 }
 
 // Apply posts the serialized decision and accepts only a successful response.
@@ -59,11 +68,28 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 	}
 	defer resp.Body.Close() // nolint:errcheck
 
-	if !isSuccessfulStatus(resp.StatusCode) {
-		return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+	if p.Response == nil {
+		if !isSuccessfulStatus(resp.StatusCode) {
+			return fmt.Errorf("webhook returned HTTP %d", resp.StatusCode)
+		}
+		return nil
 	}
 
-	return nil
+	if !p.Response.HasBodyMatcher() {
+		return p.Response.Evaluate(resp.StatusCode, nil)
+	}
+
+	// Read only what the matcher can safely inspect; never include the raw body
+	// in errors when it exceeds the configured bound.
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes+1))
+	if err != nil {
+		return fmt.Errorf("webhook HTTP %d: cannot read response body", resp.StatusCode)
+	}
+	if len(responseBody) > maxResponseBytes {
+		return fmt.Errorf("webhook HTTP %d: response body exceeds 64 KiB limit", resp.StatusCode)
+	}
+
+	return p.Response.Evaluate(resp.StatusCode, responseBody)
 }
 
 // ValidateTemplate validates both ban and unban payloads before serving requests.

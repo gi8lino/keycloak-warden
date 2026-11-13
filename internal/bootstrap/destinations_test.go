@@ -657,3 +657,56 @@ func TestWebhookBodyTemplate(t *testing.T) {
 		require.ErrorContains(t, err, "body-template")
 	})
 }
+
+func TestDestinationsResponse(t *testing.T) {
+	t.Parallel()
+
+	t.Run("does not configure response matching by default", func(t *testing.T) {
+		t.Parallel()
+
+		providers, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"ops": {URL: "https://example.org/notifications"},
+			},
+		})
+		require.NoError(t, err)
+
+		provider := providers["webhook.ops"].(webhook.Provider)
+		assert.Nil(t, provider.Response)
+	})
+
+	t.Run("constructs the Notifykit rule from YAML", func(t *testing.T) {
+		t.Parallel()
+
+		path := filepath.Join(t.TempDir(), "warden.yaml")
+		body := `
+rule:
+  threshold: 2
+  window: 1m
+  ban: 15m
+targets:
+  webhook:
+    slack-bot:
+      url: https://slack.com/api/chat.postMessage
+      response:
+        status-codes: "200-202"
+        json:
+          pointer: /ok
+          equals: true
+          error-pointer: /error
+`
+		require.NoError(t, os.WriteFile(path, []byte(body), 0o600))
+
+		cfg, err := config.Load(path)
+		require.NoError(t, err)
+
+		providers, _, err := Destinations(cfg.Targets)
+		require.NoError(t, err)
+
+		provider := providers["webhook.slack-bot"].(webhook.Provider)
+		require.NotNil(t, provider.Response)
+		assert.Equal(t, []int{200, 201, 202}, provider.Response.StatusCodes)
+		assert.NoError(t, provider.Response.Evaluate(200, []byte(`{"ok":true}`)))
+		assert.ErrorContains(t, provider.Response.Evaluate(200, []byte(`{"ok":false,"error":"channel_not_found"}`)), "channel_not_found")
+	})
+}

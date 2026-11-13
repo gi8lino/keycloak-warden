@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/containeroo/notifykit/response"
 	"github.com/containeroo/notifykit/templates"
 	"github.com/containeroo/resolver"
 
@@ -118,11 +119,21 @@ func buildWebhook(
 		}
 	}
 
+	var responseRule *response.Rule
+	if target.Response != nil {
+		rule, err := target.Response.Rule()
+		if err != nil {
+			return nil, fmt.Errorf("response: %w", err)
+		}
+		responseRule = &rule
+	}
+
 	provider := webhook.Provider{
 		URL:      endpoint,
 		Headers:  headers,
 		Client:   client,
 		Template: bodyTemplate,
+		Response: responseRule,
 	}
 	if err := provider.ValidateTemplate(); err != nil {
 		return nil, fmt.Errorf("body-template: %w", err)

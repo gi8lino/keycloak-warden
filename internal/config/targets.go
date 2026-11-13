@@ -42,6 +42,11 @@ func validateWebhookTarget(name string, target WebhookTarget) error {
 	if target.BodyTemplate != "" && strings.TrimSpace(target.BodyTemplate) == "" {
 		return fmt.Errorf("target %q: body-template: value must not be blank", id)
 	}
+	if target.Response != nil {
+		if _, err := target.Response.Rule(); err != nil {
+			return fmt.Errorf("target %q: response: %w", id, err)
+		}
+	}
 
 	seen := make(map[string]struct{}, len(target.Headers))
 	for _, header := range slices.Sorted(maps.Keys(target.Headers)) {

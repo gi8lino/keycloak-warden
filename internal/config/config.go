@@ -20,6 +20,9 @@ type WebhookTarget struct {
 	// BodyTemplate optionally resolves to a Go text/template for the JSON request body.
 	// When unset, webhooks receive the unchanged decision JSON.
 	BodyTemplate string `yaml:"body-template"`
+	// Response optionally overrides accepted HTTP statuses and validates response bodies.
+	// A nil response preserves the existing HTTP 2xx-only acknowledgement behavior.
+	Response *WebhookResponse `yaml:"response"`
 }
 
 // CloudflareTarget configures one Cloudflare zone destination.
