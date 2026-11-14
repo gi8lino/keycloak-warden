@@ -34,6 +34,31 @@ targets:
 
 ### Templated webhook bodies
 
+Each destination gets **3 total attempts per decision revision** by default, including the first delivery. Set `targets.max-attempts` to change the shared limit, or set `max-attempts` on an individual webhook or Cloudflare target. Limits must be positive integers. For example:
+
+```yaml
+targets:
+  max-attempts: 4
+  webhook:
+    receiver:
+      url: env:RECEIVER_URL
+    slack-bot:
+      url: https://slack.com/api/chat.postMessage
+      max-attempts: 2
+      headers:
+        Authorization: env:SLACK_AUTHORIZATION
+      template-vars:
+        channel: env:SLACK_CHANNEL
+      body-template: file:/config/templates/slack-bot.json.tmpl
+      response:
+        json:
+          pointer: /ok
+          equals: true
+          error-pointer: /error
+```
+
+After the last failure, `inspect` shows `exhausted` and the worker stops retrying that delivery. A new revision has its own budget. Restarting preserves completed attempts. Raising the limit and restarting makes an exhausted **current** revision eligible again. An exhausted release means the destination has not acknowledged the unban. Retry limits belong to the runtime targets, not the database; SQLite stores only per-destination delivery history and state.
+
 `body-template` is optional for each webhook target. Without it, Warden sends its original decision JSON unchanged. With it, Warden resolves the **template contents** at startup (`file:`, `env:`, or `literal:`), compiles them with [Notifykit text templates](https://github.com/containeroo/notifykit), and renders JSON separately for each desired decision. Restart Warden to reload template files.
 
 For example, `/config/templates/slack.json.tmpl` (a complete example is included at `examples/templates/slack.json.tmpl`):

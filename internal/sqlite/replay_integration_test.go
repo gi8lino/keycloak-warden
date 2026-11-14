@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
 )
@@ -81,7 +82,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, provider.Apply(ctx, job.Decision))
-		require.NoError(t, store.Finish(ctx, *job, true, now))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
 		mu.Lock()
 		assert.Equal(t, 1, created)
 		mu.Unlock()
@@ -105,7 +106,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, provider.Apply(ctx, job.Decision))
-		require.NoError(t, store.Finish(ctx, *job, true, now.Add(time.Second)))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now.Add(time.Second)))
 
 		mu.Lock()
 		assert.Equal(t, 1, created)

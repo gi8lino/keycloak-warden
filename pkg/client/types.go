@@ -43,6 +43,8 @@ type Record struct {
 	Decision Decision `json:"decision" yaml:"decision"`
 	// Sources are the currently active reasons to block the address.
 	Sources []Source `json:"sources" yaml:"sources"`
+	// DeliveryHistory contains per-revision history on individual decision reads.
+	DeliveryHistory []Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
 	// Deliveries hold the last acknowledged revision per destination.
 	Deliveries []Acknowledgement `json:"deliveries" yaml:"deliveries"`
 }

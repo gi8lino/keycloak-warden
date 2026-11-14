@@ -58,8 +58,7 @@ func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc 
 			return
 		}
 
-		logger.Info(
-			"manual ban requested",
+		logger.Info("manual ban requested",
 			"event", "manual_ban_requested",
 			"decision_id", record.Decision.ID,
 			"ip", record.Decision.IP,
@@ -137,8 +136,7 @@ func DeleteBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc 
 		if writeBanError(w, logger, err) {
 			return
 		}
-		logger.Info(
-			"ban sources removed",
+		logger.Info("ban sources removed",
 			"event", "ban_sources_removed",
 			"decision_id", record.Decision.ID,
 			"ip", record.Decision.IP,

@@ -5,6 +5,8 @@ import "github.com/gi8lino/keycloak-warden/internal/application/detection"
 
 // Targets groups named destinations by their provider type.
 type Targets struct {
+	// MaxAttempts limits delivery attempts per revision; omission inherits the default.
+	MaxAttempts *int `yaml:"max-attempts"`
 	// Webhook maps names to outbound HTTP webhook destinations.
 	Webhook map[string]WebhookTarget `yaml:"webhook"`
 	// Cloudflare maps names to Cloudflare zones.
@@ -13,6 +15,8 @@ type Targets struct {
 
 // WebhookTarget configures an HTTP notification destination.
 type WebhookTarget struct {
+	// MaxAttempts limits delivery attempts per revision; omission inherits the default.
+	MaxAttempts *int `yaml:"max-attempts"`
 	// URL is the resolvable outbound webhook endpoint.
 	URL string `yaml:"url"`
 	// Headers maps literal HTTP header names to resolvable values.
@@ -29,6 +33,8 @@ type WebhookTarget struct {
 
 // CloudflareTarget configures one Cloudflare zone destination.
 type CloudflareTarget struct {
+	// MaxAttempts limits delivery attempts per revision; omission inherits the default.
+	MaxAttempts *int `yaml:"max-attempts"`
 	// APIToken authorizes Cloudflare API requests and supports resolver references.
 	APIToken string `yaml:"api-token"`
 	// ZoneID identifies the Cloudflare zone and supports resolver references.

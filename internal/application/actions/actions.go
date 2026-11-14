@@ -3,6 +3,7 @@ package actions
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -10,6 +11,8 @@ import (
 )
 
 const (
+	// DefaultMaxAttempts counts the initial delivery and subsequent retries.
+	DefaultMaxAttempts = 3
 	// drainBudget limits when a cycle may start another job; in-flight deliveries may finish later.
 	drainBudget = time.Second
 	// storageRetry defines the delay before retrying a failed storage operation.
@@ -40,8 +43,8 @@ type Queue interface {
 	Maintain(context.Context, time.Time) ([]decisions.Decision, error)
 	// Next returns the oldest ready destination job, or nil when idle.
 	Next(context.Context, time.Time) (*Job, error)
-	// Finish acknowledges the revision or schedules a retry.
-	Finish(context.Context, Job, bool, time.Time) error
+	// Finish atomically records the outcome and applies the supplied attempt limit.
+	Finish(context.Context, Job, error, int, time.Time) error
 }
 
 // Runner owns the background action worker and its cancellation lifecycle.
@@ -58,7 +61,7 @@ type Runner struct {
 func Start(
 	parent context.Context,
 	q Queue,
-	destinations map[string]Provider,
+	destinations map[string]Target,
 	logger *slog.Logger,
 ) *Runner {
 	ctx, cancel := context.WithCancel(parent)
@@ -97,7 +100,7 @@ func (r *Runner) Close() error {
 func run(
 	ctx context.Context,
 	q Queue,
-	destinations map[string]Provider,
+	destinations map[string]Target,
 	logger *slog.Logger,
 ) error {
 	for ctx.Err() == nil {
@@ -127,7 +130,7 @@ func run(
 func processReady(
 	ctx context.Context,
 	q Queue,
-	destinations map[string]Provider,
+	destinations map[string]Target,
 	logger *slog.Logger,
 ) (nextDeadline time.Time, err error) {
 	expired, err := q.Maintain(ctx, time.Now())
@@ -155,7 +158,7 @@ func processReady(
 func drainReady(
 	ctx context.Context,
 	q Queue,
-	destinations map[string]Provider,
+	destinations map[string]Target,
 	logger *slog.Logger,
 	deadline time.Time,
 ) error {
@@ -206,7 +209,7 @@ func waitUntil(ctx context.Context, changes <-chan struct{}, deadline time.Time)
 func dispatch(
 	ctx context.Context,
 	q Queue,
-	destinations map[string]Provider,
+	destinations map[string]Target,
 	logger *slog.Logger,
 	job Job,
 ) error {
@@ -216,29 +219,27 @@ func dispatch(
 		"destination", job.Destination,
 	)
 
-	provider, ok := destinations[job.Destination]
+	target, ok := destinations[job.Destination]
 	if !ok {
-		log.Error(
-			"destination missing from configuration",
+		log.Error("destination missing from configuration",
 			"event", "delivery_destination_missing",
 		)
-		return q.Finish(ctx, job, false, time.Now())
+		// There is no configured attempt budget to apply; do not consume an attempt.
+		return errors.New("destination missing from configuration")
 	}
 
-	if err := provider.Apply(ctx, job.Decision); err != nil {
-		log.Warn(
-			"delivery failed",
+	if err := target.Provider.Apply(ctx, job.Decision); err != nil {
+		log.Warn("delivery failed",
 			"event", "delivery_failed",
 			"error", err,
 		)
-		return q.Finish(ctx, job, false, time.Now())
+		return q.Finish(ctx, job, err, target.MaxAttempts, time.Now())
 	}
 
-	log.Info(
-		"delivery completed",
+	log.Info("delivery completed",
 		"event", "delivery_completed",
 		"state", job.Decision.State,
 	)
 
-	return q.Finish(ctx, job, true, time.Now())
+	return q.Finish(ctx, job, nil, target.MaxAttempts, time.Now())
 }

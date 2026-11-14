@@ -46,6 +46,10 @@ func Run(
 	}
 	defer store.Close() //nolint:errcheck
 
+	if err := actions.ReconcileTargets(parent, store, destinations); err != nil {
+		return err
+	}
+
 	processor, err := ingestion.New(store, cfg.Rule)
 	if err != nil {
 		return err
@@ -56,8 +60,9 @@ func Run(
 	}
 
 	registry := metrics.NewRegistry(metricsEnabled, version)
-	for name, destination := range destinations {
-		destinations[name] = registry.InstrumentProvider(name, destination)
+	for name, target := range destinations {
+		target.Provider = registry.InstrumentProvider(name, target.Provider)
+		destinations[name] = target
 	}
 
 	ctx, stop := grace.SignalContext(parent)

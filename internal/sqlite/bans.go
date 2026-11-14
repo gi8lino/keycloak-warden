@@ -241,6 +241,10 @@ func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans
 	if err != nil {
 		return bans.Record{}, err
 	}
+	record.DeliveryHistory, err = readDeliveryHistory(ctx, tx, record.Decision.IP)
+	if err != nil {
+		return bans.Record{}, err
+	}
 	return record, tx.Commit()
 }
 

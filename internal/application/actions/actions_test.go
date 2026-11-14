@@ -40,7 +40,7 @@ func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time) ([]decisions.
 func (q *blockingQueue) Next(context.Context, time.Time) (*Job, error) { return nil, nil }
 
 // Finish is not reached while Maintain blocks.
-func (q *blockingQueue) Finish(context.Context, Job, bool, time.Time) error { return nil }
+func (q *blockingQueue) Finish(context.Context, Job, error, int, time.Time) error { return nil }
 
 func TestStart(t *testing.T) {
 	t.Parallel()
@@ -130,6 +130,8 @@ type scriptedQueue struct {
 	expired []decisions.Decision
 	// finished records jobs acknowledged by the worker.
 	finished []Job
+	// limits records the attempt budgets passed by the worker.
+	limits []int
 }
 
 // Changes returns the test change notification channel.
@@ -162,8 +164,9 @@ func (q *scriptedQueue) Next(context.Context, time.Time) (*Job, error) {
 }
 
 // Finish records successfully dispatched work.
-func (q *scriptedQueue) Finish(_ context.Context, job Job, success bool, _ time.Time) error {
-	if success {
+func (q *scriptedQueue) Finish(_ context.Context, job Job, deliveryErr error, limit int, _ time.Time) error {
+	q.limits = append(q.limits, limit)
+	if deliveryErr == nil {
 		q.finished = append(q.finished, job)
 	}
 	return nil
@@ -193,10 +196,30 @@ func TestDrainReady(t *testing.T) {
 		}}
 		provider := &acceptProvider{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		require.NoError(t, drainReady(t.Context(), q, map[string]Provider{"target": provider}, logger, time.Now().Add(time.Second)))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, logger, time.Now().Add(time.Second)))
 
 		assert.Equal(t, 2, provider.applied)
 		assert.Len(t, q.finished, 2)
+	})
+
+	t.Run("uses the limit owned by each runtime target", func(t *testing.T) {
+		t.Parallel()
+
+		q := &scriptedQueue{
+			jobs: []*Job{
+				{Decision: decisions.Decision{ID: "one"}, Destination: "webhook.receiver"},
+				{Decision: decisions.Decision{ID: "two"}, Destination: "cloudflare.edge"},
+			},
+		}
+		destinations := map[string]Target{
+			"webhook.receiver": {Provider: &acceptProvider{}, MaxAttempts: 5},
+			"cloudflare.edge":  {Provider: &acceptProvider{}, MaxAttempts: DefaultMaxAttempts},
+		}
+
+		err := drainReady(t.Context(), q, destinations, slog.Default(), time.Now().Add(time.Second))
+
+		require.NoError(t, err)
+		assert.Equal(t, []int{5, DefaultMaxAttempts}, q.limits)
 	})
 
 	t.Run("respects expired deadline", func(t *testing.T) {
@@ -204,7 +227,7 @@ func TestDrainReady(t *testing.T) {
 
 		q := &scriptedQueue{jobs: []*Job{{Decision: decisions.Decision{ID: "one"}, Destination: "target"}}}
 		provider := &acceptProvider{}
-		require.NoError(t, drainReady(t.Context(), q, map[string]Provider{"target": provider}, slog.Default(), time.Now().Add(-time.Second)))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, slog.Default(), time.Now().Add(-time.Second)))
 
 		assert.Zero(t, provider.applied)
 		assert.Empty(t, q.finished)
@@ -285,7 +308,7 @@ func TestDispatchLogging(t *testing.T) {
 		queue := &scriptedQueue{}
 		provider := &acceptProvider{}
 
-		require.NoError(t, dispatch(t.Context(), queue, map[string]Provider{job.Destination: provider}, logger, job))
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, logger, job))
 		assert.Equal(t, 1, provider.applied)
 		assert.Contains(t, logs.String(), `"event":"delivery_completed"`)
 		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "successful delivery should emit one log entry")
@@ -300,12 +323,27 @@ func TestDispatchLogging(t *testing.T) {
 		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		queue := &scriptedQueue{}
 
-		require.NoError(t, dispatch(t.Context(), queue, map[string]Provider{job.Destination: failingProvider{}}, logger, job))
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: failingProvider{}, MaxAttempts: DefaultMaxAttempts}}, logger, job))
 		assert.Contains(t, logs.String(), `"event":"delivery_failed"`)
 		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "failed delivery should emit one log entry")
 		assert.Contains(t, logs.String(), `"level":"WARN"`)
 		assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
 	})
+
+	t.Run("does not consume an attempt for an unconfigured destination", func(t *testing.T) {
+		t.Parallel()
+
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		queue := &scriptedQueue{}
+
+		err := dispatch(t.Context(), queue, nil, logger, job)
+
+		require.ErrorContains(t, err, "destination missing from configuration")
+		assert.Empty(t, queue.limits)
+		assert.Contains(t, logs.String(), `"event":"delivery_destination_missing"`)
+	})
+
 }
 
 // TestExpiryLogging logs only committed, effective releases, once per transition.

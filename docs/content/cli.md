@@ -4,16 +4,16 @@ The Warden binary provides server operation, manual ban management, decision ins
 
 ## Commands
 
-| Command                | Purpose                                                                         |
-| ---------------------- | ------------------------------------------------------------------------------- |
-| `serve`                | Start HTTP ingestion, delivery, and maintenance workers                         |
-| `ban`                  | Create or extend one or more manual bans through the application API            |
-| `unban`                | Remove active ban sources for one or more IPs through the application API       |
-| `list-active`          | List active bans through the authenticated application API                      |
-| `inspect`              | Inspect decisions, active sources, and delivery acknowledgements by decision ID |
-| `maintenance status`   | Read the latest scheduled and manual cleanup results                            |
-| `maintenance prune`    | Trigger expired failure-observation cleanup                                     |
-| `maintenance optimize` | Refresh SQLite query planner statistics                                         |
+| Command                | Purpose                                                                                        |
+| ---------------------- | ---------------------------------------------------------------------------------------------- |
+| `serve`                | Start HTTP ingestion, delivery, and maintenance workers                                        |
+| `ban`                  | Create or extend one or more manual bans through the application API                           |
+| `unban`                | Remove active ban sources for one or more IPs through the application API                      |
+| `list-active`          | List active bans through the authenticated application API                                     |
+| `inspect`              | Inspect decisions, active sources, and completed delivery attempts by revision and destination |
+| `maintenance status`   | Read the latest scheduled and manual cleanup results                                           |
+| `maintenance prune`    | Trigger expired failure-observation cleanup                                                    |
+| `maintenance optimize` | Refresh SQLite query planner statistics                                                        |
 
 ## Start Warden
 
@@ -48,7 +48,7 @@ warden inspect DECISION_ID --admin-token="$WARDEN_ADMIN_TOKEN" -o json
 
 Both commands query the running application server; `--database` belongs to `serve` only. Set `--application-url` for remote instances or a non-default address or route prefix.
 
-> The default output format is YAML. Use `-o json` or `--output=json` for JSON, and `-o yaml` or `--output=yaml` for YAML. `--output=text` remains a compatibility alias for YAML. The `list-active` and `inspect` commands return the same record structure (`decision`, `sources`, and `deliveries`).
+> The default output format is YAML. Use `-o json` or `--output=json` for JSON, and `-o yaml` or `--output=yaml` for YAML. `--output=text` remains a compatibility alias for YAML. Both commands return `decision`, `sources`, and `deliveries`. In `inspect`, deliveries are grouped by revision (newest first) and destination. Each completed attempt records its number, UTC completion time, outcome and any provider error. A retrying delivery shows its next retry deadline; an acknowledged delivery retains previous failures and shows when it succeeded. A delivery that reaches its attempt limit is marked `exhausted` and retains its failed attempts. Unfinished revisions replaced by a later revision are marked `superseded`. Older databases retain known acknowledgements; attempt history starts at upgrade. Attempts are retained for the lifetime of the decision.
 
 ## Database maintenance
 

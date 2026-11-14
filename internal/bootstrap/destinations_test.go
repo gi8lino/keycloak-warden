@@ -36,8 +36,8 @@ func TestDestinations(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"cloudflare.edge", "webhook.edge", "webhook.ops"}, names)
-		assert.IsType(t, webhook.Provider{}, providers["webhook.edge"])
-		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.edge"])
+		assert.IsType(t, webhook.Provider{}, providers["webhook.edge"].Provider)
+		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.edge"].Provider)
 	})
 
 	t.Run("supports custom names and dot-separated identifiers", func(t *testing.T) {
@@ -58,8 +58,8 @@ func TestDestinations(t *testing.T) {
 			"cloudflare.backup-domain", "cloudflare.primary-domain",
 			"webhook.custom-name-a", "webhook.custom-name-b",
 		}, names)
-		assert.IsType(t, webhook.Provider{}, providers["webhook.custom-name-a"])
-		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.primary-domain"])
+		assert.IsType(t, webhook.Provider{}, providers["webhook.custom-name-a"].Provider)
+		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.primary-domain"].Provider)
 	})
 
 	t.Run("rejects empty webhook target name", func(t *testing.T) {
@@ -100,7 +100,7 @@ func TestDestinations(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"webhook.ops/alerts"}, names)
-		assert.IsType(t, webhook.Provider{}, providers["webhook.ops/alerts"])
+		assert.IsType(t, webhook.Provider{}, providers["webhook.ops/alerts"].Provider)
 	})
 
 	t.Run("accepts slashes in cloudflare target names", func(t *testing.T) {
@@ -111,7 +111,7 @@ func TestDestinations(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"cloudflare.primary/zone"}, names)
-		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.primary/zone"])
+		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.primary/zone"].Provider)
 	})
 }
 
@@ -162,7 +162,7 @@ func assertResolvedWebhookURL(t *testing.T, reference, want string) {
 		"edge": {URL: reference},
 	}})
 	require.NoError(t, err)
-	assert.Equal(t, want, providers["webhook.edge"].(webhook.Provider).URL)
+	assert.Equal(t, want, providers["webhook.edge"].Provider.(webhook.Provider).URL)
 }
 
 func TestAllowedWebhook(t *testing.T) {
@@ -256,11 +256,11 @@ func TestDestinationsValueResolution(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, []string{"cloudflare.primary", "cloudflare.secondary", "webhook.notification"}, names)
-	assert.Equal(t, "primary-token", providers["cloudflare.primary"].(cloudflare.Provider).Token)
-	assert.Contains(t, providers["cloudflare.primary"].(cloudflare.Provider).RulesURL, strings.Repeat("a", 32))
-	assert.Equal(t, " secondary-token ", providers["cloudflare.secondary"].(cloudflare.Provider).Token)
-	assert.Contains(t, providers["cloudflare.secondary"].(cloudflare.Provider).RulesURL, strings.Repeat("b", 32))
-	p := providers["webhook.notification"].(webhook.Provider)
+	assert.Equal(t, "primary-token", providers["cloudflare.primary"].Provider.(cloudflare.Provider).Token)
+	assert.Contains(t, providers["cloudflare.primary"].Provider.(cloudflare.Provider).RulesURL, strings.Repeat("a", 32))
+	assert.Equal(t, " secondary-token ", providers["cloudflare.secondary"].Provider.(cloudflare.Provider).Token)
+	assert.Contains(t, providers["cloudflare.secondary"].Provider.(cloudflare.Provider).RulesURL, strings.Repeat("b", 32))
+	p := providers["webhook.notification"].Provider.(webhook.Provider)
 	assert.Equal(t, "https://hooks.example.com/warden", p.URL)
 	assert.Equal(t, "Bearer secret", p.Headers.Get("Authorization"))
 	assert.Equal(t, "file-header-value", p.Headers.Get("X-API-Key"))
@@ -459,7 +459,7 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 			}},
 		}})
 		require.NoError(t, err)
-		p := providers["webhook.edge"].(webhook.Provider)
+		p := providers["webhook.edge"].Provider.(webhook.Provider)
 		assert.Equal(t, "example.org", p.Headers.Get("Host"))
 		assert.Equal(t, "123", p.Headers.Get("Content-Length"))
 		assert.Equal(t, "chunked", p.Headers.Get("Transfer-Encoding"))
@@ -555,7 +555,7 @@ func TestWebhookBodyTemplate(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		provider, ok := providers["webhook.slack"].(webhook.Provider)
+		provider, ok := providers["webhook.slack"].Provider.(webhook.Provider)
 		require.True(t, ok)
 		require.NotNil(t, provider.Template)
 
@@ -583,7 +583,7 @@ func TestWebhookBodyTemplate(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		provider := providers["webhook.slack"].(webhook.Provider)
+		provider := providers["webhook.slack"].Provider.(webhook.Provider)
 		require.NotNil(t, provider.Template)
 		body, err := provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
 		require.NoError(t, err)
@@ -599,7 +599,7 @@ func TestWebhookBodyTemplate(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		assert.Nil(t, providers["webhook.plain"].(webhook.Provider).Template)
+		assert.Nil(t, providers["webhook.plain"].Provider.(webhook.Provider).Template)
 	})
 
 	t.Run("rejects an unreadable template file", func(t *testing.T) {
@@ -674,7 +674,7 @@ func TestDestinationsResponse(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		provider := providers["webhook.ops"].(webhook.Provider)
+		provider := providers["webhook.ops"].Provider.(webhook.Provider)
 		assert.Nil(t, provider.Response)
 	})
 
@@ -706,7 +706,7 @@ targets:
 		providers, _, err := Destinations(cfg.Targets)
 		require.NoError(t, err)
 
-		provider := providers["webhook.slack-bot"].(webhook.Provider)
+		provider := providers["webhook.slack-bot"].Provider.(webhook.Provider)
 		require.NotNil(t, provider.Response)
 		assert.Equal(t, []int{200, 201, 202}, provider.Response.StatusCodes)
 		assert.NoError(t, provider.Response.Evaluate(200, []byte(`{"ok":true}`)))
@@ -735,7 +735,7 @@ func TestWebhookTemplateVars(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		t.Setenv("WARDEN_TEST_CHANNEL", "changed")
-		require.NoError(t, providers["webhook.slack"].Apply(t.Context(), decisions.Decision{State: decisions.StateBanned, IP: "192.0.2.1"}))
+		require.NoError(t, providers["webhook.slack"].Provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned, IP: "192.0.2.1"}))
 		assert.Equal(t, channel, <-received)
 	})
 
@@ -753,5 +753,57 @@ func TestWebhookTemplateVars(t *testing.T) {
 			"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`},
 		}})
 		require.ErrorContains(t, err, "channel")
+	})
+}
+
+// TestDestinationAttemptLimits verifies that bootstrap resolves limits into runtime targets.
+func TestDestinationAttemptLimits(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults both providers to three attempts", func(t *testing.T) {
+		t.Parallel()
+
+		destinations, _, err := Destinations(config.Targets{
+			Webhook: map[string]config.WebhookTarget{
+				"receiver": {URL: "https://example.org/events"},
+			},
+			Cloudflare: map[string]config.CloudflareTarget{
+				"edge": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
+			},
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 3, destinations["webhook.receiver"].MaxAttempts)
+		assert.Equal(t, 3, destinations["cloudflare.edge"].MaxAttempts)
+	})
+
+	t.Run("inherits global limit and applies per-target overrides", func(t *testing.T) {
+		t.Parallel()
+
+		global := 4
+		slack := 2
+		edge := 1
+		destinations, _, err := Destinations(config.Targets{
+			MaxAttempts: &global,
+			Webhook: map[string]config.WebhookTarget{
+				"receiver": {URL: "https://example.org/events"},
+				"slack": {
+					URL:         "https://example.org/slack",
+					MaxAttempts: &slack,
+				},
+			},
+			Cloudflare: map[string]config.CloudflareTarget{
+				"edge": {
+					ZoneID:      strings.Repeat("a", 32),
+					APIToken:    "token",
+					MaxAttempts: &edge,
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		assert.Equal(t, 4, destinations["webhook.receiver"].MaxAttempts)
+		assert.Equal(t, 2, destinations["webhook.slack"].MaxAttempts)
+		assert.Equal(t, 1, destinations["cloudflare.edge"].MaxAttempts)
 	})
 }

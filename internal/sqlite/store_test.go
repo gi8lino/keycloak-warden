@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
@@ -21,17 +22,18 @@ import (
 // openStore constructs an isolated store and matching application ingestion use case.
 func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *ingestion.Service) {
 	t.Helper()
+
 	rule := detection.Rule{
 		Threshold: 2,
 		Window:    time.Minute,
 		Ban:       2 * time.Minute,
 	}
 	store, err := sqlite.Open(path, rule, targets)
-
 	require.NoError(t, err)
+
 	processor, err := ingestion.New(store, rule)
-
 	require.NoError(t, err)
+
 	return store, processor
 }
 
@@ -137,13 +139,13 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, a)
 		assert.Equal(t, "a", a.Destination)
-		require.NoError(t, store.Finish(ctx, *a, false, now))
+		require.NoError(t, store.Finish(ctx, *a, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
 		b, err := store.Next(ctx, now)
 
 		require.NoError(t, err)
 		require.NotNil(t, b)
 		assert.Equal(t, "b", b.Destination)
-		require.NoError(t, store.Finish(ctx, *b, true, now))
+		require.NoError(t, store.Finish(ctx, *b, nil, actions.DefaultMaxAttempts, now))
 		retry, err := store.Next(ctx, now.Add(11*time.Second))
 
 		require.NoError(t, err)
@@ -156,7 +158,7 @@ func TestOpen(t *testing.T) {
 		require.NotNil(t, extended)
 		assert.Equal(t, decision.ID, extended.ID)
 		assert.Equal(t, int64(2), extended.Revision)
-		require.NoError(t, store.Finish(ctx, *a, true, later))
+		require.NoError(t, store.Finish(ctx, *a, nil, actions.DefaultMaxAttempts, later))
 		pending, err := store.Next(ctx, later)
 
 		require.NoError(t, err)
@@ -188,7 +190,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, "a", release.Destination)
 		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *release, true, now))
+		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now))
 		release, err = store.Next(ctx, now)
 
 		require.NoError(t, err)
@@ -196,7 +198,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, "b", release.Destination)
 		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *release, true, now))
+		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now))
 		active, err = store.ListActive(ctx, now)
 
 		require.NoError(t, err)
@@ -219,7 +221,7 @@ func TestDestinationBackoff(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, false, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now))
 
 	// A new IP shares the pause, even if the worker restarts.
 	for _, id := range []string{"three", "four"} {
@@ -230,6 +232,7 @@ func TestDestinationBackoff(t *testing.T) {
 	}
 	require.NoError(t, store.Close())
 	store, _ = openStore(t, path, "edge")
+	require.NoError(t, store.ReconcileAttemptLimit(ctx, "edge", 10))
 
 	for _, seconds := range []int{10, 20, 40, 80, 160, 300, 300} {
 		due := now.Add(time.Duration(seconds) * time.Second)
@@ -245,20 +248,20 @@ func TestDestinationBackoff(t *testing.T) {
 		if seconds == 10 {
 			assert.Equal(t, "203.0.113.2", job.Decision.IP)
 		}
-		require.NoError(t, store.Finish(ctx, *job, false, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now))
 	}
 	now = now.Add(5 * time.Minute)
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
 	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
-	require.NoError(t, store.Finish(ctx, *job, true, now))
+	require.NoError(t, store.Finish(ctx, *job, nil, 10, now))
 
 	// The other pending release gets a fresh first retry after the destination recovers.
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, false, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now))
 	pending, err := store.Next(ctx, now.Add(10*time.Second))
 	require.NoError(t, err)
 	require.NotNil(t, pending)
@@ -309,7 +312,7 @@ func TestWorkerSchedule(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, false, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
 		require.NoError(t, store.Close())
 		store, _ = openStore(t, path, "receiver")
 		defer store.Close() //nolint:errcheck
@@ -325,7 +328,7 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
-		require.NoError(t, store.Finish(ctx, *job, true, due))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due))
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
 		assert.True(t, due.IsZero())
@@ -357,7 +360,7 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, true, now))
+	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
 
 	latest, err := processor.Process(ctx, failed("third"), now)
 	require.NoError(t, err)
@@ -369,4 +372,52 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	next, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	assert.Nil(t, next, "an unchanged ban must not be delivered again")
+}
+
+func TestAttemptBudget(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	path := filepath.Join(t.TempDir(), "budget.db")
+	store, _ := openStore(t, path, "receiver")
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	record, err := store.ApplyManualBan(ctx, "192.0.2.1", now.Add(time.Hour), "test", now)
+	require.NoError(t, err)
+	for range 3 {
+		job, err := store.Next(ctx, now)
+		require.NoError(t, err)
+		require.NotNil(t, job)
+		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), actions.DefaultMaxAttempts, now))
+		now = now.Add(time.Minute)
+	}
+	require.NoError(t, store.Close())
+
+	store, _ = openStore(t, path, "receiver")
+	job, err := store.Next(ctx, now)
+	require.NoError(t, err)
+	assert.Nil(t, job)
+	inspected, err := store.GetDecision(ctx, record.Decision.ID, now)
+	require.NoError(t, err)
+	require.Len(t, inspected.DeliveryHistory, 1)
+	delivery := inspected.DeliveryHistory[0]
+	assert.Equal(t, "exhausted", delivery.Status)
+	assert.Nil(t, delivery.NextAttemptAt)
+	assert.Len(t, delivery.Attempts, 3)
+	due, err := store.NextDeadline(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, record.Decision.ExpiresAt, due.UTC())
+	require.NoError(t, store.Close())
+
+	store, _ = openStore(t, path, "receiver")
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	require.NoError(t, store.ReconcileAttemptLimit(ctx, "receiver", 4))
+	job, err = store.Next(ctx, now)
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now))
+	_, err = store.ReleaseAllSources(ctx, record.Decision.ID, now)
+	require.NoError(t, err)
+	job, err = store.Next(ctx, now.Add(5*time.Minute))
+	require.NoError(t, err)
+	require.NotNil(t, job)
+	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
 }

@@ -397,11 +397,14 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		defer store.Close() //nolint:errcheck
-		destinations := map[string]actions.Provider{
-			"notify": webhook.Provider{
-				URL:     target.URL,
-				Client:  target.Client(),
-				Headers: http.Header{"X-Api-Key": {"expected"}},
+		destinations := map[string]actions.Target{
+			"notify": {
+				Provider: webhook.Provider{
+					URL:     target.URL,
+					Client:  target.Client(),
+					Headers: http.Header{"X-Api-Key": {"expected"}},
+				},
+				MaxAttempts: actions.DefaultMaxAttempts,
 			},
 		}
 		runner := actions.Start(t.Context(), store, destinations, slog.Default())

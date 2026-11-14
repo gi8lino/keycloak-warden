@@ -1,6 +1,7 @@
 package sqlite
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 )
@@ -80,6 +82,8 @@ func TestReleaseAllSourcesRollback(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	created, err := store.ApplyManualBan(ctx, "203.0.113.42", now.Add(time.Hour), "investigation", now)
 	require.NoError(t, err)
+	before, err := store.GetDecision(ctx, created.Decision.ID, now)
+	require.NoError(t, err)
 	<-store.Changes()
 
 	_, err = store.db.Exec(`
@@ -96,7 +100,7 @@ END
 
 	unchanged, err := store.GetDecision(ctx, created.Decision.ID, now)
 	require.NoError(t, err)
-	assert.Equal(t, created, unchanged)
+	assert.Equal(t, before, unchanged)
 	var generation int64
 	require.NoError(t, store.db.QueryRowContext(ctx,
 		"SELECT failure_generation FROM decisions WHERE ip = ?", created.Decision.IP,
@@ -188,7 +192,7 @@ BEGIN
 END
 `)
 		require.NoError(t, err)
-		require.ErrorContains(t, store.Finish(ctx, *job, true, now), "injected acknowledgement failure")
+		require.ErrorContains(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now), "injected acknowledgement failure")
 
 		current, err := store.GetDecision(ctx, created.Decision.ID, now)
 		require.NoError(t, err)
@@ -201,7 +205,7 @@ END
 
 		_, err = store.db.Exec("DROP TRIGGER reject_acknowledgement")
 		require.NoError(t, err)
-		require.NoError(t, store.Finish(ctx, *job, true, now))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
 		pending, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, pending)
@@ -227,7 +231,7 @@ BEGIN
 END
 `)
 		require.NoError(t, err)
-		require.ErrorContains(t, store.Finish(ctx, *job, false, now), "injected retry failure")
+		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now), "injected retry failure")
 
 		var backoffs int
 		require.NoError(t, store.db.QueryRowContext(ctx,
@@ -240,7 +244,7 @@ END
 
 		_, err = store.db.Exec("DROP TRIGGER reject_retry")
 		require.NoError(t, err)
-		require.NoError(t, store.Finish(ctx, *job, false, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
 		pending, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, pending)

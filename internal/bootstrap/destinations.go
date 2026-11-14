@@ -27,12 +27,13 @@ import (
 const defaultClientTimeout = 5 * time.Second
 
 // Destinations constructs each named provider and returns stable provider-qualified names.
-func Destinations(targets config.Targets) (providers map[string]actions.Provider, names []string, err error) {
+func Destinations(targets config.Targets) (destinations map[string]actions.Target, names []string, err error) {
 	if err := targets.Validate(); err != nil {
 		return nil, nil, err
 	}
 
-	providers = make(map[string]actions.Provider, len(targets.Webhook)+len(targets.Cloudflare))
+	destinations = make(map[string]actions.Target, len(targets.Webhook)+len(targets.Cloudflare))
+	defaultLimit := effectiveMaxAttempts(targets.MaxAttempts, actions.DefaultMaxAttempts)
 
 	client := &http.Client{
 		Timeout:       defaultClientTimeout,
@@ -51,7 +52,10 @@ func Destinations(targets config.Targets) (providers map[string]actions.Provider
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", "webhook."+name, err)
 		}
-		providers["webhook."+name] = provider
+		destinations["webhook."+name] = actions.Target{
+			Provider:    provider,
+			MaxAttempts: effectiveMaxAttempts(targets.Webhook[name].MaxAttempts, defaultLimit),
+		}
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
@@ -59,10 +63,21 @@ func Destinations(targets config.Targets) (providers map[string]actions.Provider
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", "cloudflare."+name, err)
 		}
-		providers["cloudflare."+name] = provider
+		destinations["cloudflare."+name] = actions.Target{
+			Provider:    provider,
+			MaxAttempts: effectiveMaxAttempts(targets.Cloudflare[name].MaxAttempts, defaultLimit),
+		}
 	}
 
-	return providers, slices.Sorted(maps.Keys(providers)), nil
+	return destinations, slices.Sorted(maps.Keys(destinations)), nil
+}
+
+// effectiveMaxAttempts resolves a per-target override against its inherited limit.
+func effectiveMaxAttempts(override *int, fallback int) int {
+	if override != nil {
+		return *override
+	}
+	return fallback
 }
 
 // noRedirect prevents credentials from being forwarded to another endpoint.
@@ -195,11 +210,17 @@ func resolveWebhookHeaders(
 // validHeaderValue rejects control characters, including CR and LF injection.
 func validHeaderValue(value string) bool {
 	for i := range len(value) {
-		if value[i] < ' ' && value[i] != '\t' || value[i] == 0x7f {
+		if isForbiddenHeaderControl(value[i]) {
 			return false
 		}
 	}
 	return true
+}
+
+// isForbiddenHeaderControl identifies control bytes disallowed in HTTP field values.
+func isForbiddenHeaderControl(c byte) bool {
+	const deleteByte = 0x7f
+	return (c < ' ' && c != '\t') || c == deleteByte
 }
 
 // parseWebhookBodyTemplate resolves and parses the configured body template.

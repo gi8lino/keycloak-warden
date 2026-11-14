@@ -98,6 +98,9 @@ ON CONFLICT (ip, destination) DO NOTHING
 			return decisions.Decision{}, false, err
 		}
 	}
+	if err := syncDeliveryHistory(ctx, tx, decision); err != nil {
+		return decisions.Decision{}, false, err
+	}
 	return decision, changed, nil
 }
 

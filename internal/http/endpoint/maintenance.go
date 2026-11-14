@@ -47,8 +47,7 @@ func RunMaintenance(
 			httpresponse.InternalServerError(logger, w, err)
 			return
 		}
-		logger.Info(
-			"database maintenance completed",
+		logger.Info("database maintenance completed",
 			"event", "database_maintenance_completed",
 			"operation", operation,
 		)

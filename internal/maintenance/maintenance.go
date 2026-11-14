@@ -50,13 +50,18 @@ type Schedule struct {
 
 // Validate rejects maintenance intervals outside the supported range.
 func (s Schedule) Validate() error {
-	if s.PruneInterval < MinInterval || s.PruneInterval > MaxInterval {
+	if !validMaintenanceInterval(s.PruneInterval) {
 		return fmt.Errorf("prune-interval must be between %s and %s", MinInterval, MaxInterval)
 	}
-	if s.OptimizeInterval < MinInterval || s.OptimizeInterval > MaxInterval {
+	if !validMaintenanceInterval(s.OptimizeInterval) {
 		return fmt.Errorf("optimize-interval must be between %s and %s", MinInterval, MaxInterval)
 	}
 	return nil
+}
+
+// validMaintenanceInterval checks the inclusive scheduling bounds for maintenance jobs.
+func validMaintenanceInterval(interval time.Duration) bool {
+	return interval >= MinInterval && interval <= MaxInterval
 }
 
 // Store provides the independent SQLite maintenance operations.

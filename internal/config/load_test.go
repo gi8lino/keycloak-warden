@@ -182,3 +182,40 @@ targets:
 		require.Error(t, err)
 	})
 }
+
+func TestAttemptLimits(t *testing.T) {
+	t.Parallel()
+	t.Run("inherits and overrides the YAML budget by named destination", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, `
+targets:
+  max-attempts: 4
+  webhook:
+    receiver:
+      url: https://example.org
+    slack:
+      url: https://example.org/slack
+      max-attempts: 2
+  cloudflare:
+    edge:
+      api-token: example
+      zone-id: example
+      max-attempts: 1
+`))
+		require.NoError(t, err)
+		require.NoError(t, cfg.Targets.Validate())
+		require.NotNil(t, cfg.Targets.MaxAttempts)
+		assert.Equal(t, 4, *cfg.Targets.MaxAttempts)
+		assert.Nil(t, cfg.Targets.Webhook["receiver"].MaxAttempts)
+		require.NotNil(t, cfg.Targets.Webhook["slack"].MaxAttempts)
+		assert.Equal(t, 2, *cfg.Targets.Webhook["slack"].MaxAttempts)
+		require.NotNil(t, cfg.Targets.Cloudflare["edge"].MaxAttempts)
+		assert.Equal(t, 1, *cfg.Targets.Cloudflare["edge"].MaxAttempts)
+	})
+	t.Run("rejects an explicit zero", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, "targets:\n  max-attempts: 0\n  webhook:\n    receiver:\n      url: https://example.org\n"))
+		require.NoError(t, err)
+		require.ErrorContains(t, cfg.Targets.Validate(), "max-attempts")
+	})
+}

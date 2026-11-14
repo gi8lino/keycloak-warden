@@ -1,0 +1,26 @@
+package actions
+
+import (
+	"context"
+	"fmt"
+	"maps"
+	"slices"
+)
+
+// AttemptLimitReconciler synchronizes persisted delivery states with one target's budget.
+type AttemptLimitReconciler interface {
+	// ReconcileAttemptLimit updates the current deliveries of a named destination.
+	ReconcileAttemptLimit(context.Context, string, int) error
+}
+
+// ReconcileTargets applies the configured targets' attempt budgets before the worker starts.
+// It does not deliver decisions or persist the target configuration.
+func ReconcileTargets(ctx context.Context, store AttemptLimitReconciler, targets map[string]Target) error {
+	for _, name := range slices.Sorted(maps.Keys(targets)) {
+		if err := store.ReconcileAttemptLimit(ctx, name, targets[name].MaxAttempts); err != nil {
+			return fmt.Errorf("target %q: %w", name, err)
+		}
+	}
+
+	return nil
+}

@@ -97,8 +97,10 @@ func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
 SELECT d.id, d.revision, d.ip, d.active, d.expires, q.destination
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
+JOIN delivery_history AS h ON h.ip = q.ip AND h.destination = q.destination AND h.revision = d.revision
 LEFT JOIN destination_backoff AS b ON b.destination = q.destination
 WHERE q.acknowledged < d.revision
+    AND h.status IN ('pending', 'retrying')
     AND COALESCE(b.retry_at, 0) <= ?
     AND q.retry_at <= ?
     AND (d.active = 0 OR d.expires > ?)
@@ -124,15 +126,22 @@ LIMIT 1
 	return &job, nil
 }
 
-// Finish acknowledges successful work or schedules a retry for this destination.
-func (s *Store) Finish(ctx context.Context, job actions.Job, success bool, now time.Time) error {
+// Finish atomically records an attempt and acknowledges or retries within the supplied limit.
+func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, limit int, now time.Time) error {
+	if limit < 1 {
+		return errors.New("max-attempts must be at least 1")
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if !success {
+	if err := recordAttempt(ctx, tx, job, deliveryErr, now); err != nil {
+		return err
+	}
+
+	if deliveryErr != nil {
 		// A newer decision may have been committed while the provider was called.
 		// Never delay that revision because delivery of an older one failed.
 		var revision int64
@@ -144,10 +153,13 @@ func (s *Store) Finish(ctx context.Context, job actions.Job, success bool, now t
 		}
 	}
 
-	if success {
+	if deliveryErr == nil {
 		err = acknowledgeDelivery(ctx, tx, job)
 	} else {
 		err = scheduleRetry(ctx, tx, job, now)
+		if err == nil {
+			err = applyAttemptLimit(ctx, tx, job.Destination, limit, job.Decision.IP, job.Decision.Revision)
+		}
 	}
 	if err != nil {
 		return err
@@ -205,8 +217,10 @@ FROM (
     SELECT MIN(MAX(q.retry_at, COALESCE(b.retry_at, 0))) AS deadline
     FROM deliveries AS q
     JOIN decisions AS d USING (ip)
+    JOIN delivery_history AS h ON h.ip = q.ip AND h.destination = q.destination AND h.revision = d.revision
     LEFT JOIN destination_backoff AS b ON b.destination = q.destination
     WHERE q.acknowledged < d.revision
+        AND h.status IN ('pending', 'retrying')
 )`).Scan(&due)
 	if err != nil || !due.Valid {
 		return time.Time{}, err

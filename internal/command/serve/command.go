@@ -100,20 +100,18 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		}
 
 		logger := appkitlogging.Setup(*logFormat, *debug, stdout)
-		logger.Info(
-			"starting Keycloak Warden",
+		logger.Info("starting Keycloak Warden",
 			"event", "app_starting",
 			"version", version,
 		)
 		if len(command.Overrides()) > 0 {
-			logger.Info(
-				"CLI Overrides",
+			logger.Info("CLI Overrides",
 				"event", "cli_overrides",
 				"overrides", command.Overrides().Values(),
 			)
 		}
 
-		return Run(
+		if err := Run(
 			ctx,
 			cfg,
 			*flags.RoutePrefix,
@@ -130,6 +128,15 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 				OptimizeInterval: *optimizeInterval,
 			},
 			version,
-		)
+		); err != nil {
+			logger.Error(
+				"run server error",
+				"event", "server_run_failed",
+				"error", err,
+			)
+			return err
+		}
+
+		return nil
 	})
 }

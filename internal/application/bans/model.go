@@ -32,6 +32,8 @@ type Record struct {
 	Decision decisions.Decision `json:"decision" yaml:"decision"`
 	// Sources contains the independent active reasons for the block.
 	Sources []Source `json:"sources" yaml:"sources"`
+	// DeliveryHistory contains per-revision history on individual decision reads.
+	DeliveryHistory []decisions.Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
 	// Deliveries records each destination’s acknowledged revision.
 	Deliveries []decisions.Acknowledgement `json:"deliveries" yaml:"deliveries"`
 }

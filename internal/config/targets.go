@@ -12,6 +12,9 @@ import (
 
 // Validate checks target names, required fields and webhook header names.
 func (targets Targets) Validate() error {
+	if err := validateMaxAttempts("targets", targets.MaxAttempts); err != nil {
+		return err
+	}
 	if len(targets.Webhook)+len(targets.Cloudflare) == 0 {
 		return errors.New("at least one webhook or cloudflare target is required")
 	}
@@ -33,6 +36,9 @@ func (targets Targets) Validate() error {
 // validateWebhookTarget checks a named webhook's endpoint and uniquely named headers.
 func validateWebhookTarget(name string, target WebhookTarget) error {
 	id := "webhook." + name
+	if err := validateMaxAttempts(id, target.MaxAttempts); err != nil {
+		return err
+	}
 	if err := validateTargetName(name); err != nil {
 		return fmt.Errorf("target %q: %w", id, err)
 	}
@@ -73,6 +79,9 @@ func validateWebhookTarget(name string, target WebhookTarget) error {
 // validateCloudflareTarget checks a named zone's resolvable credentials.
 func validateCloudflareTarget(name string, target CloudflareTarget) error {
 	id := "cloudflare." + name
+	if err := validateMaxAttempts(id, target.MaxAttempts); err != nil {
+		return err
+	}
 	if err := validateTargetName(name); err != nil {
 		return fmt.Errorf("target %q: %w", id, err)
 	}
@@ -120,8 +129,20 @@ func validateHeaderName(name string) error {
 
 // isTokenChar implements RFC 9110 HTTP field-name token characters.
 func isTokenChar(c byte) bool {
-	if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
-		return true
+	return isASCIIAlphanumeric(c) || strings.ContainsRune("!#$%&'*+-.^_`|~", rune(c))
+}
+
+// isASCIIAlphanumeric reports whether c is an ASCII letter or decimal digit.
+func isASCIIAlphanumeric(c byte) bool {
+	return ('a' <= c && c <= 'z') ||
+		('A' <= c && c <= 'Z') ||
+		('0' <= c && c <= '9')
+}
+
+// validateMaxAttempts rejects explicit limits that cannot allow an initial attempt.
+func validateMaxAttempts(scope string, limit *int) error {
+	if limit != nil && *limit < 1 {
+		return fmt.Errorf("%s: max-attempts must be at least 1", scope)
 	}
-	return strings.ContainsRune("!#$%&'*+-.^_`|~", rune(c))
+	return nil
 }

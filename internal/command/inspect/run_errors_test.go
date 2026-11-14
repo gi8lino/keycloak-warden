@@ -5,8 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 func TestRunClientValidation(t *testing.T) {
@@ -39,7 +37,7 @@ func TestRunClientValidation(t *testing.T) {
 		called := false
 		err := Run(t.Context(), "http://127.0.0.1:8080", "admin", nil, func(value any) error {
 			called = true
-			list, ok := value.([]client.Record)
+			list, ok := value.([]inspection)
 			require.True(t, ok)
 			assert.Empty(t, list)
 			return nil

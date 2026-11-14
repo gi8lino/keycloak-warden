@@ -234,6 +234,11 @@ VALUES ('keycloak', 'event-one', '203.0.113.10', ?, 3)
 	assert.Equal(t, "investigation", record.Sources[0].Reason)
 	assert.Len(t, record.Deliveries, 1)
 	assert.Equal(t, int64(4), record.Deliveries[0].Revision)
+	require.Len(t, record.DeliveryHistory, 1)
+	history := record.DeliveryHistory[0]
+	assert.Equal(t, "delivered", history.Status)
+	assert.Empty(t, history.Attempts)
+	assert.Nil(t, history.AcknowledgedAt)
 	require.NoError(t, store.Close())
 
 	upgraded, err := sql.Open("sqlite", path)

@@ -15,8 +15,7 @@ func logEventOutcome(
 ) {
 	switch result.Outcome {
 	case ingestion.OutcomeIgnored:
-		logger.Debug(
-			"security event ignored",
+		logger.Debug("security event ignored",
 			"event", "security_event_ignored",
 			"event_id", envelope.ID,
 			"event_type", envelope.Kind,
@@ -25,8 +24,7 @@ func logEventOutcome(
 		)
 
 	case ingestion.OutcomeDuplicate:
-		logger.Debug(
-			"duplicate security event ignored",
+		logger.Debug("duplicate security event ignored",
 			"event", "security_event_duplicate",
 			"event_id", envelope.ID,
 			"realm_id", envelope.RealmID,
@@ -34,8 +32,7 @@ func logEventOutcome(
 		)
 
 	case ingestion.OutcomeBelowThreshold:
-		logger.Debug(
-			"detection threshold not reached",
+		logger.Debug("detection threshold not reached",
 			"event", "detection_threshold_not_reached",
 			"event_id", envelope.ID,
 			"ip", result.IP,
@@ -44,8 +41,7 @@ func logEventOutcome(
 		)
 
 	case ingestion.OutcomeUnchanged:
-		logger.Debug(
-			"effective ban decision unchanged",
+		logger.Debug("effective ban decision unchanged",
 			"event", "decision_unchanged",
 			"event_id", envelope.ID,
 			"ip", result.IP,
@@ -55,8 +51,7 @@ func logEventOutcome(
 
 	case ingestion.OutcomeUpdated:
 		if decision := result.Decision; decision != nil {
-			logger.Info(
-				"automatic ban updated",
+			logger.Info("automatic ban updated",
 				"event", "automatic_ban_updated",
 				"decision_id", decision.ID,
 				"revision", decision.Revision,
