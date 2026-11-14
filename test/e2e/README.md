@@ -24,9 +24,10 @@ Copy `test/e2e/.env.example` to `test/e2e/.env` if the local file does not exist
 
 ```dotenv
 SLACK_AUTHORIZATION="Bearer xoxb-your-test-bot-token"
+SLACK_CHANNEL=C0123456789
 ```
 
-Set the `channel` in [the Slack bot template](../../deploy/kubernetes/templates/slack-bot.json.tmpl) to your test channel ID and invite the bot to that channel. The bot needs the `chat:write` scope. Run `make e2e-test` from the Warden root. A nonempty token enables the Slack Bot API destination alongside Hookglass. The smoke script waits for Slack to acknowledge the ban before releasing the IP, then checks the release acknowledgement. Both messages should appear in the test channel. Warden treats Slack's HTTP 200 with `ok: false` as a delivery failure. Check `make e2e-logs` for the Slack error.
+Set `SLACK_CHANNEL` in the same file to your test channel ID (default: `test`) and invite the bot to that channel. The bot needs the `chat:write` scope. Run `make e2e-test` from the Warden root. A nonempty token enables the Slack Bot API destination alongside Hookglass. The smoke script waits for Slack to acknowledge the ban before releasing the IP, then checks the release acknowledgement. Both messages should appear in the test channel. Warden treats Slack's HTTP 200 with `ok: false` as a delivery failure. Check `make e2e-logs` for the Slack error.
 
 Leave `SLACK_AUTHORIZATION` empty for the Hookglass-only setup. The local env file is ignored by Git and excluded from the Warden image build context.
 

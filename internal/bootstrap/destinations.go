@@ -91,6 +91,11 @@ func buildWebhook(
 		return nil, err
 	}
 
+	vars, err := resolveTemplateVars(values, target.TemplateVars)
+	if err != nil {
+		return nil, err
+	}
+
 	var responseRule *response.Rule
 	if target.Response != nil {
 		rule, err := target.Response.Rule()
@@ -101,11 +106,12 @@ func buildWebhook(
 	}
 
 	provider := webhook.Provider{
-		URL:      endpoint,
-		Headers:  headers,
-		Client:   client,
-		Template: bodyTemplate,
-		Response: responseRule,
+		URL:          endpoint,
+		Headers:      headers,
+		Client:       client,
+		Template:     bodyTemplate,
+		TemplateVars: vars,
+		Response:     responseRule,
 	}
 
 	if err := provider.ValidateTemplate(); err != nil {
@@ -113,6 +119,22 @@ func buildWebhook(
 	}
 
 	return provider, nil
+}
+
+// resolveTemplateVars resolves only the variables explicitly configured for this destination.
+func resolveTemplateVars(values *resolver.Registry, configured map[string]string) (map[string]string, error) {
+	vars := make(map[string]string, len(configured))
+	for _, name := range slices.Sorted(maps.Keys(configured)) {
+		if strings.TrimSpace(name) == "" {
+			return nil, errors.New("template-vars: variable name must not be blank")
+		}
+		value, err := values.ResolveVariable(configured[name])
+		if err != nil {
+			return nil, fmt.Errorf("template-vars %q: %w", name, err)
+		}
+		vars[name] = value
+	}
+	return vars, nil
 }
 
 // resolveWebhookURL resolves and validates a webhook endpoint.

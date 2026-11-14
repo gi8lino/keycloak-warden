@@ -16,6 +16,8 @@ targets:
       url: https://slack.com/api/chat.postMessage
       headers:
         Authorization: env:SLACK_AUTHORIZATION
+      template-vars:
+        channel: env:SLACK_CHANNEL
       body-template: file:/config/templates/slack-bot.json.tmpl
       response:
         json:

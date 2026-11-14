@@ -20,6 +20,8 @@ type WebhookTarget struct {
 	// BodyTemplate optionally resolves to a Go text/template for the JSON request body.
 	// When unset, webhooks receive the unchanged decision JSON.
 	BodyTemplate string `yaml:"body-template"`
+	// TemplateVars maps template-visible names to destination-specific resolver values.
+	TemplateVars map[string]string `yaml:"template-vars"`
 	// Response optionally overrides accepted HTTP statuses and validates response bodies.
 	// A nil response preserves the existing HTTP 2xx-only acknowledgement behavior.
 	Response *WebhookResponse `yaml:"response"`

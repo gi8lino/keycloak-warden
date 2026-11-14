@@ -1,6 +1,9 @@
 package bootstrap
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -708,5 +711,47 @@ targets:
 		assert.Equal(t, []int{200, 201, 202}, provider.Response.StatusCodes)
 		assert.NoError(t, provider.Response.Evaluate(200, []byte(`{"ok":true}`)))
 		assert.ErrorContains(t, provider.Response.Evaluate(200, []byte(`{"ok":false,"error":"channel_not_found"}`)), "channel_not_found")
+	})
+}
+
+func TestWebhookTemplateVars(t *testing.T) {
+	t.Run("renders the Slack channel resolved at startup", func(t *testing.T) {
+		const channel = "test-\"channel\""
+		t.Setenv("WARDEN_TEST_CHANNEL", channel)
+		received := make(chan string, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			value, _ := payload["channel"].(string)
+			received <- value
+		}))
+		defer server.Close()
+
+		providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"slack": {URL: server.URL, BodyTemplate: "file:../../deploy/kubernetes/templates/slack-bot.json.tmpl", TemplateVars: map[string]string{"channel": "env:WARDEN_TEST_CHANNEL"}},
+		}})
+		require.NoError(t, err)
+		t.Setenv("WARDEN_TEST_CHANNEL", "changed")
+		require.NoError(t, providers["webhook.slack"].Apply(t.Context(), decisions.Decision{State: decisions.StateBanned, IP: "192.0.2.1"}))
+		assert.Equal(t, channel, <-received)
+	})
+
+	t.Run("rejects a missing environment reference", func(t *testing.T) {
+		t.Parallel()
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`, TemplateVars: map[string]string{"channel": "env:WARDEN_TEST_MISSING_SLACK_CHANNEL_42"}},
+		}})
+		require.ErrorContains(t, err, `template-vars "channel"`)
+	})
+
+	t.Run("rejects an undeclared template variable", func(t *testing.T) {
+		t.Parallel()
+		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
+			"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`},
+		}})
+		require.ErrorContains(t, err, "channel")
 	})
 }

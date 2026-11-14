@@ -35,6 +35,8 @@ type Provider struct {
 	// Template optionally renders custom JSON from the decision fields.
 	// A nil template preserves the original decision JSON payload.
 	Template *templates.Template
+	// TemplateVars contains the resolved variables for this destination.
+	TemplateVars map[string]string
 	// Response optionally checks the HTTP status and body with Notifykit rules.
 	// When nil, only HTTP 2xx is accepted and the body is not inspected.
 	Response *response.Rule
@@ -118,13 +120,24 @@ func (p Provider) ValidateTemplate() error {
 	return nil
 }
 
+// templateData adds destination variables to the existing decision template fields.
+type templateData struct {
+	// Decision exposes the original decision fields at the template root.
+	decisions.Decision
+	// Vars contains only variables explicitly configured for this body template.
+	Vars map[string]string `json:"-"`
+}
+
 // renderBody either preserves the canonical decision JSON or renders the configured template.
 func (p Provider) renderBody(decision decisions.Decision) ([]byte, error) {
 	if p.Template == nil {
 		return json.Marshal(decision)
 	}
 
-	body, err := p.Template.Render(decision)
+	body, err := p.Template.Render(templateData{
+		Decision: decision,
+		Vars:     p.TemplateVars,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("render webhook body: %w", err)
 	}

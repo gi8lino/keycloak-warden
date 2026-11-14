@@ -101,6 +101,8 @@ targets:
       url: https://slack.com/api/chat.postMessage
       headers:
         Authorization: env:SLACK_AUTHORIZATION
+      template-vars:
+        channel: env:SLACK_CHANNEL
       body-template: file:/config/templates/slack-bot.json.tmpl
       response:
         json:
@@ -118,7 +120,7 @@ Merge this `webhook` group into the existing `targets` mapping rather than creat
 
 **Slack incoming webhook:** Set `SLACK_WEBHOOK_URL` in the `keycloak-warden` Secret. This target requires no authorization header or response-body check.
 
-**Slack Bot API:** Set `SLACK_AUTHORIZATION` to `Bearer xoxb-...` in the Secret and update the `channel` value in `slack-bot.json.tmpl`. This target uses Notifykit's opt-in JSON response validation: HTTP 200 with `{"ok":false}` is a failure, and `error-pointer: /error` supplies a bounded error message to Warden's delivery log. If you only want one Slack delivery, disable the other Slack target in `warden.yaml`. Both templates show the expiry in UTC only when the state is `banned`.
+**Slack Bot API:** Set `SLACK_AUTHORIZATION` to `Bearer xoxb-...` in the Secret and set `SLACK_CHANNEL` to the destination channel ID in the same Secret. This target uses Notifykit's opt-in JSON response validation: HTTP 200 with `{"ok":false}` is a failure, and `error-pointer: /error` supplies a bounded error message to Warden's delivery log. If you only want one Slack delivery, disable the other Slack target in `warden.yaml`. Both templates show the expiry in UTC only when the state is `banned`.
 
 **Microsoft Teams:** Uncomment the `msteams` target and add `MSTEAMS_WEBHOOK_URL` to the Secret. The provided MessageCard template requires an endpoint that accepts this legacy format; verify compatibility with your Teams workflow before enabling it.
 

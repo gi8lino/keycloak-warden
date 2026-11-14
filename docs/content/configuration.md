@@ -42,7 +42,9 @@ For example, `/config/templates/slack.json.tmpl` (a complete example is included
 {"text": {{ if eq .State "banned" }}{{ json (printf "Warden blocked %s (revision %d)" .IP .Revision) }}{{ else }}{{ json (printf "Warden released %s" .IP) }}{{ end }}}
 ```
 
-The template context is the existing decision with fields `.ID`, `.Revision`, `.IP`, `.State`, and `.ExpiresAt`. Use the `json` helper for all dynamic strings to ensure correct escaping. Rendered bodies must be valid JSON and cannot exceed 64 KiB. Warden checks both `banned` and `unbanned` outputs at startup; later rendering errors are reported as delivery failures and retried by the existing worker.
+A webhook can declare `template-vars` as a map of names to string values. Warden resolves them at startup using the destination resolver, including `env:`, `file:`, and `literal:` references. Use `"channel": {{ .Vars.channel | json }}` in the JSON template. Missing environment references fail startup. Only variables listed for that destination appear under `.Vars`.
+
+The decision fields are `.ID`, `.Revision`, `.IP`, `.State`, and `.ExpiresAt`. Use the `json` helper for all dynamic strings to ensure correct escaping. Rendered bodies must be valid JSON and cannot exceed 64 KiB. Warden checks both `banned` and `unbanned` outputs at startup; later rendering errors are reported as delivery failures and retried by the existing worker.
 
 Slack incoming webhooks accept JSON objects containing `text`. The `examples/templates/teams.json.tmpl` sample emits an Adaptive Card message envelope; check that it matches the input format of your selected Microsoft Teams Workflow trigger. Notification receivers may see duplicate messages when a response is lost and Warden retries—Warden continues to acknowledge revisions only on HTTP 2xx.
 
@@ -58,6 +60,8 @@ webhook:
     url: https://slack.com/api/chat.postMessage
     headers:
       Authorization: env:SLACK_AUTHORIZATION
+    template-vars:
+      channel: env:SLACK_CHANNEL
     body-template: file:/config/templates/slack-bot.json.tmpl
     response:
       json:
@@ -66,7 +70,7 @@ webhook:
         error-pointer: /error
 ```
 
-Place `webhook` under the existing `targets` mapping. Set `SLACK_AUTHORIZATION` to the complete `Bearer xoxb-...` header value, and include a `channel` field in the bot request body template. Incoming Slack webhooks continue working without response validation or an Authorization header.
+Place `webhook` under the existing `targets` mapping. Set `SLACK_AUTHORIZATION` to the complete `Bearer xoxb-...` header value, and set `SLACK_CHANNEL` to the destination channel ID. Incoming Slack webhooks continue working without response validation or an Authorization header.
 
 A response such as `{"ok":false,"error":"channel_not_found"}` is rejected, and Warden logs the extracted `channel_not_found` error under its existing `delivery_failed` event. Only the configured error value is exposed; Notifykit sanitizes and truncates it. Other response fields are not logged.
 
