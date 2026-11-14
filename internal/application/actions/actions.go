@@ -5,8 +5,6 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"maps"
-	"slices"
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
@@ -43,12 +41,15 @@ type Queue interface {
 	Changes() <-chan struct{}
 	// NextDeadline returns the earliest pending work time or zero when idle.
 	NextDeadline(context.Context) (time.Time, error)
-	// Maintain expires decision sources and returns decisions released by a committed expiry.
-	Maintain(context.Context, time.Time, []string) ([]decisions.Decision, error)
 	// Next returns the oldest ready destination job, or nil when idle.
 	Next(context.Context, time.Time) (*Job, error)
 	// Finish atomically records the outcome and applies the supplied attempt limit.
 	Finish(context.Context, Job, error, int, time.Time, time.Duration) error
+}
+
+// Expirer owns the application workflow for expiring ban reasons.
+type Expirer interface {
+	Expire(context.Context, time.Time) ([]decisions.Decision, error)
 }
 
 // Runner owns the background action worker and its cancellation lifecycle.
@@ -65,6 +66,7 @@ type Runner struct {
 func Start(
 	parent context.Context,
 	q Queue,
+	expirer Expirer,
 	destinations map[string]Target,
 	logger *slog.Logger,
 ) *Runner {
@@ -77,7 +79,7 @@ func Start(
 	go func() {
 		defer close(runner.done)
 		defer cancel()
-		runner.err = run(ctx, q, destinations, logger)
+		runner.err = run(ctx, q, expirer, destinations, logger)
 	}()
 
 	return runner
@@ -104,11 +106,12 @@ func (r *Runner) Close() error {
 func run(
 	ctx context.Context,
 	q Queue,
+	expirer Expirer,
 	destinations map[string]Target,
 	logger *slog.Logger,
 ) error {
 	for ctx.Err() == nil {
-		deadline, err := processReady(ctx, q, destinations, logger)
+		deadline, err := processReady(ctx, q, expirer, destinations, logger)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -134,10 +137,11 @@ func run(
 func processReady(
 	ctx context.Context,
 	q Queue,
+	expirer Expirer,
 	destinations map[string]Target,
 	logger *slog.Logger,
 ) (nextDeadline time.Time, err error) {
-	expired, err := q.Maintain(ctx, time.Now(), slices.Sorted(maps.Keys(destinations)))
+	expired, err := expirer.Expire(ctx, time.Now())
 	if err != nil {
 		return time.Time{}, err
 	}

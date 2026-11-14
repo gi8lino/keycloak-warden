@@ -6,6 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )
 
 func TestCorruptedBanRowsReturnErrors(t *testing.T) {
@@ -39,7 +41,7 @@ func TestCorruptedBanRowsReturnErrors(t *testing.T) {
 			store := openAtomicityStore(t)
 			ctx := t.Context()
 			now := time.Now().UTC().Truncate(time.Millisecond)
-			created, err := store.ApplyManualBan(ctx, "203.0.113.71", now.Add(time.Hour), "investigation", now, []string{"edge"})
+			created, err := bans.ApplyManualBan(ctx, store, "203.0.113.71", now.Add(time.Hour), "investigation", now, []string{"edge"})
 			require.NoError(t, err)
 
 			_, err = store.db.ExecContext(ctx, tc.update, created.Decision.IP)

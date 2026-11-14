@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )
 
 func TestValidateTargets(t *testing.T) {
@@ -21,7 +23,7 @@ func TestValidateTargets(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := store.ApplyManualBan(ctx, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
+		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
 		require.NoError(t, err)
 		require.NoError(t, store.Close())
 
@@ -47,9 +49,9 @@ func TestValidateTargets(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := store.ApplyManualBan(ctx, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
+		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
 		require.NoError(t, err)
-		_, err = store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second), []string{"old"})
+		_, err = bans.ReleaseAllSources(ctx, store, created.Decision.ID, now.Add(time.Second), []string{"old"})
 		require.NoError(t, err)
 		require.NoError(t, store.Close())
 

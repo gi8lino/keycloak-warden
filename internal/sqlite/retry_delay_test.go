@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )
 
 func TestFinishRetryDelay(t *testing.T) {
@@ -20,7 +21,7 @@ func TestFinishRetryDelay(t *testing.T) {
 		store := openAtomicityStore(t)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err := store.ApplyManualBan(ctx, "203.0.113.91", now.Add(time.Hour), "incident", now, []string{"edge"})
+		_, err := bans.ApplyManualBan(ctx, store, "203.0.113.91", now.Add(time.Hour), "incident", now, []string{"edge"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
@@ -40,7 +41,7 @@ func TestFinishRetryDelay(t *testing.T) {
 		store := openAtomicityStore(t)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err := store.ApplyManualBan(ctx, "203.0.113.92", now.Add(time.Hour), "incident", now, []string{"edge"})
+		_, err := bans.ApplyManualBan(ctx, store, "203.0.113.92", now.Add(time.Hour), "incident", now, []string{"edge"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)

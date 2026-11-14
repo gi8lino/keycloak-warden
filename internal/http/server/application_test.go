@@ -399,7 +399,9 @@ func TestNewApplication(t *testing.T) {
 				MaxAttempts: actions.DefaultMaxAttempts,
 			},
 		}
-		runner := actions.Start(t.Context(), store, destinations, slog.Default())
+		expirer, err := bans.NewExpiryService(store, []string{"notify"})
+		require.NoError(t, err)
+		runner := actions.Start(t.Context(), store, expirer, destinations, slog.Default())
 		defer func() { require.NoError(t, runner.Close()) }()
 		body := `{"id":"real-format","timestamp":"2026-11-05T00:00:00Z","schemaVersion":1,"source":"keycloak","type":"LOGIN_ERROR","ipAddress":"203.0.113.8"}`
 		req := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body))

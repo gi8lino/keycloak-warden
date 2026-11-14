@@ -24,9 +24,9 @@ func TestBulkBanListing(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Millisecond)
 
 		// Insert out of IP order so the listing order must be enforced by SQL.
-		third, err := store.ApplyManualBan(ctx, "203.0.113.30", now.Add(time.Hour), "third", now, []string{"zeta", "alpha"})
+		third, err := bans.ApplyManualBan(ctx, store, "203.0.113.30", now.Add(time.Hour), "third", now, []string{"zeta", "alpha"})
 		require.NoError(t, err)
-		first, err := store.ApplyManualBan(ctx, "203.0.113.10", now.Add(time.Hour), "first", now, []string{"zeta", "alpha"})
+		first, err := bans.ApplyManualBan(ctx, store, "203.0.113.10", now.Add(time.Hour), "first", now, []string{"zeta", "alpha"})
 		require.NoError(t, err)
 
 		event := failed("bulk-first")
@@ -36,7 +36,7 @@ func TestBulkBanListing(t *testing.T) {
 		event.ID = "bulk-second"
 		_, err = processor.Process(ctx, event, now)
 		require.NoError(t, err)
-		second, err := store.ApplyManualBan(ctx, "203.0.113.20", now.Add(time.Hour), "second", now, []string{"zeta", "alpha"})
+		second, err := bans.ApplyManualBan(ctx, store, "203.0.113.20", now.Add(time.Hour), "second", now, []string{"zeta", "alpha"})
 		require.NoError(t, err)
 
 		views, err := store.ListActive(ctx, now)
@@ -58,7 +58,7 @@ func TestBulkBanListing(t *testing.T) {
 		}
 
 		// A release must not appear in the bulk list or leak its deliveries.
-		_, err = store.ReleaseAllSources(ctx, second.Decision.ID, now.Add(time.Second), []string{"zeta", "alpha"})
+		_, err = bans.ReleaseAllSources(ctx, store, second.Decision.ID, now.Add(time.Second), []string{"zeta", "alpha"})
 		require.NoError(t, err)
 		remaining, err := store.ListActive(ctx, now.Add(time.Second))
 		require.NoError(t, err)

@@ -24,6 +24,23 @@ type Transaction interface {
 	SaveDecision(context.Context, decisions.Decision, decisions.Decision, bool, []string) error
 }
 
+// MutationTransaction adds storage operations used by administrative and expiry workflows.
+type MutationTransaction interface {
+	Transaction
+	// DecisionByID loads a persisted decision for administrative release.
+	DecisionByID(context.Context, string) (decisions.Decision, error)
+	// DeleteSources clears every reason for a specified address.
+	DeleteSources(context.Context, string) error
+	// ResetFailures advances the failed-login observation generation.
+	ResetFailures(context.Context, string) error
+	// ExpiredSourceIPs lists addresses that require expiry reconciliation.
+	ExpiredSourceIPs(context.Context, time.Time) ([]string, error)
+	// DeleteExpiredSources removes elapsed sources at the given time.
+	DeleteExpiredSources(context.Context, time.Time) error
+	// Record returns the decision and its sources within the transaction.
+	Record(context.Context, string, time.Time) (Record, error)
+}
+
 // ExtendSource applies the non-shortening expiry policy before persisting a source.
 func ExtendSource(ctx context.Context, tx Transaction, ip string, source Source) error {
 	if err := tx.EnsureDecision(ctx, ip); err != nil {
@@ -42,13 +59,7 @@ func ExtendSource(ctx context.Context, tx Transaction, ip string, source Source)
 }
 
 // ReconcileDecision evaluates the sources in the application and persists the result.
-func ReconcileDecision(
-	ctx context.Context,
-	tx Transaction,
-	ip string,
-	now time.Time,
-	targets []string,
-) (decisions.Decision, bool, error) {
+func ReconcileDecision(ctx context.Context, tx Transaction, ip string, now time.Time, targets []string) (decisions.Decision, bool, error) {
 	previous, err := tx.Decision(ctx, ip)
 	if err != nil {
 		return decisions.Decision{}, false, err

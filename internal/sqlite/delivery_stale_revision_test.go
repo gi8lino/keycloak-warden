@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -20,7 +21,7 @@ func TestFinishIgnoresStaleDeliveryFailure(t *testing.T) {
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 
-	first, err := store.ApplyManualBan(ctx, "203.0.113.1", now.Add(time.Hour), "investigation", now, []string{"edge"})
+	first, err := bans.ApplyManualBan(ctx, store, "203.0.113.1", now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.NoError(t, err)
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
@@ -28,7 +29,7 @@ func TestFinishIgnoresStaleDeliveryFailure(t *testing.T) {
 	assert.Equal(t, first.Decision.Revision, job.Decision.Revision)
 
 	// The desired state changes while the old revision is in flight.
-	second, err := store.ApplyManualBan(ctx, "203.0.113.1", now.Add(2*time.Hour), "extended", now, []string{"edge"})
+	second, err := bans.ApplyManualBan(ctx, store, "203.0.113.1", now.Add(2*time.Hour), "extended", now, []string{"edge"})
 	require.NoError(t, err)
 	require.Greater(t, second.Decision.Revision, first.Decision.Revision)
 
@@ -55,7 +56,7 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "history.db")
 	store, _ := openStore(t, path, "slack")
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	record, err := store.ApplyManualBan(ctx, "192.0.2.5", now.Add(time.Hour), "test", now, []string{"slack"})
+	record, err := bans.ApplyManualBan(ctx, store, "192.0.2.5", now.Add(time.Hour), "test", now, []string{"slack"})
 	require.NoError(t, err)
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)

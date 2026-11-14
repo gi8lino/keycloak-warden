@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 "github.com/gi8lino/keycloak-warden/internal/application/actions"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )
 
 func TestReconcileAttemptLimit(t *testing.T) {
@@ -21,7 +23,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"), "webhook.receiver")
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := store.ApplyManualBan(ctx, "192.0.2.10", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
+		record, err := bans.ApplyManualBan(ctx, store, "192.0.2.10", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
 		require.NoError(t, err)
 
 		job, err := store.Next(ctx, now)
@@ -52,7 +54,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"), "webhook.receiver")
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := store.ApplyManualBan(ctx, "192.0.2.11", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
+		record, err := bans.ApplyManualBan(ctx, store, "192.0.2.11", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
 		require.NoError(t, err)
 
 		job, err := store.Next(ctx, now)
@@ -82,14 +84,14 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"), "webhook.receiver")
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := store.ApplyManualBan(ctx, "192.0.2.12", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
+		record, err := bans.ApplyManualBan(ctx, store, "192.0.2.12", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
 		require.NoError(t, err)
 
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 3, now, actions.NextRetryDelay(job.PreviousDelay)))
-		_, err = store.ApplyManualBan(ctx, "192.0.2.12", now.Add(2*time.Hour), "extended", now, []string{"webhook.receiver"})
+		_, err = bans.ApplyManualBan(ctx, store, "192.0.2.12", now.Add(2*time.Hour), "extended", now, []string{"webhook.receiver"})
 		require.NoError(t, err)
 
 		require.NoError(t, store.ReconcileAttemptLimit(ctx, "webhook.receiver", 5))
@@ -108,7 +110,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"), "webhook.receiver", "webhook.teams")
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := store.ApplyManualBan(ctx, "192.0.2.14", now.Add(time.Hour), "test", now, []string{"webhook.receiver", "webhook.teams"})
+		record, err := bans.ApplyManualBan(ctx, store, "192.0.2.14", now.Add(time.Hour), "test", now, []string{"webhook.receiver", "webhook.teams"})
 		require.NoError(t, err)
 
 		receiverJob, err := store.Next(ctx, now)
@@ -141,7 +143,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"), "webhook.receiver")
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := store.ApplyManualBan(ctx, "192.0.2.13", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
+		record, err := bans.ApplyManualBan(ctx, store, "192.0.2.13", now.Add(time.Hour), "test", now, []string{"webhook.receiver"})
 		require.NoError(t, err)
 
 		job, err := store.Next(ctx, now)

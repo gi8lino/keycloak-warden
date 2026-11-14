@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
@@ -184,7 +184,7 @@ func TestOpen(t *testing.T) {
 
 		now = extended.ExpiresAt
 
-		_, err = store.Maintain(ctx, now, []string{"a", "b"})
+		_, err = bans.ExpireSources(ctx, store, now, []string{"a", "b"})
 		require.NoError(t, err)
 		release, err := store.Next(ctx, now)
 
@@ -239,7 +239,7 @@ func TestDestinationBackoff(t *testing.T) {
 
 	for _, seconds := range []int{10, 20, 40, 80, 160, 300, 300} {
 		due := now.Add(time.Duration(seconds) * time.Second)
-		_, err = store.Maintain(ctx, due.Add(-time.Millisecond), []string{"edge"})
+		_, err = bans.ExpireSources(ctx, store, due.Add(-time.Millisecond), []string{"edge"})
 		require.NoError(t, err)
 		pending, err := store.Next(ctx, due.Add(-time.Millisecond))
 		require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestWorkerSchedule(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "state.db")
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, _ := openStore(t, path, "receiver")
-		_, err := store.ApplyManualBan(ctx, "203.0.113.1", now.Add(8*time.Second), "test", now, []string{"receiver"})
+		_, err := bans.ApplyManualBan(ctx, store, "203.0.113.1", now.Add(8*time.Second), "test", now, []string{"receiver"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
@@ -327,7 +327,7 @@ func TestWorkerSchedule(t *testing.T) {
 		due, err := store.NextDeadline(ctx)
 		require.NoError(t, err)
 		require.True(t, now.Add(8*time.Second).Equal(due))
-		_, err = store.Maintain(ctx, due, []string{"receiver"})
+		_, err = bans.ExpireSources(ctx, store, due, []string{"receiver"})
 		require.NoError(t, err)
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
@@ -388,7 +388,7 @@ func TestAttemptBudget(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "budget.db")
 	store, _ := openStore(t, path, "receiver")
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	record, err := store.ApplyManualBan(ctx, "192.0.2.1", now.Add(time.Hour), "test", now, []string{"receiver"})
+	record, err := bans.ApplyManualBan(ctx, store, "192.0.2.1", now.Add(time.Hour), "test", now, []string{"receiver"})
 	require.NoError(t, err)
 	for range 3 {
 		job, err := store.Next(ctx, now)
@@ -422,7 +422,7 @@ func TestAttemptBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, job)
 	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now, actions.NextRetryDelay(job.PreviousDelay)))
-	_, err = store.ReleaseAllSources(ctx, record.Decision.ID, now, []string{"receiver"})
+	_, err = bans.ReleaseAllSources(ctx, store, record.Decision.ID, now, []string{"receiver"})
 	require.NoError(t, err)
 	job, err = store.Next(ctx, now.Add(5*time.Minute))
 	require.NoError(t, err)

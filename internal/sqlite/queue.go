@@ -7,76 +7,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
-
-// Maintain expires sources and returns only effective releases after commit.
-func (s *Store) Maintain(ctx context.Context, now time.Time, targets []string) ([]decisions.Decision, error) {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	expiredIPs, err := readExpiredSourceIPs(ctx, tx, now)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := tx.ExecContext(ctx, `
-DELETE FROM ban_sources
-WHERE expires <= ?
-`, now.UnixMilli()); err != nil {
-		return nil, err
-	}
-
-	var released []decisions.Decision
-	for _, ip := range expiredIPs {
-		decision, changed, err := bans.ReconcileDecision(ctx, &banTx{tx: tx}, ip, now, targets)
-		if err != nil {
-			return nil, err
-		}
-		if changed && decision.State == decisions.StateUnbanned {
-			released = append(released, decision)
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return nil, err
-	}
-	return released, nil
-}
-
-// readExpiredSourceIPs finds affected addresses before their expired sources are deleted.
-func readExpiredSourceIPs(ctx context.Context, tx *sql.Tx, now time.Time) ([]string, error) {
-	rows, err := tx.QueryContext(ctx, `
-SELECT DISTINCT ip
-FROM ban_sources
-WHERE expires <= ?
-`, now.UnixMilli())
-	if err != nil {
-		return nil, err
-	}
-
-	var expiredIPs []string
-	for rows.Next() {
-		var ip string
-		if err := rows.Scan(&ip); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		expiredIPs = append(expiredIPs, ip)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	return expiredIPs, nil
-}
 
 // Prune removes old observations independently of delivery activity.
 func (s *Store) Prune(ctx context.Context, cutoff time.Time) error {
@@ -130,14 +61,7 @@ LIMIT 1
 }
 
 // Finish atomically records an attempt and acknowledges or retries within the supplied limit.
-func (s *Store) Finish(
-	ctx context.Context,
-	job actions.Job,
-	deliveryErr error,
-	limit int,
-	now time.Time,
-	retryDelay time.Duration,
-) error {
+func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, limit int, now time.Time, retryDelay time.Duration) error {
 	if limit < 1 {
 		return errors.New("max-attempts must be at least 1")
 	}
@@ -194,13 +118,7 @@ WHERE ip = ? AND destination = ?
 }
 
 // scheduleRetry persists the pause calculated by the application and delays this job.
-func scheduleRetry(
-	ctx context.Context,
-	tx *sql.Tx,
-	job actions.Job,
-	now time.Time,
-	delay time.Duration,
-) error {
+func scheduleRetry(ctx context.Context, tx *sql.Tx, job actions.Job, now time.Time, delay time.Duration) error {
 	retryAt := now.Add(delay).UnixMilli()
 
 	if _, err := tx.ExecContext(ctx, `

@@ -18,30 +18,20 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-// blockingQueue waits for cancellation to test the worker's shutdown ordering.
-type blockingQueue struct {
-	// scriptedQueue supplies idle scheduling behavior.
-	scriptedQueue
+// blockingExpirer waits for cancellation to test the worker's shutdown ordering.
+type blockingExpirer struct {
 	// started signals that the test worker entered the operation.
 	started chan struct{}
 	// stopped signals that the test worker observed cancellation.
 	stopped chan struct{}
 }
 
-// Maintain blocks until cancellation so Close must wait for it to return.
-func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time, _ []string) ([]decisions.Decision, error) {
+// Expire blocks until cancellation so Close must wait for it to return.
+func (q *blockingExpirer) Expire(ctx context.Context, _ time.Time) ([]decisions.Decision, error) {
 	close(q.started)
 	<-ctx.Done()
 	close(q.stopped)
 	return nil, ctx.Err()
-}
-
-// Next is not reached while Maintain blocks.
-func (q *blockingQueue) Next(context.Context, time.Time) (*Job, error) { return nil, nil }
-
-// Finish is not reached while Maintain blocks.
-func (q *blockingQueue) Finish(context.Context, Job, error, int, time.Time, time.Duration) error {
-	return nil
 }
 
 func TestStart(t *testing.T) {
@@ -50,11 +40,12 @@ func TestStart(t *testing.T) {
 	t.Run("starts worker and can close concurrently", func(t *testing.T) {
 		t.Parallel()
 
-		q := &blockingQueue{started: make(chan struct{}), stopped: make(chan struct{})}
-		runner := Start(t.Context(), q, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		expirer := &blockingExpirer{started: make(chan struct{}), stopped: make(chan struct{})}
+		q := &scriptedQueue{}
+		runner := Start(t.Context(), q, expirer, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		defer func() { require.NoError(t, runner.Close()) }()
 		select {
-		case <-q.started:
+		case <-expirer.started:
 		case <-time.After(3 * time.Second):
 			require.FailNow(t, "worker did not start maintenance")
 		}
@@ -75,7 +66,7 @@ func TestStart(t *testing.T) {
 			require.FailNow(t, "Done did not close after Close returned")
 		}
 		select {
-		case <-q.stopped:
+		case <-expirer.stopped:
 		default:
 			require.FailNow(t, "Close returned while worker still used the queue")
 		}
@@ -88,10 +79,11 @@ func TestRunnerWait(t *testing.T) {
 	t.Run("wait blocks until completion", func(t *testing.T) {
 		t.Parallel()
 
-		q := &blockingQueue{started: make(chan struct{}), stopped: make(chan struct{})}
-		runner := Start(t.Context(), q, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		expirer := &blockingExpirer{started: make(chan struct{}), stopped: make(chan struct{})}
+		q := &scriptedQueue{}
+		runner := Start(t.Context(), q, expirer, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
 		defer func() { require.NoError(t, runner.Close()) }()
-		<-q.started
+		<-expirer.started
 		waitResult := make(chan error, 1)
 		go func() { waitResult <- runner.Wait() }()
 		select {
@@ -128,14 +120,10 @@ type scriptedQueue struct {
 	cycles atomic.Int32
 	// jobs contains the queued jobs supplied by the test.
 	jobs []*Job
-	// expired contains committed decisions that became unbanned due to expiry.
-	expired []decisions.Decision
 	// finished records jobs acknowledged by the worker.
 	finished []Job
 	// limits records the attempt budgets passed by the worker.
 	limits []int
-	// maintained records the destination identifiers passed for expiry reconciliation.
-	maintained []string
 }
 
 // Changes returns the test change notification channel.
@@ -150,11 +138,15 @@ func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
 	return q.deadlines[cycle-1], nil
 }
 
-// Maintain is unused by drainReady.
-func (q *scriptedQueue) Maintain(_ context.Context, _ time.Time, names []string) ([]decisions.Decision, error) {
-	q.maintained = append([]string(nil), names...)
-	released := q.expired
-	q.expired = nil
+// scriptedExpirer provides released decisions to the worker without persistence.
+type scriptedExpirer struct {
+	expired []decisions.Decision
+}
+
+// Expire returns a single batch of committed releases.
+func (e *scriptedExpirer) Expire(context.Context, time.Time) ([]decisions.Decision, error) {
+	released := e.expired
+	e.expired = nil
 	return released, nil
 }
 
@@ -244,7 +236,7 @@ func TestWorkerWakeups(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		q := &scriptedQueue{changes: make(chan struct{}, 1), deadlines: []time.Time{{}, time.Now().Add(11 * time.Minute)}}
-		r := Start(t.Context(), q, nil, slog.Default())
+		r := Start(t.Context(), q, &scriptedExpirer{}, nil, slog.Default())
 		defer func() { require.NoError(t, r.Close()) }()
 		synctest.Wait()
 		require.Equal(t, 1, int(q.cycles.Load()))
@@ -357,11 +349,12 @@ func TestExpiryLogging(t *testing.T) {
 
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	q := &scriptedQueue{expired: []decisions.Decision{{
+	q := &scriptedQueue{}
+	expirer := &scriptedExpirer{expired: []decisions.Decision{{
 		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: decisions.StateUnbanned,
 	}}}
 
-	_, err := processReady(t.Context(), q, nil, logger)
+	_, err := processReady(t.Context(), q, expirer, nil, logger)
 	require.NoError(t, err)
 	assert.Contains(t, logs.String(), `"event":"ban_expired"`)
 	assert.Contains(t, logs.String(), `"decision_id":"expired-id"`)
@@ -369,26 +362,25 @@ func TestExpiryLogging(t *testing.T) {
 	assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
 
 	logs.Reset()
-	_, err = processReady(t.Context(), q, nil, logger)
+	_, err = processReady(t.Context(), q, expirer, nil, logger)
 	require.NoError(t, err)
 	assert.Empty(t, logs.String(), "expiry notification must not be emitted again")
 }
 
-func TestProcessReadyPassesTargetsToMaintenance(t *testing.T) {
+func TestProcessReadyUsesExpirer(t *testing.T) {
 	t.Parallel()
 
-	t.Run("uses the configured destinations without a store snapshot", func(t *testing.T) {
+	t.Run("committed releases come from the expiry service", func(t *testing.T) {
 		t.Parallel()
 
 		q := &scriptedQueue{}
-		destinations := map[string]Target{
-			"webhook.slack":   {Provider: &acceptProvider{}, MaxAttempts: DefaultMaxAttempts},
-			"cloudflare.edge": {Provider: &acceptProvider{}, MaxAttempts: DefaultMaxAttempts},
-		}
+		expirer := &scriptedExpirer{expired: []decisions.Decision{{
+			ID: "release", State: decisions.StateUnbanned,
+		}}}
 
-		_, err := processReady(t.Context(), q, destinations, slog.Default())
+		_, err := processReady(t.Context(), q, expirer, nil, slog.Default())
 
 		require.NoError(t, err)
-		assert.Equal(t, []string{"cloudflare.edge", "webhook.slack"}, q.maintained)
+		assert.Empty(t, expirer.expired)
 	})
 }

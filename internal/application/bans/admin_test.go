@@ -9,40 +9,99 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
-// fakeStore records the manual-ban storage calls made by AdminService.
+// fakeStore implements an in-memory transaction for administration service tests.
 type fakeStore struct {
-	// ip captures the address passed to the fake store.
-	ip string
-	// until captures the requested expiry passed to the fake store.
-	until time.Time
-	// reason captures the operator reason passed to the fake store.
-	reason string
-	// id captures the decision ID passed to the fake store.
-	id string
-	// targets captures the destination identifiers passed to storage.
-	targets []string
+	ip       string
+	until    time.Time
+	reason   string
+	id       string
+	targets  []string
+	released bool
 }
 
-// ApplyManualBan records the manual-ban inputs for assertions.
-func (r *fakeStore) ApplyManualBan(_ context.Context, ip string, until time.Time, reason string, _ time.Time, targets []string) (bans.Record, error) {
-	r.ip, r.until, r.reason = ip, until, reason
+// TransactBan executes one application workflow on the fake transaction.
+func (r *fakeStore) TransactBan(ctx context.Context, apply func(bans.MutationTransaction) error) error {
+	return apply(r)
+}
+
+// EnsureDecision records the canonical address used by the workflow.
+func (r *fakeStore) EnsureDecision(_ context.Context, ip string) error {
+	r.ip = ip
+	return nil
+}
+
+// Source returns no previously stored source.
+func (r *fakeStore) Source(context.Context, string, bans.SourceKind) (bans.Source, bool, error) {
+	return bans.Source{}, false, nil
+}
+
+// PutSource records an application-validated manual reason.
+func (r *fakeStore) PutSource(_ context.Context, ip string, source bans.Source) error {
+	r.ip = ip
+	r.until = source.ExpiresAt
+	r.reason = source.Reason
+	return nil
+}
+
+// Decision returns a stable current decision for the requested IP.
+func (r *fakeStore) Decision(_ context.Context, ip string) (decisions.Decision, error) {
+	return decisions.Decision{ID: "decision-one", IP: ip, State: decisions.StateUnbanned}, nil
+}
+
+// Sources returns the previously recorded manual source unless it was cleared.
+func (r *fakeStore) Sources(context.Context, string, time.Time) ([]bans.Source, error) {
+	if r.released || r.until.IsZero() {
+		return nil, nil
+	}
+	return []bans.Source{{Kind: bans.SourceManual, ExpiresAt: r.until, Reason: r.reason}}, nil
+}
+
+// SaveDecision records the target names supplied to the transaction.
+func (r *fakeStore) SaveDecision(_ context.Context, _, _ decisions.Decision, _ bool, targets []string) error {
 	r.targets = append([]string(nil), targets...)
-	return bans.Record{}, nil
+	return nil
 }
 
-// ReleaseAllSources records the decision ID selected for release.
-func (r *fakeStore) ReleaseAllSources(_ context.Context, id string, _ time.Time, targets []string) (bans.Record, error) {
+// DecisionByID returns an active decision eligible for manual release.
+func (r *fakeStore) DecisionByID(_ context.Context, id string) (decisions.Decision, error) {
 	r.id = id
-	r.targets = append([]string(nil), targets...)
+	return decisions.Decision{
+		ID: id, IP: "203.0.113.1", State: decisions.StateBanned,
+		ExpiresAt: time.Now().Add(24 * time.Hour),
+	}, nil
+}
+
+// DeleteSources records removal of the independent ban reasons.
+func (r *fakeStore) DeleteSources(context.Context, string) error {
+	r.released = true
+	return nil
+}
+
+// ResetFailures simulates advancing the observation generation.
+func (r *fakeStore) ResetFailures(context.Context, string) error { return nil }
+
+// ExpiredSourceIPs returns no elapsed sources for administration tests.
+func (r *fakeStore) ExpiredSourceIPs(context.Context, time.Time) ([]string, error) {
+	return nil, nil
+}
+
+// DeleteExpiredSources is unused by administrative operations.
+func (r *fakeStore) DeleteExpiredSources(context.Context, time.Time) error { return nil }
+
+// Record returns the fake persisted ban view.
+func (r *fakeStore) Record(context.Context, string, time.Time) (bans.Record, error) {
 	return bans.Record{}, nil
 }
 
-// ListActive returns the fake store’s active ban view.
-func (r *fakeStore) ListActive(context.Context, time.Time) ([]bans.Record, error) { return nil, nil }
+// ListActive returns the fake store's active ban view.
+func (r *fakeStore) ListActive(context.Context, time.Time) ([]bans.Record, error) {
+	return nil, nil
+}
 
-// GetDecision records the requested decision ID.
+// GetDecision records a requested stable decision ID.
 func (r *fakeStore) GetDecision(_ context.Context, id string, _ time.Time) (bans.Record, error) {
 	r.id = id
 	return bans.Record{}, nil

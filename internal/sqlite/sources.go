@@ -122,3 +122,82 @@ SELECT id, revision, active, expires FROM decisions WHERE ip = ?
 	result.ExpiresAt = time.UnixMilli(expires).UTC()
 	return result, nil
 }
+
+// DecisionByID reads the current decision identified by its stable ID.
+func (b *banTx) DecisionByID(ctx context.Context, id string) (decisions.Decision, error) {
+	decision, err := readDecision(ctx, b.tx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return decisions.Decision{}, bans.ErrNotFound
+	}
+	return decision, err
+}
+
+// DeleteSources clears all independent reasons without revising the decision.
+func (b *banTx) DeleteSources(ctx context.Context, ip string) error {
+	result, err := b.tx.ExecContext(ctx, "DELETE FROM ban_sources WHERE ip = ?", ip)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count > 0 {
+		b.changed = true
+	}
+	return err
+}
+
+// ResetFailures advances the observation generation while retaining producer IDs.
+func (b *banTx) ResetFailures(ctx context.Context, ip string) error {
+	_, err := b.tx.ExecContext(ctx, `
+UPDATE decisions
+SET failure_generation = failure_generation + 1
+WHERE ip = ?
+`, ip)
+	if err == nil {
+		b.changed = true
+	}
+	return err
+}
+
+// ExpiredSourceIPs returns affected addresses before any expired source is deleted.
+func (b *banTx) ExpiredSourceIPs(ctx context.Context, now time.Time) ([]string, error) {
+	rows, err := b.tx.QueryContext(ctx, `
+SELECT DISTINCT ip FROM ban_sources WHERE expires <= ?
+`, now.UnixMilli())
+	if err != nil {
+		return nil, err
+	}
+	var ips []string
+	for rows.Next() {
+		var ip string
+		if err := rows.Scan(&ip); err != nil {
+			_ = rows.Close()
+			return nil, err
+		}
+		ips = append(ips, ip)
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return nil, err
+	}
+	return ips, rows.Close()
+}
+
+// DeleteExpiredSources removes elapsed reasons without choosing the new ban state.
+func (b *banTx) DeleteExpiredSources(ctx context.Context, now time.Time) error {
+	result, err := b.tx.ExecContext(ctx, `
+DELETE FROM ban_sources WHERE expires <= ?
+`, now.UnixMilli())
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err == nil && count > 0 {
+		b.changed = true
+	}
+	return err
+}
+
+// Record returns a consistent decision view from this transaction.
+func (b *banTx) Record(ctx context.Context, id string, now time.Time) (bans.Record, error) {
+	return readBan(ctx, b.tx, id, now)
+}

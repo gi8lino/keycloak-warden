@@ -56,3 +56,7 @@ The `bans` application package evaluates source extension and effective decision
 ## Delivery retry backoff
 
 The `actions` package calculates the capped exponential retry delay (10 seconds up to 5 minutes) using the destination's last persisted delay. SQLite only loads the previous delay and atomically stores the calculated pause and retry deadline along with the attempt result.
+
+## Expiry and release workflows
+
+`bans` orchestrates manual releases and source expiry using atomic `TransactBan` callbacks. The application clears sources, advances the observation generation, computes effective decisions and enqueues delivery revisions; SQLite provides only the corresponding persistence primitives. The action worker delegates expiry to `bans.ExpiryService`, rather than asking SQLite to maintain ban policy.

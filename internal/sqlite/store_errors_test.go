@@ -9,6 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
@@ -37,7 +39,7 @@ func TestStoreClosedErrors(t *testing.T) {
 	assert.Error(t, err)
 	_, err = store.NextDeadline(t.Context())
 	assert.Error(t, err)
-	_, err = store.Maintain(t.Context(), time.Now(), nil)
+	_, err = bans.ExpireSources(t.Context(), store, time.Now(), nil)
 	assert.Error(t, err)
 	assert.Error(t, store.Transact(t.Context(), func(ingestion.Transaction) error {
 		return errors.New("should not be invoked")

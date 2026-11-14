@@ -61,6 +61,10 @@ func Run(
 	if err != nil {
 		return err
 	}
+	expirer, err := bans.NewExpiryService(store, names)
+	if err != nil {
+		return err
+	}
 
 	registry := metrics.NewRegistry(metricsEnabled, version)
 	for name, target := range destinations {
@@ -72,7 +76,7 @@ func Run(
 	defer stop()
 
 	maintenanceRunner := maintenance.Start(ctx, store, schedule, max(maintenance.MinObservationRetention, cfg.Rule.Window), logger)
-	runner := actions.Start(ctx, store, destinations, logger)
+	runner := actions.Start(ctx, store, expirer, destinations, logger)
 	handlers := server.New(server.Config{
 		AccessLog:      accessLog,
 		MetricsEnabled: metricsEnabled,

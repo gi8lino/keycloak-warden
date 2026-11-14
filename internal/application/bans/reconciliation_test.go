@@ -140,3 +140,30 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 		assert.False(t, tx.savedChanged)
 	})
 }
+
+// DecisionByID returns an active decision for workflow tests.
+func (p *policyTx) DecisionByID(context.Context, string) (decisions.Decision, error) {
+	return p.prior, nil
+}
+
+// DeleteSources clears all reasons inside the test transaction.
+func (p *policyTx) DeleteSources(context.Context, string) error {
+	p.currentSources = nil
+	return nil
+}
+
+// ResetFailures accepts the observation generation change in the test transaction.
+func (p *policyTx) ResetFailures(context.Context, string) error { return nil }
+
+// ExpiredSourceIPs returns addresses with elapsed reasons in the test transaction.
+func (p *policyTx) ExpiredSourceIPs(context.Context, time.Time) ([]string, error) {
+	return nil, nil
+}
+
+// DeleteExpiredSources accepts an expiry operation in the test transaction.
+func (p *policyTx) DeleteExpiredSources(context.Context, time.Time) error { return nil }
+
+// Record returns the latest decision from the test transaction.
+func (p *policyTx) Record(context.Context, string, time.Time) (Record, error) {
+	return Record{Decision: p.saved}, nil
+}

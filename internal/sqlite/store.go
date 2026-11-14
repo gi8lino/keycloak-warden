@@ -12,6 +12,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
 
@@ -110,6 +111,24 @@ func (s *Store) Transact(ctx context.Context, apply func(ingestion.Transaction) 
 		return err
 	}
 	if observation.changed {
+		return s.commitDecision(tx)
+	}
+	return tx.Commit()
+}
+
+// TransactBan runs the application's ban workflow in one SQLite transaction.
+func (s *Store) TransactBan(ctx context.Context, apply func(bans.MutationTransaction) error) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	state := &banTx{tx: tx}
+	if err := apply(state); err != nil {
+		return err
+	}
+	if state.changed {
 		return s.commitDecision(tx)
 	}
 	return tx.Commit()

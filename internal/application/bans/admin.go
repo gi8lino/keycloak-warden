@@ -28,12 +28,9 @@ var (
 	ErrNotFound = errors.New("active ban not found")
 )
 
-// Store atomically applies administrative changes and reads effective ban decisions.
+// Store provides atomic ban transactions and read-only decision queries.
 type Store interface {
-	// ApplyManualBan adds or extends the manual source without affecting automatic sources.
-	ApplyManualBan(context.Context, string, time.Time, string, time.Time, []string) (Record, error)
-	// ReleaseAllSources clears automatic and manual sources and resets the observation generation.
-	ReleaseAllSources(context.Context, string, time.Time, []string) (Record, error)
+	Writer
 	// ListActive returns currently effective blocks.
 	ListActive(context.Context, time.Time) ([]Record, error)
 	// GetDecision returns the decision, including released historical decisions.
@@ -63,7 +60,7 @@ func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, 
 		return Record{}, err
 	}
 
-	return s.store.ApplyManualBan(ctx, ip, now.Add(request.Duration), reason, now, s.targets)
+	return ApplyManualBan(ctx, s.store, ip, now.Add(request.Duration), reason, now, s.targets)
 }
 
 // validateManualBanRequest validates and normalizes a manual ban request.
@@ -101,7 +98,7 @@ func (s *AdminService) Release(ctx context.Context, id string, now time.Time) (R
 		return Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 
-	return s.store.ReleaseAllSources(ctx, id, now, s.targets)
+	return ReleaseAllSources(ctx, s.store, id, now, s.targets)
 }
 
 // ListActive returns effective blocks with their automatic and manual sources.

@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
@@ -42,7 +43,7 @@ END
 `)
 	require.NoError(t, err)
 
-	_, err = store.ApplyManualBan(ctx, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
+	_, err = bans.ApplyManualBan(ctx, store, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.ErrorContains(t, err, "injected reconciliation failure")
 
 	var decisionsCount, sourcesCount, deliveriesCount int
@@ -60,7 +61,7 @@ END
 
 	_, err = store.db.Exec("DROP TRIGGER reject_reconciliation")
 	require.NoError(t, err)
-	created, err := store.ApplyManualBan(ctx, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
+	created, err := bans.ApplyManualBan(ctx, store, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateBanned, created.Decision.State)
 	job, err := store.Next(ctx, now)
@@ -75,7 +76,7 @@ func TestReleaseAllSourcesRollback(t *testing.T) {
 	store := openAtomicityStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	created, err := store.ApplyManualBan(ctx, "203.0.113.42", now.Add(time.Hour), "investigation", now, []string{"edge"})
+	created, err := bans.ApplyManualBan(ctx, store, "203.0.113.42", now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.NoError(t, err)
 	before, err := store.GetDecision(ctx, created.Decision.ID, now)
 	require.NoError(t, err)
@@ -90,7 +91,7 @@ END
 `)
 	require.NoError(t, err)
 
-	_, err = store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second), []string{"edge"})
+	_, err = bans.ReleaseAllSources(ctx, store, created.Decision.ID, now.Add(time.Second), []string{"edge"})
 	require.ErrorContains(t, err, "injected release failure")
 
 	unchanged, err := store.GetDecision(ctx, created.Decision.ID, now)
@@ -109,7 +110,7 @@ END
 
 	_, err = store.db.Exec("DROP TRIGGER reject_release")
 	require.NoError(t, err)
-	released, err := store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second), []string{"edge"})
+	released, err := bans.ReleaseAllSources(ctx, store, created.Decision.ID, now.Add(time.Second), []string{"edge"})
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
 	require.NoError(t, store.db.QueryRowContext(ctx,
@@ -124,11 +125,11 @@ func TestMaintainRollbackAcrossAddresses(t *testing.T) {
 	store := openAtomicityStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	first, err := store.ApplyManualBan(ctx, "203.0.113.51", now.Add(10*time.Second), "first", now, []string{"edge"})
+	first, err := bans.ApplyManualBan(ctx, store, "203.0.113.51", now.Add(10*time.Second), "first", now, []string{"edge"})
 	require.NoError(t, err)
-	second, err := store.ApplyManualBan(ctx, "203.0.113.52", now.Add(10*time.Second), "second", now, []string{"edge"})
+	second, err := bans.ApplyManualBan(ctx, store, "203.0.113.52", now.Add(10*time.Second), "second", now, []string{"edge"})
 	require.NoError(t, err)
-	remaining, err := store.ApplyManualBan(ctx, "203.0.113.53", now.Add(time.Hour), "longer", now, []string{"edge"})
+	remaining, err := bans.ApplyManualBan(ctx, store, "203.0.113.53", now.Add(time.Hour), "longer", now, []string{"edge"})
 	require.NoError(t, err)
 
 	_, err = store.db.Exec(`
@@ -141,7 +142,7 @@ END
 `)
 	require.NoError(t, err)
 
-	_, err = store.Maintain(ctx, now.Add(10*time.Second), []string{"edge"})
+	_, err = bans.ExpireSources(ctx, store, now.Add(10*time.Second), []string{"edge"})
 	require.ErrorContains(t, err, "injected expiry failure")
 	for _, original := range []decisions.Decision{first.Decision, second.Decision} {
 		recorded, readErr := store.GetDecision(ctx, original.ID, now)
@@ -152,7 +153,7 @@ END
 
 	_, err = store.db.Exec("DROP TRIGGER reject_second_expiry")
 	require.NoError(t, err)
-	released, err := store.Maintain(ctx, now.Add(10*time.Second), []string{"edge"})
+	released, err := bans.ExpireSources(ctx, store, now.Add(10*time.Second), []string{"edge"})
 	require.NoError(t, err)
 	require.Len(t, released, 2)
 	assert.ElementsMatch(t, []string{first.Decision.ID, second.Decision.ID}, []string{released[0].ID, released[1].ID})
@@ -173,7 +174,7 @@ func TestFinishRollback(t *testing.T) {
 		store := openAtomicityStore(t)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := store.ApplyManualBan(ctx, "203.0.113.61", now.Add(time.Hour), "incident", now, []string{"edge"})
+		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.61", now.Add(time.Hour), "incident", now, []string{"edge"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
@@ -212,7 +213,7 @@ END
 		store := openAtomicityStore(t)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err := store.ApplyManualBan(ctx, "203.0.113.62", now.Add(time.Hour), "incident", now, []string{"edge"})
+		_, err := bans.ApplyManualBan(ctx, store, "203.0.113.62", now.Add(time.Hour), "incident", now, []string{"edge"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
