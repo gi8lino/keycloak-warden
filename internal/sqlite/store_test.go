@@ -142,6 +142,7 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, a)
 		assert.Equal(t, "a", a.Destination)
+		assert.Zero(t, a.PreviousDelay)
 		require.NoError(t, store.Finish(ctx, *a, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(a.PreviousDelay)))
 		b, err := store.Next(ctx, now)
 
@@ -152,7 +153,10 @@ func TestOpen(t *testing.T) {
 		retry, err := store.Next(ctx, now.Add(11*time.Second))
 
 		require.NoError(t, err)
-		assert.Equal(t, a, retry)
+		require.NotNil(t, retry)
+		assert.Equal(t, a.Decision, retry.Decision)
+		assert.Equal(t, a.Destination, retry.Destination)
+		assert.Equal(t, actions.FirstRetryDelay, retry.PreviousDelay)
 
 		later := now.Add(time.Second)
 		extended, err := processDecision(processor, ctx, failed("three"), later)

@@ -77,47 +77,60 @@ func (s *Service) Process(
 	}
 
 	err = s.repository.Transact(ctx, func(tx Transaction) error {
-		inserted, err := tx.RecordFailure(ctx, event, now)
-		if err != nil {
-			return err
-		}
-		if !inserted {
-			result.Outcome = OutcomeDuplicate
-			return nil
-		}
-
-		count, err := tx.CountFailures(ctx, result.IP, now.Add(-s.rule.Window))
-		if err != nil {
-			return err
-		}
-		result.Failures = count
-		result.Threshold = s.rule.Threshold
-		if !s.rule.Triggered(count) {
-			result.Outcome = OutcomeBelowThreshold
-			return nil
-		}
-
-		if err := bans.ExtendSource(ctx, tx, result.IP, bans.Source{
-			Kind:      bans.SourceAutomatic,
-			ExpiresAt: now.Add(s.rule.Ban),
-		}); err != nil {
-			return err
-		}
-		decision, changed, err := bans.ReconcileDecision(ctx, tx, result.IP, now, s.targets)
-		if err != nil {
-			return err
-		}
-		if !changed {
-			result.Outcome = OutcomeUnchanged
-			return nil
-		}
-		result.Outcome = OutcomeUpdated
-		result.Decision = &decision
-		return nil
+		var processErr error
+		result, processErr = s.processFailure(ctx, tx, event, now)
+		return processErr
 	})
 	if err != nil {
 		return Result{}, err
 	}
+	return result, nil
+}
+
+// processFailure records an accepted observation and applies the detection rule in one transaction.
+func (s *Service) processFailure(
+	ctx context.Context,
+	tx Transaction,
+	event events.Event,
+	now time.Time,
+) (Result, error) {
+	result := Result{IP: event.IP.String()}
+	inserted, err := tx.RecordFailure(ctx, event, now)
+	if err != nil {
+		return Result{}, err
+	}
+	if !inserted {
+		result.Outcome = OutcomeDuplicate
+		return result, nil
+	}
+
+	count, err := tx.CountFailures(ctx, result.IP, now.Add(-s.rule.Window))
+	if err != nil {
+		return Result{}, err
+	}
+	result.Failures = count
+	result.Threshold = s.rule.Threshold
+	if !s.rule.Triggered(count) {
+		result.Outcome = OutcomeBelowThreshold
+		return result, nil
+	}
+
+	if err := bans.ExtendSource(ctx, tx, result.IP, bans.Source{
+		Kind:      bans.SourceAutomatic,
+		ExpiresAt: now.Add(s.rule.Ban),
+	}); err != nil {
+		return Result{}, err
+	}
+	decision, changed, err := bans.ReconcileDecision(ctx, tx, result.IP, now, s.targets)
+	if err != nil {
+		return Result{}, err
+	}
+	if !changed {
+		result.Outcome = OutcomeUnchanged
+		return result, nil
+	}
+	result.Outcome = OutcomeUpdated
+	result.Decision = &decision
 	return result, nil
 }
 

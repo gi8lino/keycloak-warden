@@ -76,13 +76,23 @@ func Start(
 		done:   make(chan struct{}),
 	}
 
-	go func() {
-		defer close(runner.done)
-		defer cancel()
-		runner.err = run(ctx, q, expirer, destinations, logger)
-	}()
+	go runner.runUntilDone(ctx, q, expirer, destinations, logger)
 
 	return runner
+}
+
+// runUntilDone owns the worker lifecycle and publishes its result before signalling completion.
+func (r *Runner) runUntilDone(
+	ctx context.Context,
+	q Queue,
+	expirer Expirer,
+	destinations map[string]Target,
+	logger *slog.Logger,
+) {
+	defer close(r.done)
+	defer r.cancel()
+
+	r.err = run(ctx, q, expirer, destinations, logger)
 }
 
 // Done closes when the worker has stopped and its terminal error is available.

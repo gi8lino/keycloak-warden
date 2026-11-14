@@ -60,22 +60,25 @@ func RegisterAdmin(cmd *tinyflags.Command, server ServerFlags) AdminFlags {
 			Value(),
 	}
 
-	cmd.Validate(func() error {
-		if *flags.ApplicationURL == "" {
-			host, port, err := net.SplitHostPort(*server.ListenAddress)
-			if err != nil {
-				return fmt.Errorf("invalid --listen-address: %w", err)
-			}
-			base := url.URL{
-				Scheme: "http",
-				Host:   net.JoinHostPort(connectHost(host), port),
-				Path:   *server.RoutePrefix,
-			}
-			*flags.ApplicationURL = base.String()
-		}
-		return client.ValidateURL(*flags.ApplicationURL)
-	})
+	cmd.Validate(func() error { return validateAdminURL(flags.ApplicationURL, server) })
 	return flags
+}
+
+// validateAdminURL derives the local API URL when no explicit override was supplied.
+func validateAdminURL(applicationURL *string, server ServerFlags) error {
+	if *applicationURL == "" {
+		host, port, err := net.SplitHostPort(*server.ListenAddress)
+		if err != nil {
+			return fmt.Errorf("invalid --listen-address: %w", err)
+		}
+		base := url.URL{
+			Scheme: "http",
+			Host:   net.JoinHostPort(connectHost(host), port),
+			Path:   *server.RoutePrefix,
+		}
+		*applicationURL = base.String()
+	}
+	return client.ValidateURL(*applicationURL)
 }
 
 // connectHost substitutes a reachable loopback address for a wildcard bind.

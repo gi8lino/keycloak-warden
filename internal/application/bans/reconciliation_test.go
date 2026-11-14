@@ -136,7 +136,10 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.False(t, changed)
-		assert.Equal(t, previous, next)
+
+		expected := previous
+		expected.ExpiresAt = previous.ExpiresAt.UTC()
+		assert.Equal(t, expected, next)
 		assert.False(t, tx.savedChanged)
 	})
 }

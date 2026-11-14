@@ -23,12 +23,17 @@ type fakeRepository struct {
 	calls int
 	// tx supplies the fake transaction used by the repository.
 	tx *fakeTx
+	// commitErr simulates a failure after a successful transaction callback.
+	commitErr error
 }
 
 // Transact runs the application callback with the fake transaction.
 func (r *fakeRepository) Transact(_ context.Context, apply func(ingestion.Transaction) error) error {
 	r.calls++
-	return apply(r.tx)
+	if err := apply(r.tx); err != nil {
+		return err
+	}
+	return r.commitErr
 }
 
 // fakeTx supplies controlled observation results for ingestion tests.
@@ -310,5 +315,29 @@ func TestServicePassesTargetsToStorage(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{"cloudflare.edge", "webhook.slack"}, tx.targets)
+	})
+}
+
+func TestServiceProcessCommitFailure(t *testing.T) {
+	t.Parallel()
+
+	t.Run("does not publish a revised decision before commit", func(t *testing.T) {
+		t.Parallel()
+
+		tx := &fakeTx{inserted: true, count: 5}
+		repository := &fakeRepository{tx: tx, commitErr: errors.New("commit failed")}
+		service, err := ingestion.New(repository, detection.Rule{
+			Threshold: 5,
+			Window:    time.Minute,
+			Ban:       time.Minute,
+		}, []string{"edge"})
+		require.NoError(t, err)
+
+		result, err := service.Process(t.Context(), validEvent(), time.Now())
+
+		require.ErrorContains(t, err, "commit failed")
+		assert.Equal(t, ingestion.Result{}, result)
+		assert.Equal(t, 1, repository.calls)
+		assert.Equal(t, []string{"edge"}, tx.targets)
 	})
 }

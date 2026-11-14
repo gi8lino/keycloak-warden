@@ -141,13 +141,15 @@ func Start(
 		logger:    logger,
 	}
 
-	go func() {
-		defer close(runner.done)
-
-		runner.run(ctx)
-	}()
+	go runner.runUntilDone(ctx)
 
 	return runner
+}
+
+// runUntilDone closes the worker completion channel only after maintenance has stopped.
+func (r *Runner) runUntilDone(ctx context.Context) {
+	defer close(r.done)
+	r.run(ctx)
 }
 
 // Close cancels maintenance and waits for completion; repeated calls are safe.
@@ -240,7 +242,10 @@ func (r *Runner) run(ctx context.Context) {
 			r.executeMu.Unlock()
 
 			if err != nil && ctx.Err() == nil {
-				r.logger.Warn("observation cleanup failed", "event", "observation_cleanup_failed", "error", err)
+				r.logger.Warn("observation cleanup failed",
+					"event", "observation_cleanup_failed",
+					"error", err,
+				)
 			}
 
 			interval := r.schedule.PruneInterval
@@ -257,7 +262,10 @@ func (r *Runner) run(ctx context.Context) {
 			r.executeMu.Unlock()
 
 			if err != nil && ctx.Err() == nil {
-				r.logger.Warn("sqlite optimization failed", "event", "sqlite_optimize_failed", "error", err)
+				r.logger.Warn("sqlite optimization failed",
+					"event", "sqlite_optimize_failed",
+					"error", err,
+				)
 			}
 
 			interval := r.schedule.OptimizeInterval

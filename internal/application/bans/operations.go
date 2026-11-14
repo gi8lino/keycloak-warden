@@ -15,57 +15,64 @@ type Writer interface {
 }
 
 // ApplyManualBan records a manual reason and reconciles its desired state atomically.
-func ApplyManualBan(ctx context.Context, store Writer, ip string, until time.Time, reason string, now time.Time, targets []string) (Record, error) {
+func ApplyManualBan(
+	ctx context.Context,
+	store Writer,
+	ip string,
+	until time.Time,
+	reason string,
+	now time.Time,
+	targets []string,
+) (Record, error) {
 	var record Record
 	err := store.TransactBan(ctx, func(tx MutationTransaction) error {
-		if err := ExtendSource(ctx, tx, ip, Source{
-			Kind:      SourceManual,
-			ExpiresAt: until,
-			Reason:    reason,
-		}); err != nil {
-			return err
-		}
-
-		decision, _, err := ReconcileDecision(ctx, tx, ip, now, targets)
-		if err != nil {
-			return err
-		}
-		record, err = tx.Record(ctx, decision.ID, now)
+		var err error
+		record, err = applyManualBan(ctx, tx, ip, until, reason, now, targets)
 		return err
 	})
 	if err != nil {
 		return Record{}, err
 	}
 	return record, nil
+}
+
+// applyManualBan changes the manual source and builds the resulting record in one transaction.
+func applyManualBan(
+	ctx context.Context,
+	tx MutationTransaction,
+	ip string,
+	until time.Time,
+	reason string,
+	now time.Time,
+	targets []string,
+) (Record, error) {
+	if err := ExtendSource(ctx, tx, ip, Source{
+		Kind:      SourceManual,
+		ExpiresAt: until,
+		Reason:    reason,
+	}); err != nil {
+		return Record{}, err
+	}
+
+	decision, _, err := ReconcileDecision(ctx, tx, ip, now, targets)
+	if err != nil {
+		return Record{}, err
+	}
+	return tx.Record(ctx, decision.ID, now)
 }
 
 // ReleaseAllSources clears active reasons and starts a fresh observation generation.
-func ReleaseAllSources(ctx context.Context, store Writer, id string, now time.Time, targets []string) (Record, error) {
+func ReleaseAllSources(
+	ctx context.Context,
+	store Writer,
+	id string,
+	now time.Time,
+	targets []string,
+) (Record, error) {
 	var record Record
 	err := store.TransactBan(ctx, func(tx MutationTransaction) error {
-		current, err := tx.DecisionByID(ctx, id)
-		if errors.Is(err, ErrNotFound) {
-			return ErrNotFound
-		}
-		if err != nil {
-			return err
-		}
-		if current.State != decisions.StateBanned || !current.ExpiresAt.After(now) {
-			return ErrNotFound
-		}
-		if err := tx.DeleteSources(ctx, current.IP); err != nil {
-			return err
-		}
-		// Retain producer IDs for replay protection while resetting the count.
-		if err := tx.ResetFailures(ctx, current.IP); err != nil {
-			return err
-		}
-
-		next, _, err := ReconcileDecision(ctx, tx, current.IP, now, targets)
-		if err != nil {
-			return err
-		}
-		record, err = tx.Record(ctx, next.ID, now)
+		var err error
+		record, err = releaseAllSources(ctx, tx, id, now, targets)
 		return err
 	})
 	if err != nil {
@@ -74,33 +81,85 @@ func ReleaseAllSources(ctx context.Context, store Writer, id string, now time.Ti
 	return record, nil
 }
 
+// releaseAllSources validates the requested release and updates its sources and decision atomically.
+func releaseAllSources(
+	ctx context.Context,
+	tx MutationTransaction,
+	id string,
+	now time.Time,
+	targets []string,
+) (Record, error) {
+	current, err := tx.DecisionByID(ctx, id)
+	if errors.Is(err, ErrNotFound) {
+		return Record{}, ErrNotFound
+	}
+	if err != nil {
+		return Record{}, err
+	}
+	if current.State != decisions.StateBanned || !current.ExpiresAt.After(now) {
+		return Record{}, ErrNotFound
+	}
+	if err := tx.DeleteSources(ctx, current.IP); err != nil {
+		return Record{}, err
+	}
+	// Retain producer IDs for replay protection while resetting the count.
+	if err := tx.ResetFailures(ctx, current.IP); err != nil {
+		return Record{}, err
+	}
+
+	next, _, err := ReconcileDecision(ctx, tx, current.IP, now, targets)
+	if err != nil {
+		return Record{}, err
+	}
+	return tx.Record(ctx, next.ID, now)
+}
+
 // ExpireSources atomically drops elapsed sources and records effective releases.
-func ExpireSources(ctx context.Context, store Writer, now time.Time, targets []string) ([]decisions.Decision, error) {
+func ExpireSources(
+	ctx context.Context,
+	store Writer,
+	now time.Time,
+	targets []string,
+) ([]decisions.Decision, error) {
 	var released []decisions.Decision
 	err := store.TransactBan(ctx, func(tx MutationTransaction) error {
-		ips, err := tx.ExpiredSourceIPs(ctx, now)
-		if err != nil {
-			return err
-		}
-		if len(ips) == 0 {
-			return nil
-		}
-		if err := tx.DeleteExpiredSources(ctx, now); err != nil {
-			return err
-		}
-		for _, ip := range ips {
-			decision, changed, err := ReconcileDecision(ctx, tx, ip, now, targets)
-			if err != nil {
-				return err
-			}
-			if changed && decision.State == decisions.StateUnbanned {
-				released = append(released, decision)
-			}
-		}
-		return nil
+		var err error
+		released, err = expireSources(ctx, tx, now, targets)
+		return err
 	})
 	if err != nil {
 		return nil, err
+	}
+	return released, nil
+}
+
+// expireSources reconciles all decisions affected by elapsed sources in the same transaction.
+func expireSources(
+	ctx context.Context,
+	tx MutationTransaction,
+	now time.Time,
+	targets []string,
+) ([]decisions.Decision, error) {
+	ips, err := tx.ExpiredSourceIPs(ctx, now)
+	if err != nil {
+		return nil, err
+	}
+	if len(ips) == 0 {
+		return nil, nil
+	}
+	if err := tx.DeleteExpiredSources(ctx, now); err != nil {
+		return nil, err
+	}
+
+	var released []decisions.Decision
+	for _, ip := range ips {
+		decision, changed, err := ReconcileDecision(ctx, tx, ip, now, targets)
+		if err != nil {
+			return nil, err
+		}
+		if changed && decision.State == decisions.StateUnbanned {
+			released = append(released, decision)
+		}
 	}
 	return released, nil
 }
