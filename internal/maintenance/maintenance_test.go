@@ -18,6 +18,8 @@ import (
 type fakeStore struct {
 	// pruneCalls counts observation cleanup attempts.
 	pruneCalls atomic.Int32
+	// lastCutoffMillis records the cutoff supplied by maintenance.
+	lastCutoffMillis atomic.Int64
 	// optimizeCalls counts planner optimization attempts.
 	optimizeCalls atomic.Int32
 	// pruneFailure causes the first cleanup attempt to fail.
@@ -27,7 +29,8 @@ type fakeStore struct {
 }
 
 // Prune records a cleanup attempt and optionally injects a transient failure.
-func (s *fakeStore) Prune(context.Context, time.Time) error {
+func (s *fakeStore) Prune(_ context.Context, cutoff time.Time) error {
+	s.lastCutoffMillis.Store(cutoff.UnixMilli())
 	attempt := s.pruneCalls.Add(1)
 	if s.pruneFailure && attempt == 1 {
 		return errors.New("prune failed")
@@ -104,7 +107,7 @@ func TestRecurringMaintenance(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
-		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Minute, OptimizeInterval: 2 * time.Minute}, discardLogger())
+		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Minute, OptimizeInterval: 2 * time.Minute}, 24*time.Hour, discardLogger())
 		defer runner.Close()
 
 		synctest.Wait()
@@ -135,7 +138,7 @@ func TestMaintenanceRetry(t *testing.T) {
 			PruneInterval:    time.Hour,
 			OptimizeInterval: time.Second,
 		}
-		runner := Start(t.Context(), store, sched, discardLogger())
+		runner := Start(t.Context(), store, sched, 24*time.Hour, discardLogger())
 		defer runner.Close()
 
 		synctest.Wait()
@@ -162,11 +165,36 @@ func TestMaintenanceClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
 		sched := Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}
-		runner := Start(t.Context(), store, sched, discardLogger())
+		runner := Start(t.Context(), store, sched, 24*time.Hour, discardLogger())
 		synctest.Wait()
 		runner.Close()
 		runner.Close()
 		assert.Equal(t, int32(1), store.pruneCalls.Load())
 		assert.Zero(t, store.optimizeCalls.Load())
+	})
+}
+
+func TestPruneRetention(t *testing.T) {
+	t.Parallel()
+
+	t.Run("calculates the cutoff from application retention", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakeStore{}
+		runner := &Runner{
+			store:     store,
+			retention: 48 * time.Hour,
+			schedule: Schedule{
+				PruneInterval:    time.Hour,
+				OptimizeInterval: time.Hour,
+			},
+		}
+		now := time.Now()
+
+		err := runner.Trigger(t.Context(), OperationPrune)
+
+		require.NoError(t, err)
+		cutoff := time.UnixMilli(store.lastCutoffMillis.Load())
+		assert.WithinDuration(t, now.Add(-48*time.Hour), cutoff, time.Second)
 	})
 }

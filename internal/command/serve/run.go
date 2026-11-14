@@ -40,21 +40,24 @@ func Run(
 		return err
 	}
 
-	store, err := sqlite.Open(database, cfg.Rule, names)
+	store, err := sqlite.Open(database)
 	if err != nil {
 		return err
 	}
 	defer store.Close() //nolint:errcheck
 
+	if err := store.ValidateTargets(parent, names); err != nil {
+		return err
+	}
 	if err := actions.ReconcileTargets(parent, store, destinations); err != nil {
 		return err
 	}
 
-	processor, err := ingestion.New(store, cfg.Rule)
+	processor, err := ingestion.New(store, cfg.Rule, names)
 	if err != nil {
 		return err
 	}
-	banAdmin, err := bans.NewAdminService(store)
+	banAdmin, err := bans.NewAdminService(store, names)
 	if err != nil {
 		return err
 	}
@@ -68,7 +71,7 @@ func Run(
 	ctx, stop := grace.SignalContext(parent)
 	defer stop()
 
-	maintenanceRunner := maintenance.Start(ctx, store, schedule, logger)
+	maintenanceRunner := maintenance.Start(ctx, store, schedule, max(maintenance.MinObservationRetention, cfg.Rule.Window), logger)
 	runner := actions.Start(ctx, store, destinations, logger)
 	handlers := server.New(server.Config{
 		AccessLog:      accessLog,

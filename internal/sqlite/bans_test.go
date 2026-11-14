@@ -23,7 +23,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, _ := openStore(t, path, "edge")
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 
@@ -46,7 +46,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		store, _ = openStore(t, path, "edge")
 		defer store.Close() //nolint:errcheck
-		service, err = bans.NewAdminService(store)
+		service, err = bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 		views, err := service.ListActive(ctx, now)
@@ -66,12 +66,12 @@ func TestStoreApplyManualBan(t *testing.T) {
 		assert.Equal(t, created.Decision.ExpiresAt, updated.Decision.ExpiresAt)
 		assert.Equal(t, "still investigating", updated.Sources[0].Reason)
 
-		released, err := store.Maintain(ctx, created.Decision.ExpiresAt)
+		released, err := store.Maintain(ctx, created.Decision.ExpiresAt, []string{"edge"})
 		require.NoError(t, err)
 		require.Len(t, released, 1)
 		assert.Equal(t, created.Decision.ID, released[0].ID)
 		assert.Equal(t, decisions.StateUnbanned, released[0].State)
-		released, err = store.Maintain(ctx, created.Decision.ExpiresAt)
+		released, err = store.Maintain(ctx, created.Decision.ExpiresAt, []string{"edge"})
 		require.NoError(t, err)
 		assert.Empty(t, released, "expiration must only be reported once")
 		views, err = service.ListActive(ctx, created.Decision.ExpiresAt)
@@ -93,7 +93,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -112,7 +112,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		}, now)
 
 		require.NoError(t, err)
-		released, err := store.Maintain(ctx, auto.ExpiresAt)
+		released, err := store.Maintain(ctx, auto.ExpiresAt, []string{"edge"})
 		require.NoError(t, err)
 		assert.Empty(t, released, "a manual source still keeps the effective ban active")
 		view, err := service.GetDecision(ctx, manual.Decision.ID, auto.ExpiresAt)
@@ -133,7 +133,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -204,7 +204,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -235,7 +235,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -263,7 +263,7 @@ func TestStoreListActive(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"))
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, nil)
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -297,7 +297,7 @@ func TestRetiredDestination(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "warden.db")
 	ctx := t.Context()
 	store, _ := openStore(t, path, "old")
-	service, err := bans.NewAdminService(store)
+	service, err := bans.NewAdminService(store, []string{"old"})
 
 	require.NoError(t, err)
 	now := time.Now()
@@ -321,7 +321,7 @@ func TestRetiredDestination(t *testing.T) {
 
 	store, _ = openStore(t, path, "new")
 	defer store.Close() //nolint:errcheck
-	service, err = bans.NewAdminService(store)
+	service, err = bans.NewAdminService(store, []string{"new"})
 
 	require.NoError(t, err)
 	view, err = service.BanManual(ctx, request, now)
@@ -342,7 +342,7 @@ func TestIdempotentManualBan(t *testing.T) {
 
 	store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
-	service, err := bans.NewAdminService(store)
+	service, err := bans.NewAdminService(store, []string{"edge"})
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
@@ -392,7 +392,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 
 	store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
-	service, err := bans.NewAdminService(store)
+	service, err := bans.NewAdminService(store, []string{"edge"})
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
@@ -410,7 +410,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	assert.Len(t, manual.Sources, 2)
 
 	// Automatic expiry removes a source but does not change the effective block.
-	_, err = store.Maintain(t.Context(), now.Add(16*time.Minute))
+	_, err = store.Maintain(t.Context(), now.Add(16*time.Minute), []string{"edge"})
 	require.NoError(t, err)
 	remaining, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(16*time.Minute))
 	require.NoError(t, err)
@@ -418,13 +418,13 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	assert.Equal(t, manual.Decision, remaining.Decision)
 
 	// The final expiry creates one release and repeated maintenance is a no-op.
-	_, err = store.Maintain(t.Context(), now.Add(time.Hour))
+	_, err = store.Maintain(t.Context(), now.Add(time.Hour), []string{"edge"})
 	require.NoError(t, err)
 	released, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
 	assert.Equal(t, manual.Decision.Revision+1, released.Decision.Revision)
-	_, err = store.Maintain(t.Context(), now.Add(time.Hour))
+	_, err = store.Maintain(t.Context(), now.Add(time.Hour), []string{"edge"})
 	require.NoError(t, err)
 	again, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)

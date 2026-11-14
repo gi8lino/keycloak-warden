@@ -31,7 +31,7 @@ func TestStorePrune(t *testing.T) {
 			_, err := processor.Process(t.Context(), failed(observation.id), observation.at)
 			require.NoError(t, err)
 		}
-		require.NoError(t, store.Prune(t.Context(), now))
+		require.NoError(t, store.Prune(t.Context(), now.Add(-24*time.Hour)))
 
 		err := store.Transact(t.Context(), func(tx ingestion.Transaction) error {
 			count, err := tx.CountFailures(t.Context(), "203.0.113.1", now.Add(-48*time.Hour))
@@ -44,10 +44,10 @@ func TestStorePrune(t *testing.T) {
 	t.Run("long detection window controls retention", func(t *testing.T) {
 		t.Parallel()
 		rule := detection.Rule{Threshold: 3, Window: 48 * time.Hour, Ban: time.Minute}
-		store, err := sqlite.Open(filepath.Join(t.TempDir(), "state.db"), rule, nil)
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "state.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-		processor, err := ingestion.New(store, rule)
+		processor, err := ingestion.New(store, rule, nil)
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		for _, observation := range []struct {
@@ -60,7 +60,7 @@ func TestStorePrune(t *testing.T) {
 			_, err := processor.Process(t.Context(), failed(observation.id), observation.at)
 			require.NoError(t, err)
 		}
-		require.NoError(t, store.Prune(t.Context(), now))
+		require.NoError(t, store.Prune(t.Context(), now.Add(-48*time.Hour)))
 
 		err = store.Transact(t.Context(), func(tx ingestion.Transaction) error {
 			count, err := tx.CountFailures(t.Context(), "203.0.113.1", now.Add(-72*time.Hour))

@@ -21,17 +21,21 @@ type fakeStore struct {
 	reason string
 	// id captures the decision ID passed to the fake store.
 	id string
+	// targets captures the destination identifiers passed to storage.
+	targets []string
 }
 
 // ApplyManualBan records the manual-ban inputs for assertions.
-func (r *fakeStore) ApplyManualBan(_ context.Context, ip string, until time.Time, reason string, _ time.Time) (bans.Record, error) {
+func (r *fakeStore) ApplyManualBan(_ context.Context, ip string, until time.Time, reason string, _ time.Time, targets []string) (bans.Record, error) {
 	r.ip, r.until, r.reason = ip, until, reason
+	r.targets = append([]string(nil), targets...)
 	return bans.Record{}, nil
 }
 
 // ReleaseAllSources records the decision ID selected for release.
-func (r *fakeStore) ReleaseAllSources(_ context.Context, id string, _ time.Time) (bans.Record, error) {
+func (r *fakeStore) ReleaseAllSources(_ context.Context, id string, _ time.Time, targets []string) (bans.Record, error) {
 	r.id = id
+	r.targets = append([]string(nil), targets...)
 	return bans.Record{}, nil
 }
 
@@ -50,7 +54,7 @@ func TestNewAdminService(t *testing.T) {
 	t.Run("accepts store", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{})
+		service, err := bans.NewAdminService(&fakeStore{}, nil)
 
 		require.NoError(t, err)
 		assert.NotNil(t, service)
@@ -59,7 +63,7 @@ func TestNewAdminService(t *testing.T) {
 	t.Run("rejects missing store", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := bans.NewAdminService(nil)
+		_, err := bans.NewAdminService(nil, nil)
 
 		require.ErrorContains(t, err, "store")
 	})
@@ -71,7 +75,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 	invalid := func(t *testing.T, request bans.ManualBanRequest) {
 		t.Helper()
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, nil)
 
 		require.NoError(t, err)
 		_, err = service.BanManual(t.Context(), request, time.Now())
@@ -126,7 +130,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, nil)
 
 		require.NoError(t, err)
 		now := time.Now()
@@ -149,7 +153,7 @@ func TestAdminServiceRelease(t *testing.T) {
 	t.Run("rejects missing decision ID", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{})
+		service, err := bans.NewAdminService(&fakeStore{}, nil)
 
 		require.NoError(t, err)
 		_, err = service.Release(t.Context(), " ", time.Now())
@@ -161,7 +165,7 @@ func TestAdminServiceRelease(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, nil)
 
 		require.NoError(t, err)
 		_, err = service.Release(t.Context(), "decision-one", time.Now())
@@ -177,7 +181,7 @@ func TestAdminServiceListActive(t *testing.T) {
 	t.Run("delegates to store", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{})
+		service, err := bans.NewAdminService(&fakeStore{}, nil)
 
 		require.NoError(t, err)
 		views, err := service.ListActive(t.Context(), time.Now())
@@ -193,7 +197,7 @@ func TestAdminServiceGetDecision(t *testing.T) {
 	t.Run("rejects missing decision ID", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{})
+		service, err := bans.NewAdminService(&fakeStore{}, nil)
 
 		require.NoError(t, err)
 		_, err = service.GetDecision(t.Context(), " ", time.Now())
@@ -205,12 +209,48 @@ func TestAdminServiceGetDecision(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, nil)
 
 		require.NoError(t, err)
 		_, err = service.GetDecision(t.Context(), "decision-one", time.Now())
 
 		require.NoError(t, err)
 		assert.Equal(t, "decision-one", store.id)
+	})
+}
+
+func TestAdminServiceTargets(t *testing.T) {
+	t.Parallel()
+
+	t.Run("manual bans receive the configured destination names", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakeStore{}
+		targets := []string{"cloudflare.edge", "webhook.slack"}
+		service, err := bans.NewAdminService(store, targets)
+		require.NoError(t, err)
+
+		targets[0] = "modified"
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP:       "203.0.113.1",
+			Duration: time.Hour,
+			Reason:   "investigation",
+		}, time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"cloudflare.edge", "webhook.slack"}, store.targets)
+	})
+
+	t.Run("manual releases receive the configured destination names", func(t *testing.T) {
+		t.Parallel()
+
+		store := &fakeStore{}
+		service, err := bans.NewAdminService(store, []string{"webhook.slack"})
+		require.NoError(t, err)
+
+		_, err = service.Release(t.Context(), "decision-one", time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"webhook.slack"}, store.targets)
 	})
 }

@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
@@ -135,12 +135,7 @@ SELECT EXISTS (
 // migrateTestDatabase initializes or reopens a database with the current migrations.
 func migrateTestDatabase(t *testing.T, path string) {
 	t.Helper()
-	rule := detection.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       time.Minute,
-	}
-	store, err := sqlite.Open(path, rule, nil)
+	store, err := sqlite.Open(path)
 
 	require.NoError(t, err)
 	require.NoError(t, store.Close())
@@ -188,22 +183,33 @@ func TestUpgradeLegacyDecision(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy.db")
 	old, err := sql.Open("sqlite", path)
 	require.NoError(t, err)
-	baseline, err := os.ReadFile("migrations/0003_baseline.sql")
+
+	matches, err := filepath.Glob("migrations/*_baseline.sql")
+	require.NoError(t, err)
+	require.Len(t, matches, 1, "expected exactly one baseline migration file")
+
+	baseline, err := os.ReadFile(matches[0])
 	require.NoError(t, err)
 	_, err = old.ExecContext(t.Context(), string(baseline))
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	until := now.Add(time.Hour).UnixMilli()
+	var baselineVersion int
+	_, err = fmt.Sscanf(filepath.Base(matches[0]), "%d_baseline.sql", &baselineVersion)
+	require.NoError(t, err)
+
 	_, err = old.ExecContext(t.Context(), `
 CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, applied_at INTEGER NOT NULL);
-INSERT INTO schema_migrations (version, applied_at) VALUES (3, 0);
-`)
+INSERT INTO schema_migrations (version, applied_at) VALUES (?, 0);
+`, baselineVersion)
+
 	require.NoError(t, err)
 	_, err = old.ExecContext(t.Context(), `
 INSERT INTO decisions (ip, id, revision, active, expires, failures, failure_generation)
 VALUES ('203.0.113.10', 'legacy-decision', 4, 1, ?, 5, 3)
 `, until)
 	require.NoError(t, err)
+
 	_, err = old.ExecContext(t.Context(), `
 INSERT INTO ban_sources (ip, kind, expires, reason)
 VALUES ('203.0.113.10', 'manual', ?, 'investigation')
@@ -221,11 +227,7 @@ VALUES ('keycloak', 'event-one', '203.0.113.10', ?, 3)
 	require.NoError(t, err)
 	require.NoError(t, old.Close())
 
-	store, err := sqlite.Open(path, detection.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       time.Minute,
-	}, []string{"webhook.receiver"})
+	store, err := sqlite.Open(path)
 	require.NoError(t, err)
 	record, err := store.GetDecision(t.Context(), "legacy-decision", now)
 	require.NoError(t, err)
@@ -256,11 +258,7 @@ VALUES ('keycloak', 'event-one', '203.0.113.10', ?, 3)
 	require.NoError(t, upgraded.Close())
 
 	// Opening an already upgraded database should never rerun the migration.
-	reopened, err := sqlite.Open(path, detection.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       time.Minute,
-	}, []string{"webhook.receiver"})
+	reopened, err := sqlite.Open(path)
 	require.NoError(t, err)
 	require.NoError(t, reopened.Close())
 }

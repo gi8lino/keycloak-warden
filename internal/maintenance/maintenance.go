@@ -19,6 +19,8 @@ const (
 	MinInterval = 5 * time.Minute
 	// MaxInterval bounds operational intervals against accidental overflow.
 	MaxInterval = 365 * 24 * time.Hour
+	// MinObservationRetention preserves a full day of failed-login observations.
+	MinObservationRetention = 24 * time.Hour
 	// retryInterval avoids rapid retries when SQLite maintenance encounters an error.
 	retryInterval = 5 * time.Second
 )
@@ -66,7 +68,7 @@ func validMaintenanceInterval(interval time.Duration) bool {
 
 // Store provides the independent SQLite maintenance operations.
 type Store interface {
-	// Prune deletes old observations, preserving current detection retention rules.
+	// Prune deletes observations at or before the application-supplied cutoff.
 	Prune(context.Context, time.Time) error
 	// Optimize refreshes SQLite's query-planner statistics.
 	Optimize(context.Context) error
@@ -106,6 +108,8 @@ type Runner struct {
 	store Store
 	// schedule configures normal recurrence.
 	schedule Schedule
+	// retention determines how long detection observations remain available.
+	retention time.Duration
 	// logger records background maintenance failures.
 	logger *slog.Logger
 	// executeMu prevents concurrent maintenance from overlapping.
@@ -119,15 +123,22 @@ type Runner struct {
 }
 
 // Start schedules maintenance using a prevalidated schedule; SQLite is optimized separately on open.
-func Start(parent context.Context, store Store, schedule Schedule, logger *slog.Logger) *Runner {
+func Start(
+	parent context.Context,
+	store Store,
+	schedule Schedule,
+	retention time.Duration,
+	logger *slog.Logger,
+) *Runner {
 	ctx, cancel := context.WithCancel(parent)
 
 	runner := &Runner{
-		cancel:   cancel,
-		done:     make(chan struct{}),
-		store:    store,
-		schedule: schedule,
-		logger:   logger,
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		store:     store,
+		schedule:  schedule,
+		retention: retention,
+		logger:    logger,
 	}
 
 	go func() {
@@ -186,7 +197,7 @@ func (r *Runner) execute(ctx context.Context, operation Operation) error {
 	var err error
 	switch operation {
 	case OperationPrune:
-		err = r.store.Prune(ctx, now)
+		err = r.store.Prune(ctx, now.Add(-r.retention))
 	case OperationOptimize:
 		err = r.store.Optimize(ctx)
 	default:

@@ -9,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
@@ -17,18 +16,10 @@ import (
 func TestOpenValidation(t *testing.T) {
 	t.Parallel()
 
-	t.Run("rejects invalid rule before creating database", func(t *testing.T) {
-		t.Parallel()
-		path := filepath.Join(t.TempDir(), "state.db")
-		store, err := sqlite.Open(path, detection.Rule{}, nil)
-		require.Error(t, err)
-		assert.Nil(t, store)
-	})
-
 	t.Run("rejects missing database directory", func(t *testing.T) {
 		t.Parallel()
 		path := filepath.Join(t.TempDir(), "missing-directory", "state.db")
-		store, err := sqlite.Open(path, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Minute}, nil)
+		store, err := sqlite.Open(path)
 		require.Error(t, err)
 		assert.Nil(t, store)
 	})
@@ -46,7 +37,7 @@ func TestStoreClosedErrors(t *testing.T) {
 	assert.Error(t, err)
 	_, err = store.NextDeadline(t.Context())
 	assert.Error(t, err)
-	_, err = store.Maintain(t.Context(), time.Now())
+	_, err = store.Maintain(t.Context(), time.Now(), nil)
 	assert.Error(t, err)
 	assert.Error(t, store.Transact(t.Context(), func(ingestion.Transaction) error {
 		return errors.New("should not be invoked")

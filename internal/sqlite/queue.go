@@ -11,7 +11,7 @@ import (
 )
 
 // Maintain expires sources and returns only effective releases after commit.
-func (s *Store) Maintain(ctx context.Context, now time.Time) ([]decisions.Decision, error) {
+func (s *Store) Maintain(ctx context.Context, now time.Time, targets []string) ([]decisions.Decision, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -32,7 +32,7 @@ WHERE expires <= ?
 
 	var released []decisions.Decision
 	for _, ip := range expiredIPs {
-		decision, changed, err := reconcileDecision(ctx, tx, ip, now, s.targets)
+		decision, changed, err := reconcileDecision(ctx, tx, ip, now, targets)
 		if err != nil {
 			return nil, err
 		}
@@ -78,12 +78,11 @@ WHERE expires <= ?
 }
 
 // Prune removes old observations independently of delivery activity.
-func (s *Store) Prune(ctx context.Context, now time.Time) error {
-	retain := max(24*time.Hour, s.rule.Window)
+func (s *Store) Prune(ctx context.Context, cutoff time.Time) error {
 	_, err := s.db.ExecContext(ctx, `
 DELETE FROM failures
 WHERE received <= ?
-`, now.Add(-retain).UnixMilli())
+`, cutoff.UnixMilli())
 	return err
 }
 

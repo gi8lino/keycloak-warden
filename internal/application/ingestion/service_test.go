@@ -40,6 +40,8 @@ type fakeTx struct {
 	blocked bool
 	// unchanged models a threshold hit that did not revise the effective decision.
 	unchanged bool
+	// targets records destinations passed to the transaction.
+	targets []string
 }
 
 // RecordFailure validates the test address and returns the configured insert result.
@@ -56,8 +58,9 @@ func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, 
 }
 
 // Block records that ingestion requested a block.
-func (tx *fakeTx) Block(_ context.Context, _ string, _ time.Time, _ time.Time) (*decisions.Decision, error) {
+func (tx *fakeTx) Block(_ context.Context, _ string, _ time.Time, _ time.Time, targets []string) (*decisions.Decision, error) {
 	tx.blocked = true
+	tx.targets = append([]string(nil), targets...)
 	if tx.unchanged {
 		return nil, nil
 	}
@@ -74,7 +77,7 @@ func TestNew(t *testing.T) {
 			Threshold: 1,
 			Window:    time.Minute,
 			Ban:       time.Minute,
-		})
+		}, nil)
 
 		require.ErrorContains(t, err, "repository")
 	})
@@ -82,7 +85,7 @@ func TestNew(t *testing.T) {
 	t.Run("rejects invalid rule", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ingestion.New(&fakeRepository{}, detection.Rule{})
+		_, err := ingestion.New(&fakeRepository{}, detection.Rule{}, nil)
 
 		require.ErrorContains(t, err, "threshold")
 	})
@@ -109,7 +112,7 @@ func processEvent(t *testing.T, event events.Envelope, count int, inserted bool)
 		Threshold: 5,
 		Window:    time.Minute,
 		Ban:       15 * time.Minute,
-	})
+	}, nil)
 
 	require.NoError(t, err)
 	result, err := service.Process(t.Context(), event, time.Now())
@@ -232,7 +235,7 @@ func TestProcessingOutcomes(t *testing.T) {
 
 			tx := &fakeTx{inserted: tt.inserted, count: tt.count, unchanged: tt.unchanged}
 			repo := &fakeRepository{tx: tx}
-			service, err := ingestion.New(repo, detection.Rule{Threshold: 5, Window: time.Minute, Ban: 15 * time.Minute})
+			service, err := ingestion.New(repo, detection.Rule{Threshold: 5, Window: time.Minute, Ban: 15 * time.Minute}, nil)
 			require.NoError(t, err)
 			event := validEvent()
 			event.Kind = tt.kind
@@ -252,4 +255,28 @@ func TestProcessingOutcomes(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestServicePassesTargetsToStorage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses an immutable copy of destination names", func(t *testing.T) {
+		t.Parallel()
+
+		tx := &fakeTx{inserted: true, count: 1}
+		repo := &fakeRepository{tx: tx}
+		targets := []string{"cloudflare.edge", "webhook.slack"}
+		service, err := ingestion.New(repo, detection.Rule{
+			Threshold: 1,
+			Window:    time.Minute,
+			Ban:       15 * time.Minute,
+		}, targets)
+		require.NoError(t, err)
+
+		targets[0] = "modified"
+		_, err = service.Process(t.Context(), validEvent(), time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"cloudflare.edge", "webhook.slack"}, tx.targets)
+	})
 }

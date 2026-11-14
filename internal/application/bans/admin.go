@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -30,9 +31,9 @@ var (
 // Store atomically applies administrative changes and reads effective ban decisions.
 type Store interface {
 	// ApplyManualBan adds or extends the manual source without affecting automatic sources.
-	ApplyManualBan(context.Context, string, time.Time, string, time.Time) (Record, error)
+	ApplyManualBan(context.Context, string, time.Time, string, time.Time, []string) (Record, error)
 	// ReleaseAllSources clears automatic and manual sources and resets the observation generation.
-	ReleaseAllSources(context.Context, string, time.Time) (Record, error)
+	ReleaseAllSources(context.Context, string, time.Time, []string) (Record, error)
 	// ListActive returns currently effective blocks.
 	ListActive(context.Context, time.Time) ([]Record, error)
 	// GetDecision returns the decision, including released historical decisions.
@@ -43,14 +44,16 @@ type Store interface {
 type AdminService struct {
 	// store provides transactional persistence for administrative operations.
 	store Store
+	// targets identifies the configured destinations for revised decisions.
+	targets []string
 }
 
 // NewAdminService constructs the administrative ban service.
-func NewAdminService(store Store) (*AdminService, error) {
+func NewAdminService(store Store, targets []string) (*AdminService, error) {
 	if store == nil {
 		return nil, errors.New("ban store is required")
 	}
-	return &AdminService{store: store}, nil
+	return &AdminService{store: store, targets: slices.Clone(targets)}, nil
 }
 
 // BanManual validates the request and adds or extends only its manual source.
@@ -60,7 +63,7 @@ func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, 
 		return Record{}, err
 	}
 
-	return s.store.ApplyManualBan(ctx, ip, now.Add(request.Duration), reason, now)
+	return s.store.ApplyManualBan(ctx, ip, now.Add(request.Duration), reason, now, s.targets)
 }
 
 // validateManualBanRequest validates and normalizes a manual ban request.
@@ -98,7 +101,7 @@ func (s *AdminService) Release(ctx context.Context, id string, now time.Time) (R
 		return Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 
-	return s.store.ReleaseAllSources(ctx, id, now)
+	return s.store.ReleaseAllSources(ctx, id, now, s.targets)
 }
 
 // ListActive returns effective blocks with their automatic and manual sources.

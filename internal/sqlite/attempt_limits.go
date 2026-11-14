@@ -4,16 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"fmt"
-	"slices"
 )
 
 // ReconcileAttemptLimit updates current undelivered revisions for one destination.
 // It runs at startup, does not persist the configured limit, and preserves attempt history.
 func (s *Store) ReconcileAttemptLimit(ctx context.Context, name string, limit int) error {
-	if !slices.Contains(s.targets, name) {
-		return fmt.Errorf("destination %q is not configured", name)
-	}
 	if limit < 1 {
 		return errors.New("max-attempts must be at least 1")
 	}

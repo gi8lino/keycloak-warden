@@ -27,11 +27,15 @@ Keycloak Snitch sends signed event envelopes to the application listener. Warden
 
 When the threshold is reached, Warden records or extends a decision in SQLite. Duplicate events do not cause duplicate observations.
 
+Detection policy stays in the ingestion service. Runtime targets own their provider settings and retry limits; ingestion, ban administration, and the delivery worker pass the necessary destination identifiers to SQLite operations when creating or reconciling decisions. The store does not retain detection rules or target configuration.
+
 ## Desired versus delivered state
 
 A decision's `state` is either `banned` or `unbanned`. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
 
 Automatic expiry or a manual unban changes the desired state to `unbanned`. A manual ban and an automatic ban are independent sources; releasing an IP removes the active reasons for blocking it.
+
+Maintenance computes the observation retention cutoff from the detection window (at least 24 hours) and supplies that cutoff directly to SQLite. Only delivery state and destination identifiers needed to resume delivery are persisted.
 
 The administrative API, `list-active`, and `inspect` return the same record shape: `decision`, `sources`, and `deliveries`. `sources` describes the independent currently active automatic or manual reasons for a block, while `deliveries` contains the last acknowledged revision for each destination. A released decision retains its historical identity and delivery acknowledgements, but has no active sources.
 

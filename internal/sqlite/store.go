@@ -12,7 +12,6 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
 
@@ -20,19 +19,12 @@ import (
 type Store struct {
 	// db owns the single SQLite connection used for state changes.
 	db *sql.DB
-	// rule contains the validated failed-login policy.
-	rule detection.Rule
-	// targets lists the configured destinations for new decisions.
-	targets []string
 	// changes coalesces committed decision changes until the worker observes them.
 	changes chan struct{}
 }
 
 // Open opens or creates the database and runs embedded, versioned migrations.
-func Open(path string, rule detection.Rule, targets []string) (*Store, error) {
-	if err := rule.Validate(); err != nil {
-		return nil, err
-	}
+func Open(path string) (*Store, error) {
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, err
@@ -66,11 +58,6 @@ PRAGMA foreign_keys = ON;
 		return nil, err
 	}
 
-	if err := validateTargets(db, targets); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-
 	// Include every table after opening the connection; later calls use SQLite's
 	// lightweight default optimize mode to avoid unnecessary ANALYZE work.
 	if _, err := db.ExecContext(context.Background(), "PRAGMA optimize=0x10002"); err != nil {
@@ -80,15 +67,14 @@ PRAGMA foreign_keys = ON;
 
 	return &Store{
 		db:      db,
-		rule:    rule,
-		targets: slices.Clone(targets),
 		changes: make(chan struct{}, 1),
 	}, nil
 }
 
-// validateTargets refuses to abandon pending ownership of external bans.
-func validateTargets(db *sql.DB, targets []string) error {
-	rows, err := db.Query(`
+// ValidateTargets refuses to abandon pending ownership of external bans.
+// Call it at startup with the resolved destination names before workers begin.
+func (s *Store) ValidateTargets(ctx context.Context, targets []string) error {
+	rows, err := s.db.QueryContext(ctx, `
 SELECT DISTINCT q.destination
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
@@ -119,7 +105,7 @@ func (s *Store) Transact(ctx context.Context, apply func(ingestion.Transaction) 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	observation := &observationTx{tx: tx, targets: s.targets}
+	observation := &observationTx{tx: tx}
 	if err := apply(observation); err != nil {
 		return err
 	}

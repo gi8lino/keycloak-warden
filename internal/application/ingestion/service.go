@@ -4,6 +4,7 @@ package ingestion
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,7 +24,7 @@ type Transaction interface {
 	// CountFailures returns observed failures in the active sliding window.
 	CountFailures(context.Context, string, time.Time) (int, error)
 	// Block persists the automatic source and returns a decision only if its desired state changed.
-	Block(context.Context, string, time.Time, time.Time) (*decisions.Decision, error)
+	Block(context.Context, string, time.Time, time.Time, []string) (*decisions.Decision, error)
 }
 
 // Repository executes an application operation within one atomic transaction.
@@ -37,17 +38,19 @@ type Service struct {
 	repository Repository
 	// rule contains the validated failed-login policy.
 	rule detection.Rule
+	// targets identifies the configured destinations for new decisions.
+	targets []string
 }
 
 // New constructs an ingestion service with a validated detection policy.
-func New(repository Repository, rule detection.Rule) (*Service, error) {
+func New(repository Repository, rule detection.Rule, targets []string) (*Service, error) {
 	if repository == nil {
 		return nil, errors.New("ingestion repository is required")
 	}
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
-	return &Service{repository: repository, rule: rule}, nil
+	return &Service{repository: repository, rule: rule, targets: slices.Clone(targets)}, nil
 }
 
 // Process validates an envelope and returns the committed detection outcome.
@@ -94,7 +97,7 @@ func (s *Service) Process(
 			return nil
 		}
 
-		decision, err := tx.Block(ctx, result.IP, now.Add(s.rule.Ban), now)
+		decision, err := tx.Block(ctx, result.IP, now.Add(s.rule.Ban), now, s.targets)
 		if err != nil {
 			return err
 		}

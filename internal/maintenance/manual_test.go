@@ -111,7 +111,7 @@ func TestManualMaintenance(t *testing.T) {
 		runner := Start(t.Context(), store, Schedule{
 			PruneInterval:    time.Hour,
 			OptimizeInterval: time.Hour,
-		}, discardLogger())
+		}, 24*time.Hour, discardLogger())
 		defer func() {
 			close(store.release)
 			runner.Close()

@@ -5,6 +5,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"maps"
+	"slices"
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
@@ -40,7 +42,7 @@ type Queue interface {
 	// NextDeadline returns the earliest pending work time or zero when idle.
 	NextDeadline(context.Context) (time.Time, error)
 	// Maintain expires decision sources and returns decisions released by a committed expiry.
-	Maintain(context.Context, time.Time) ([]decisions.Decision, error)
+	Maintain(context.Context, time.Time, []string) ([]decisions.Decision, error)
 	// Next returns the oldest ready destination job, or nil when idle.
 	Next(context.Context, time.Time) (*Job, error)
 	// Finish atomically records the outcome and applies the supplied attempt limit.
@@ -133,7 +135,7 @@ func processReady(
 	destinations map[string]Target,
 	logger *slog.Logger,
 ) (nextDeadline time.Time, err error) {
-	expired, err := q.Maintain(ctx, time.Now())
+	expired, err := q.Maintain(ctx, time.Now(), slices.Sorted(maps.Keys(destinations)))
 	if err != nil {
 		return time.Time{}, err
 	}

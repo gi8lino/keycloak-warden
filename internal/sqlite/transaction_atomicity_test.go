@@ -11,18 +11,13 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 )
 
 // openAtomicityStore creates a disposable database for injected SQLite failures.
-func openAtomicityStore(t *testing.T, targets ...string) *Store {
+func openAtomicityStore(t *testing.T) *Store {
 	t.Helper()
 
-	store, err := Open(filepath.Join(t.TempDir(), "warden.db"), detection.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       2 * time.Minute,
-	}, targets)
+	store, err := Open(filepath.Join(t.TempDir(), "warden.db"))
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
 	return store
@@ -31,7 +26,7 @@ func openAtomicityStore(t *testing.T, targets ...string) *Store {
 func TestApplyManualBanRollback(t *testing.T) {
 	t.Parallel()
 
-	store := openAtomicityStore(t, "edge")
+	store := openAtomicityStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
 	ip := "203.0.113.41"
@@ -47,7 +42,7 @@ END
 `)
 	require.NoError(t, err)
 
-	_, err = store.ApplyManualBan(ctx, ip, now.Add(time.Hour), "investigation", now)
+	_, err = store.ApplyManualBan(ctx, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.ErrorContains(t, err, "injected reconciliation failure")
 
 	var decisionsCount, sourcesCount, deliveriesCount int
@@ -65,7 +60,7 @@ END
 
 	_, err = store.db.Exec("DROP TRIGGER reject_reconciliation")
 	require.NoError(t, err)
-	created, err := store.ApplyManualBan(ctx, ip, now.Add(time.Hour), "investigation", now)
+	created, err := store.ApplyManualBan(ctx, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateBanned, created.Decision.State)
 	job, err := store.Next(ctx, now)
@@ -77,10 +72,10 @@ END
 func TestReleaseAllSourcesRollback(t *testing.T) {
 	t.Parallel()
 
-	store := openAtomicityStore(t, "edge")
+	store := openAtomicityStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	created, err := store.ApplyManualBan(ctx, "203.0.113.42", now.Add(time.Hour), "investigation", now)
+	created, err := store.ApplyManualBan(ctx, "203.0.113.42", now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.NoError(t, err)
 	before, err := store.GetDecision(ctx, created.Decision.ID, now)
 	require.NoError(t, err)
@@ -95,7 +90,7 @@ END
 `)
 	require.NoError(t, err)
 
-	_, err = store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second))
+	_, err = store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second), []string{"edge"})
 	require.ErrorContains(t, err, "injected release failure")
 
 	unchanged, err := store.GetDecision(ctx, created.Decision.ID, now)
@@ -114,7 +109,7 @@ END
 
 	_, err = store.db.Exec("DROP TRIGGER reject_release")
 	require.NoError(t, err)
-	released, err := store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second))
+	released, err := store.ReleaseAllSources(ctx, created.Decision.ID, now.Add(time.Second), []string{"edge"})
 	require.NoError(t, err)
 	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
 	require.NoError(t, store.db.QueryRowContext(ctx,
@@ -126,14 +121,14 @@ END
 func TestMaintainRollbackAcrossAddresses(t *testing.T) {
 	t.Parallel()
 
-	store := openAtomicityStore(t, "edge")
+	store := openAtomicityStore(t)
 	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	first, err := store.ApplyManualBan(ctx, "203.0.113.51", now.Add(10*time.Second), "first", now)
+	first, err := store.ApplyManualBan(ctx, "203.0.113.51", now.Add(10*time.Second), "first", now, []string{"edge"})
 	require.NoError(t, err)
-	second, err := store.ApplyManualBan(ctx, "203.0.113.52", now.Add(10*time.Second), "second", now)
+	second, err := store.ApplyManualBan(ctx, "203.0.113.52", now.Add(10*time.Second), "second", now, []string{"edge"})
 	require.NoError(t, err)
-	remaining, err := store.ApplyManualBan(ctx, "203.0.113.53", now.Add(time.Hour), "longer", now)
+	remaining, err := store.ApplyManualBan(ctx, "203.0.113.53", now.Add(time.Hour), "longer", now, []string{"edge"})
 	require.NoError(t, err)
 
 	_, err = store.db.Exec(`
@@ -146,7 +141,7 @@ END
 `)
 	require.NoError(t, err)
 
-	_, err = store.Maintain(ctx, now.Add(10*time.Second))
+	_, err = store.Maintain(ctx, now.Add(10*time.Second), []string{"edge"})
 	require.ErrorContains(t, err, "injected expiry failure")
 	for _, original := range []decisions.Decision{first.Decision, second.Decision} {
 		recorded, readErr := store.GetDecision(ctx, original.ID, now)
@@ -157,7 +152,7 @@ END
 
 	_, err = store.db.Exec("DROP TRIGGER reject_second_expiry")
 	require.NoError(t, err)
-	released, err := store.Maintain(ctx, now.Add(10*time.Second))
+	released, err := store.Maintain(ctx, now.Add(10*time.Second), []string{"edge"})
 	require.NoError(t, err)
 	require.Len(t, released, 2)
 	assert.ElementsMatch(t, []string{first.Decision.ID, second.Decision.ID}, []string{released[0].ID, released[1].ID})
@@ -175,10 +170,10 @@ func TestFinishRollback(t *testing.T) {
 	t.Run("failed acknowledgement leaves revision pending", func(t *testing.T) {
 		t.Parallel()
 
-		store := openAtomicityStore(t, "edge")
+		store := openAtomicityStore(t)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := store.ApplyManualBan(ctx, "203.0.113.61", now.Add(time.Hour), "incident", now)
+		created, err := store.ApplyManualBan(ctx, "203.0.113.61", now.Add(time.Hour), "incident", now, []string{"edge"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
@@ -214,10 +209,10 @@ END
 	t.Run("failed retry scheduling leaves destination unpaused", func(t *testing.T) {
 		t.Parallel()
 
-		store := openAtomicityStore(t, "edge")
+		store := openAtomicityStore(t)
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		_, err := store.ApplyManualBan(ctx, "203.0.113.62", now.Add(time.Hour), "incident", now)
+		_, err := store.ApplyManualBan(ctx, "203.0.113.62", now.Add(time.Hour), "incident", now, []string{"edge"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)

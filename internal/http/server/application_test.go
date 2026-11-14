@@ -76,19 +76,11 @@ func adminRequest(application http.Handler, method, path, token, body string) *h
 // liveBanHandlers constructs a fresh SQLite store for each isolated subtest.
 func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 	t.Helper()
-	store, err := sqlite.Open(
-		filepath.Join(t.TempDir(), "warden.db"),
-		detection.Rule{
-			Threshold: 2,
-			Window:    time.Minute,
-			Ban:       time.Minute,
-		},
-		[]string{"edge"},
-	)
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"))
 
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
-	service, err := bans.NewAdminService(store)
+	service, err := bans.NewAdminService(store, []string{"edge"})
 
 	require.NoError(t, err)
 	h := newTestServer(server.Config{
@@ -210,11 +202,11 @@ func TestNewApplication(t *testing.T) {
 			Window:    time.Minute,
 			Ban:       time.Minute,
 		}
-		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"), rule, []string{"edge"})
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"))
 
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-		ingest, err := ingestion.New(store, rule)
+		ingest, err := ingestion.New(store, rule, []string{"edge"})
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -235,7 +227,7 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
-		service, err := bans.NewAdminService(store)
+		service, err := bans.NewAdminService(store, []string{"edge"})
 
 		require.NoError(t, err)
 		application := newTestServer(server.Config{
@@ -393,7 +385,7 @@ func TestNewApplication(t *testing.T) {
 			Threshold: 1,
 			Ban:       3 * time.Second,
 		}
-		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"), rule, []string{"notify"})
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"))
 
 		require.NoError(t, err)
 		defer store.Close() //nolint:errcheck
@@ -415,7 +407,7 @@ func TestNewApplication(t *testing.T) {
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Snitch-Timestamp", ts)
 		req.Header.Set("X-Snitch-Signature", signing.Signature("inbound", ts, []byte(body)))
-		processor, err := ingestion.New(store, rule)
+		processor, err := ingestion.New(store, rule, []string{"notify"})
 
 		require.NoError(t, err)
 		rec := httptest.NewRecorder()

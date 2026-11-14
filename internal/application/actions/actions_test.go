@@ -29,7 +29,7 @@ type blockingQueue struct {
 }
 
 // Maintain blocks until cancellation so Close must wait for it to return.
-func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time) ([]decisions.Decision, error) {
+func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time, _ []string) ([]decisions.Decision, error) {
 	close(q.started)
 	<-ctx.Done()
 	close(q.stopped)
@@ -132,6 +132,8 @@ type scriptedQueue struct {
 	finished []Job
 	// limits records the attempt budgets passed by the worker.
 	limits []int
+	// maintained records the destination identifiers passed for expiry reconciliation.
+	maintained []string
 }
 
 // Changes returns the test change notification channel.
@@ -147,7 +149,8 @@ func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
 }
 
 // Maintain is unused by drainReady.
-func (q *scriptedQueue) Maintain(context.Context, time.Time) ([]decisions.Decision, error) {
+func (q *scriptedQueue) Maintain(_ context.Context, _ time.Time, names []string) ([]decisions.Decision, error) {
+	q.maintained = append([]string(nil), names...)
 	released := q.expired
 	q.expired = nil
 	return released, nil
@@ -367,4 +370,23 @@ func TestExpiryLogging(t *testing.T) {
 	_, err = processReady(t.Context(), q, nil, logger)
 	require.NoError(t, err)
 	assert.Empty(t, logs.String(), "expiry notification must not be emitted again")
+}
+
+func TestProcessReadyPassesTargetsToMaintenance(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses the configured destinations without a store snapshot", func(t *testing.T) {
+		t.Parallel()
+
+		q := &scriptedQueue{}
+		destinations := map[string]Target{
+			"webhook.slack":   {Provider: &acceptProvider{}, MaxAttempts: DefaultMaxAttempts},
+			"cloudflare.edge": {Provider: &acceptProvider{}, MaxAttempts: DefaultMaxAttempts},
+		}
+
+		_, err := processReady(t.Context(), q, destinations, slog.Default())
+
+		require.NoError(t, err)
+		assert.Equal(t, []string{"cloudflare.edge", "webhook.slack"}, q.maintained)
+	})
 }

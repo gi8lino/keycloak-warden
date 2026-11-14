@@ -20,6 +20,7 @@ func (s *Store) ApplyManualBan(
 	until time.Time,
 	reason string,
 	now time.Time,
+	targets []string,
 ) (bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -33,7 +34,7 @@ func (s *Store) ApplyManualBan(
 	if err := setSource(ctx, tx, ip, bans.SourceManual, until, reason); err != nil {
 		return bans.Record{}, err
 	}
-	decision, _, err := reconcileDecision(ctx, tx, ip, now, s.targets)
+	decision, _, err := reconcileDecision(ctx, tx, ip, now, targets)
 	if err != nil {
 		return bans.Record{}, err
 	}
@@ -45,7 +46,7 @@ func (s *Store) ApplyManualBan(
 }
 
 // ReleaseAllSources removes every active source and resets the failed-login count atomically.
-func (s *Store) ReleaseAllSources(ctx context.Context, id string, now time.Time) (bans.Record, error) {
+func (s *Store) ReleaseAllSources(ctx context.Context, id string, now time.Time, targets []string) (bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return bans.Record{}, err
@@ -85,7 +86,7 @@ WHERE ip = ?
 		return bans.Record{}, err
 	}
 
-	decision, _, err := reconcileDecision(ctx, tx, ip, now, s.targets)
+	decision, _, err := reconcileDecision(ctx, tx, ip, now, targets)
 	if err != nil {
 		return bans.Record{}, err
 	}

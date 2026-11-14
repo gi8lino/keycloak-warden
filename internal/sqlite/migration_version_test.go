@@ -4,12 +4,10 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
@@ -26,12 +24,7 @@ func TestMigrateRejectsNewerDatabase(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 
-	rule := detection.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       time.Minute,
-	}
-	store, err := sqlite.Open(path, rule, nil)
+	store, err := sqlite.Open(path)
 	if store != nil {
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })
 	}

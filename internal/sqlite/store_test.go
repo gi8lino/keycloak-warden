@@ -28,10 +28,12 @@ func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *in
 		Window:    time.Minute,
 		Ban:       2 * time.Minute,
 	}
-	store, err := sqlite.Open(path, rule, targets)
+	store, err := sqlite.Open(path)
 	require.NoError(t, err)
 
-	processor, err := ingestion.New(store, rule)
+	require.NoError(t, store.ValidateTargets(t.Context(), targets))
+
+	processor, err := ingestion.New(store, rule, targets)
 	require.NoError(t, err)
 
 	return store, processor
@@ -181,7 +183,7 @@ func TestOpen(t *testing.T) {
 
 		now = extended.ExpiresAt
 
-		_, err = store.Maintain(ctx, now)
+		_, err = store.Maintain(ctx, now, []string{"a", "b"})
 		require.NoError(t, err)
 		release, err := store.Next(ctx, now)
 
@@ -236,7 +238,7 @@ func TestDestinationBackoff(t *testing.T) {
 
 	for _, seconds := range []int{10, 20, 40, 80, 160, 300, 300} {
 		due := now.Add(time.Duration(seconds) * time.Second)
-		_, err = store.Maintain(ctx, due.Add(-time.Millisecond))
+		_, err = store.Maintain(ctx, due.Add(-time.Millisecond), []string{"edge"})
 		require.NoError(t, err)
 		pending, err := store.Next(ctx, due.Add(-time.Millisecond))
 		require.NoError(t, err)
@@ -281,7 +283,7 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		rollback := errors.New("rollback")
 		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
-			_, err := tx.Block(ctx, "203.0.113.2", now.Add(time.Hour), now)
+			_, err := tx.Block(ctx, "203.0.113.2", now.Add(time.Hour), now, []string{"receiver"})
 			require.NoError(t, err)
 			return rollback
 		})
@@ -307,7 +309,7 @@ func TestWorkerSchedule(t *testing.T) {
 		path := filepath.Join(t.TempDir(), "state.db")
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, _ := openStore(t, path, "receiver")
-		_, err := store.ApplyManualBan(ctx, "203.0.113.1", now.Add(8*time.Second), "test", now)
+		_, err := store.ApplyManualBan(ctx, "203.0.113.1", now.Add(8*time.Second), "test", now, []string{"receiver"})
 		require.NoError(t, err)
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
@@ -319,7 +321,7 @@ func TestWorkerSchedule(t *testing.T) {
 		due, err := store.NextDeadline(ctx)
 		require.NoError(t, err)
 		require.True(t, now.Add(8*time.Second).Equal(due))
-		_, err = store.Maintain(ctx, due)
+		_, err = store.Maintain(ctx, due, []string{"receiver"})
 		require.NoError(t, err)
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
@@ -380,7 +382,7 @@ func TestAttemptBudget(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "budget.db")
 	store, _ := openStore(t, path, "receiver")
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	record, err := store.ApplyManualBan(ctx, "192.0.2.1", now.Add(time.Hour), "test", now)
+	record, err := store.ApplyManualBan(ctx, "192.0.2.1", now.Add(time.Hour), "test", now, []string{"receiver"})
 	require.NoError(t, err)
 	for range 3 {
 		job, err := store.Next(ctx, now)
@@ -414,7 +416,7 @@ func TestAttemptBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, job)
 	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now))
-	_, err = store.ReleaseAllSources(ctx, record.Decision.ID, now)
+	_, err = store.ReleaseAllSources(ctx, record.Decision.ID, now, []string{"receiver"})
 	require.NoError(t, err)
 	job, err = store.Next(ctx, now.Add(5*time.Minute))
 	require.NoError(t, err)

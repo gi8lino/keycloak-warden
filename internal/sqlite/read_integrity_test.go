@@ -36,10 +36,10 @@ func TestCorruptedBanRowsReturnErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			store := openAtomicityStore(t, "edge")
+			store := openAtomicityStore(t)
 			ctx := t.Context()
 			now := time.Now().UTC().Truncate(time.Millisecond)
-			created, err := store.ApplyManualBan(ctx, "203.0.113.71", now.Add(time.Hour), "investigation", now)
+			created, err := store.ApplyManualBan(ctx, "203.0.113.71", now.Add(time.Hour), "investigation", now, []string{"edge"})
 			require.NoError(t, err)
 
 			_, err = store.db.ExecContext(ctx, tc.update, created.Decision.IP)

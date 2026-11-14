@@ -14,8 +14,6 @@ import (
 type observationTx struct {
 	// tx holds the transaction used by the observation operation.
 	tx *sql.Tx
-	// targets lists the configured destinations for new decisions.
-	targets []string
 	// changed indicates source updates that should wake the delivery worker after commit.
 	changed bool
 }
@@ -59,6 +57,7 @@ func (o *observationTx) Block(
 	ctx context.Context,
 	ip string,
 	until, now time.Time,
+	targets []string,
 ) (*decisions.Decision, error) {
 	if err := ensureDecision(ctx, o.tx, ip); err != nil {
 		return nil, err
@@ -66,7 +65,7 @@ func (o *observationTx) Block(
 	if err := setSource(ctx, o.tx, ip, bans.SourceAutomatic, until, ""); err != nil {
 		return nil, err
 	}
-	decision, revised, err := reconcileDecision(ctx, o.tx, ip, now, o.targets)
+	decision, revised, err := reconcileDecision(ctx, o.tx, ip, now, targets)
 	if err != nil {
 		return nil, err
 	}
