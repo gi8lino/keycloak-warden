@@ -23,3 +23,4 @@
 
 # Local E2E credentials.
 test/e2e/.env
+test/e2e/snitch/
