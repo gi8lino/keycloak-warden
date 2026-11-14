@@ -13,9 +13,12 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/output"
 )
 
+const sectionBan = "Manual ban"
+
 // Register adds the authenticated manual-ban command and its flags.
 func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode output.Encoder) {
 	command := root.Command("ban", "Manually ban one or more IP addresses via the authenticated application API")
+	command.SectionOrder(sectionBan)
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
 	command.MinPositional(1)
@@ -23,10 +26,12 @@ func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode 
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 	duration := command.Duration("duration", 0, "Manual ban lifetime").
+		Section(sectionBan).
 		Required().
 		Validate(tinyflags.Between(bans.MinDuration, bans.MaxDuration)).
 		Value()
 	reason := command.String("reason", "", "Operator explanation").
+		Section(sectionBan).
 		Required().
 		Validate(validateReason).
 		Value()

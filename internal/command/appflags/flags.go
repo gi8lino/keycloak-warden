@@ -6,11 +6,14 @@ import (
 	"net"
 	"net/url"
 
+	appkitconfig "github.com/containeroo/appkit/config"
 	"github.com/containeroo/httpkit/prefix"
 	"github.com/containeroo/tinyflags"
 
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
+
+const sectionAdminAPI = "Administration API"
 
 // ServerFlags holds the global application listener settings parsed by tinyflags.
 type ServerFlags struct {
@@ -33,9 +36,11 @@ func RegisterServer(root *tinyflags.Command) ServerFlags {
 	return ServerFlags{
 		ListenAddress: root.Globals().String("listen-address", "127.0.0.1:8080", "Application listener address").
 			NotBlank().
+			Section(appkitconfig.SectionServer).
 			Placeholder("ADDR").
 			Value(),
 		RoutePrefix: root.Globals().String("route-prefix", "", "Application API route prefix").
+			Section(appkitconfig.SectionServer).
 			Validate(prefix.ValidateRoutePrefix).
 			Finalize(prefix.NormalizeRoutePrefix).
 			Value(),
@@ -46,8 +51,10 @@ func RegisterServer(root *tinyflags.Command) ServerFlags {
 func RegisterAdmin(cmd *tinyflags.Command, server ServerFlags) AdminFlags {
 	flags := AdminFlags{
 		ApplicationURL: cmd.String("application-url", "", "Override the URL derived from --listen-address and --route-prefix").
+			Section(sectionAdminAPI).
 			Value(),
 		AdminToken: cmd.String("admin-token", "", "Application API administrator bearer token").
+			Section(sectionAdminAPI).
 			Placeholder("SECRET").
 			OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 			Value(),

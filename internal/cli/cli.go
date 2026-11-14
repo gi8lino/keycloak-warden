@@ -27,6 +27,7 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 	root.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
 
 	format := root.String("output", output.FormatYAML, "Output format").
+		Section("Output").
 		Choices(output.FormatText, output.FormatJSON, output.FormatYAML).
 		Short("o").
 		Value()
