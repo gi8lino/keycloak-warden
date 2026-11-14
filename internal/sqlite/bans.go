@@ -28,13 +28,14 @@ func (s *Store) ApplyManualBan(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	if err := ensureDecision(ctx, tx, ip); err != nil {
+	if err := bans.ExtendSource(ctx, &banTx{tx: tx}, ip, bans.Source{
+		Kind:      bans.SourceManual,
+		ExpiresAt: until,
+		Reason:    reason,
+	}); err != nil {
 		return bans.Record{}, err
 	}
-	if err := setSource(ctx, tx, ip, bans.SourceManual, until, reason); err != nil {
-		return bans.Record{}, err
-	}
-	decision, _, err := reconcileDecision(ctx, tx, ip, now, targets)
+	decision, _, err := bans.ReconcileDecision(ctx, &banTx{tx: tx}, ip, now, targets)
 	if err != nil {
 		return bans.Record{}, err
 	}
@@ -86,7 +87,7 @@ WHERE ip = ?
 		return bans.Record{}, err
 	}
 
-	decision, _, err := reconcileDecision(ctx, tx, ip, now, targets)
+	decision, _, err := bans.ReconcileDecision(ctx, &banTx{tx: tx}, ip, now, targets)
 	if err != nil {
 		return bans.Record{}, err
 	}

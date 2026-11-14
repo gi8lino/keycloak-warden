@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
@@ -42,6 +43,8 @@ type fakeTx struct {
 	unchanged bool
 	// targets records destinations passed to the transaction.
 	targets []string
+	// until captures the requested automatic ban expiry.
+	until time.Time
 }
 
 // RecordFailure validates the test address and returns the configured insert result.
@@ -57,14 +60,43 @@ func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, 
 	return tx.count, nil
 }
 
-// Block records that ingestion requested a block.
-func (tx *fakeTx) Block(_ context.Context, _ string, _ time.Time, _ time.Time, targets []string) (*decisions.Decision, error) {
+// EnsureDecision records that ingestion requested an automatic source.
+func (tx *fakeTx) EnsureDecision(context.Context, string) error {
 	tx.blocked = true
-	tx.targets = append([]string(nil), targets...)
+	return nil
+}
+
+// Source reports that the automatic source is not yet stored.
+func (tx *fakeTx) Source(context.Context, string, bans.SourceKind) (bans.Source, bool, error) {
+	return bans.Source{}, false, nil
+}
+
+// PutSource records the source selected by the detection policy.
+func (tx *fakeTx) PutSource(_ context.Context, _ string, source bans.Source) error {
+	tx.until = source.ExpiresAt
+	return nil
+}
+
+// Decision returns the desired state before applying this observation.
+func (tx *fakeTx) Decision(_ context.Context, ip string) (decisions.Decision, error) {
 	if tx.unchanged {
-		return nil, nil
+		return decisions.Decision{
+			ID: "decision", IP: ip, State: decisions.StateBanned,
+			ExpiresAt: tx.until,
+		}, nil
 	}
-	return &decisions.Decision{ID: "decision", State: decisions.StateBanned}, nil
+	return decisions.Decision{ID: "decision", IP: ip, State: decisions.StateUnbanned}, nil
+}
+
+// Sources exposes the new automatic source to application reconciliation.
+func (tx *fakeTx) Sources(context.Context, string, time.Time) ([]bans.Source, error) {
+	return []bans.Source{{Kind: bans.SourceAutomatic, ExpiresAt: tx.until}}, nil
+}
+
+// SaveDecision records destination identifiers from the application.
+func (tx *fakeTx) SaveDecision(_ context.Context, _, _ decisions.Decision, _ bool, targets []string) error {
+	tx.targets = append([]string(nil), targets...)
+	return nil
 }
 
 func TestNew(t *testing.T) {

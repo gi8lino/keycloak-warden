@@ -105,7 +105,7 @@ func (s *Store) Transact(ctx context.Context, apply func(ingestion.Transaction) 
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	observation := &observationTx{tx: tx}
+	observation := &observationTx{banTx: banTx{tx: tx}}
 	if err := apply(observation); err != nil {
 		return err
 	}

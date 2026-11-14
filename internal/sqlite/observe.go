@@ -2,20 +2,14 @@ package sqlite
 
 import (
 	"context"
-	"database/sql"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 )
 
-// observationTx implements ingestion's atomic storage operations.
+// observationTx provides observations and ban persistence in one SQLite transaction.
 type observationTx struct {
-	// tx holds the transaction used by the observation operation.
-	tx *sql.Tx
-	// changed indicates source updates that should wake the delivery worker after commit.
-	changed bool
+	banTx
 }
 
 // RecordFailure persists a new occurrence only once per producer and identifier.
@@ -50,30 +44,4 @@ WHERE ip = ?
     ), 0)
 `, ip, since.UnixMilli(), ip).Scan(&count)
 	return count, err
-}
-
-// Block extends the automatic reason while preserving any independent manual ban.
-func (o *observationTx) Block(
-	ctx context.Context,
-	ip string,
-	until, now time.Time,
-	targets []string,
-) (*decisions.Decision, error) {
-	if err := ensureDecision(ctx, o.tx, ip); err != nil {
-		return nil, err
-	}
-	if err := setSource(ctx, o.tx, ip, bans.SourceAutomatic, until, ""); err != nil {
-		return nil, err
-	}
-	decision, revised, err := reconcileDecision(ctx, o.tx, ip, now, targets)
-	if err != nil {
-		return nil, err
-	}
-	// A source may have changed even if an existing manual ban keeps the
-	// effective decision unchanged. The worker still needs an expiry wakeup.
-	o.changed = true
-	if !revised {
-		return nil, nil
-	}
-	return &decision, nil
 }

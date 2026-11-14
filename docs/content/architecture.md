@@ -48,3 +48,7 @@ The application listener serves `POST /events` and, when an admin token is confi
 `--route-prefix` applies to the application routes. Management paths stay at their root paths.
 
 See [API](api.md) for the endpoints and [Operations](operations.md) for maintenance and readiness behavior.
+
+## Ban reconciliation ownership
+
+The `bans` application package evaluates source extension and effective decision revisions. SQLite exposes transactional read/write primitives and synchronizes persisted delivery rows without interpreting ban policy.

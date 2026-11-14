@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
@@ -32,7 +33,7 @@ WHERE expires <= ?
 
 	var released []decisions.Decision
 	for _, ip := range expiredIPs {
-		decision, changed, err := reconcileDecision(ctx, tx, ip, now, targets)
+		decision, changed, err := bans.ReconcileDecision(ctx, &banTx{tx: tx}, ip, now, targets)
 		if err != nil {
 			return nil, err
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
@@ -283,7 +284,12 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		rollback := errors.New("rollback")
 		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
-			_, err := tx.Block(ctx, "203.0.113.2", now.Add(time.Hour), now, []string{"receiver"})
+			err := bans.ExtendSource(ctx, tx, "203.0.113.2", bans.Source{
+				Kind: bans.SourceAutomatic, ExpiresAt: now.Add(time.Hour),
+			})
+			if err == nil {
+				_, _, err = bans.ReconcileDecision(ctx, tx, "203.0.113.2", now, []string{"receiver"})
+			}
 			require.NoError(t, err)
 			return rollback
 		})

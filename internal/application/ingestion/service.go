@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
@@ -23,8 +23,8 @@ type Transaction interface {
 	RecordFailure(context.Context, events.Event, time.Time) (bool, error)
 	// CountFailures returns observed failures in the active sliding window.
 	CountFailures(context.Context, string, time.Time) (int, error)
-	// Block persists the automatic source and returns a decision only if its desired state changed.
-	Block(context.Context, string, time.Time, time.Time, []string) (*decisions.Decision, error)
+	// Ban policy reads and writes share this observation transaction.
+	bans.Transaction
 }
 
 // Repository executes an application operation within one atomic transaction.
@@ -97,16 +97,22 @@ func (s *Service) Process(
 			return nil
 		}
 
-		decision, err := tx.Block(ctx, result.IP, now.Add(s.rule.Ban), now, s.targets)
+		if err := bans.ExtendSource(ctx, tx, result.IP, bans.Source{
+			Kind:      bans.SourceAutomatic,
+			ExpiresAt: now.Add(s.rule.Ban),
+		}); err != nil {
+			return err
+		}
+		decision, changed, err := bans.ReconcileDecision(ctx, tx, result.IP, now, s.targets)
 		if err != nil {
 			return err
 		}
-		if decision == nil {
+		if !changed {
 			result.Outcome = OutcomeUnchanged
 			return nil
 		}
 		result.Outcome = OutcomeUpdated
-		result.Decision = decision
+		result.Decision = &decision
 		return nil
 	})
 	if err != nil {

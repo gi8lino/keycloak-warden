@@ -11,9 +11,17 @@ import (
 	"uuid"
 )
 
-// ensureDecision creates a stable UUIDv7 identity before attaching independently expiring ban sources.
-func ensureDecision(ctx context.Context, tx *sql.Tx, ip string) error {
-	_, err := tx.ExecContext(ctx, `
+// banTx implements the domain's persistence primitives inside a SQLite transaction.
+type banTx struct {
+	// tx contains all source and decision changes until the owner commits.
+	tx *sql.Tx
+	// changed requests a post-commit worker wakeup for source or state changes.
+	changed bool
+}
+
+// EnsureDecision creates a stable UUIDv7 identity before attaching ban sources.
+func (b banTx) EnsureDecision(ctx context.Context, ip string) error {
+	_, err := b.tx.ExecContext(ctx, `
 INSERT INTO decisions (ip, id, revision, active, expires)
 VALUES (?, ?, 0, 0, 0)
 ON CONFLICT (ip) DO NOTHING
@@ -21,87 +29,81 @@ ON CONFLICT (ip) DO NOTHING
 	return err
 }
 
-// setSource persists one source after applying the domain's non-shortening expiry policy.
-func setSource(
-	ctx context.Context,
-	tx *sql.Tx,
-	ip string,
-	kind bans.SourceKind,
-	until time.Time,
-	reason string,
-) error {
-	var previous int64
-	err := tx.QueryRowContext(ctx, `
-SELECT expires FROM ban_sources WHERE ip = ? AND kind = ?
-`, ip, kind).Scan(&previous)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+// Source reads the existing expiry and reason without applying domain policy.
+func (b banTx) Source(ctx context.Context, ip string, kind bans.SourceKind) (bans.Source, bool, error) {
+	source := bans.Source{Kind: kind}
+	var expires int64
+	err := b.tx.QueryRowContext(ctx, `
+SELECT expires, reason FROM ban_sources WHERE ip = ? AND kind = ?
+`, ip, kind).Scan(&expires, &source.Reason)
+	if errors.Is(err, sql.ErrNoRows) {
+		return bans.Source{}, false, nil
 	}
-	if err == nil {
-		until = bans.ExtendExpiry(time.UnixMilli(previous), until)
+	if err != nil {
+		return bans.Source{}, false, err
 	}
+	source.ExpiresAt = time.UnixMilli(expires).UTC()
+	return source, true, nil
+}
 
-	_, err = tx.ExecContext(ctx, `
+// PutSource writes the already-resolved source without altering its expiry.
+func (b *banTx) PutSource(ctx context.Context, ip string, source bans.Source) error {
+	_, err := b.tx.ExecContext(ctx, `
 INSERT INTO ban_sources (ip, kind, expires, reason)
 VALUES (?, ?, ?, ?)
 ON CONFLICT (ip, kind) DO UPDATE SET
     expires = excluded.expires,
     reason = excluded.reason
-`, ip, kind, until.UnixMilli(), reason)
+`, ip, source.Kind, source.ExpiresAt.UnixMilli(), source.Reason)
+	if err == nil {
+		b.changed = true
+	}
 	return err
 }
 
-// reconcileDecision loads independent sources, evaluates the domain policy and persists material changes.
-func reconcileDecision(
-	ctx context.Context,
-	tx *sql.Tx,
-	ip string,
-	now time.Time,
-	targets []string,
-) (decision decisions.Decision, changed bool, err error) {
-	previous, err := readDecisionByIP(ctx, tx, ip)
-	if err != nil {
-		return decisions.Decision{}, false, err
-	}
-	sources, err := readBanSources(ctx, tx, ip, now)
-	if err != nil {
-		return decisions.Decision{}, false, err
-	}
+// Decision reads the materialized current state for a given IP.
+func (b banTx) Decision(ctx context.Context, ip string) (decisions.Decision, error) {
+	return readDecisionByIP(ctx, b.tx, ip)
+}
 
-	decision, changed = bans.Reconcile(previous, sources, now)
+// Sources returns active persisted reasons for the supplied IP and time.
+func (b banTx) Sources(ctx context.Context, ip string, now time.Time) ([]bans.Source, error) {
+	return readBanSources(ctx, b.tx, ip, now)
+}
+
+// SaveDecision stores calculated policy output and synchronizes destination work.
+func (b *banTx) SaveDecision(ctx context.Context, previous, decision decisions.Decision, changed bool, targets []string) error {
 	if changed {
-		if _, err := tx.ExecContext(ctx, `
+		b.changed = true
+		if _, err := b.tx.ExecContext(ctx, `
 UPDATE decisions
 SET revision = ?, active = ?, expires = ?
 WHERE ip = ?
 `, decision.Revision, decision.State == decisions.StateBanned,
-			decision.ExpiresAt.UnixMilli(), ip); err != nil {
-			return decisions.Decision{}, false, err
+			decision.ExpiresAt.UnixMilli(), decision.IP); err != nil {
+			return err
 		}
 	}
 
-	// Retire fully acknowledged releases before a later ban can reuse this IP.
-	// Outstanding releases retain ownership until their provider acknowledges them.
-	if _, err := tx.ExecContext(ctx, `
+	// A fully acknowledged release no longer owns a destination, whereas an
+	// unacknowledged release must remain queued until accepted externally.
+	if _, err := b.tx.ExecContext(ctx, `
 DELETE FROM deliveries
 WHERE ip = ? AND acknowledged = ? AND ? = 1
-`, ip, previous.Revision, previous.State == decisions.StateUnbanned); err != nil {
-		return decisions.Decision{}, false, err
+`, decision.IP, previous.Revision, previous.State == decisions.StateUnbanned); err != nil {
+		return err
 	}
 
 	for _, name := range targets {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := b.tx.ExecContext(ctx, `
 INSERT INTO deliveries (ip, destination)
 VALUES (?, ?)
 ON CONFLICT (ip, destination) DO NOTHING
-`, ip, name); err != nil {
-			return decisions.Decision{}, false, err
+`, decision.IP, name); err != nil {
+			return err
 		}
 	}
-	if err := syncDeliveryHistory(ctx, tx, decision); err != nil {
-		return decisions.Decision{}, false, err
-	}
-	return decision, changed, nil
+	return syncDeliveryHistory(ctx, b.tx, decision)
 }
 
 // readDecisionByIP loads the current materialized decision within the transaction.
