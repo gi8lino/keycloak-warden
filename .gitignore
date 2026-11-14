@@ -20,3 +20,6 @@
 
 # Downloaded Snitch release JARs for the local E2E Compose stack.
 /examples/e2e/snitch/*.jar
+
+# Local E2E credentials.
+test/e2e/.env

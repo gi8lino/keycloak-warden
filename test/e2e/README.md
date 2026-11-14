@@ -18,6 +18,18 @@ make e2e-reset            # stop containers and delete the E2E SQLite volume
 
 The Snitch JAR is downloaded by `make snitch-download` (also run by `make download` and `make e2e-up`). The Makefile pins `SNITCH_VERSION`; override it with, for example, `make e2e-up SNITCH_VERSION=v0.0.4` to select that release. The versioned JAR is cached under `test/e2e/snitch/` and ignored by Git. The Keycloak image version in `Dockerfile.keycloak` must remain compatible with the Snitch release.
 
+## Include Slack in the end-to-end test
+
+Copy `test/e2e/.env.example` to `test/e2e/.env` if the local file does not exist. Set the complete bot authorization header in that file:
+
+```dotenv
+SLACK_AUTHORIZATION="Bearer xoxb-your-test-bot-token"
+```
+
+Set the `channel` in [the Slack bot template](../../deploy/kubernetes/templates/slack-bot.json.tmpl) to your test channel ID and invite the bot to that channel. The bot needs the `chat:write` scope. Run `make e2e-test` from the Warden root. A nonempty token enables the Slack Bot API destination alongside Hookglass. The smoke script waits for Slack to acknowledge the ban before releasing the IP, then checks the release acknowledgement. Both messages should appear in the test channel. Warden treats Slack's HTTP 200 with `ok: false` as a delivery failure. Check `make e2e-logs` for the Slack error.
+
+Leave `SLACK_AUTHORIZATION` empty for the Hookglass-only setup. The local env file is ignored by Git and excluded from the Warden image build context.
+
 ## Endpoints and test users
 
 - Keycloak: `http://127.0.0.1:18080` (`warden-e2e` realm)

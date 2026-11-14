@@ -16,20 +16,20 @@
       "fields": [
         {
           "type": "mrkdwn",
-          "text": {{ printf "*IP Address:*\n`%s`" .IP | json }}
+          "text": {{ printf "*IP Address:* `%s`" .IP | json }}
         },
         {
           "type": "mrkdwn",
-          "text": {{ printf "*State:*\n%s" .State | json }}
+          "text": {{ printf "*State:* %s" .State | json }}
         },
         {
           "type": "mrkdwn",
-          "text": {{ printf "*Revision:*\n%d" .Revision | json }}
+          "text": {{ printf "*Revision:* %d" .Revision | json }}
         }
         {{- if eq .State "banned" }},
         {
           "type": "mrkdwn",
-          "text": {{ printf "*Expires At:*\n%s" (.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC") | json }}
+          "text": {{ printf "*Expires At:* %s" (.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC") | json }}
         }
         {{- end }}
       ]
@@ -45,5 +45,3 @@
     }
   ]
 }
-
-

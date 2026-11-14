@@ -10,3 +10,6 @@ warden.yaml
 *.db*
 coverage.out
 coverage.html
+
+# Local E2E credentials.
+test/e2e/.env

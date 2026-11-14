@@ -4,15 +4,19 @@ services:
   warden:
     build:
       context: ../..
+    labels:
+      warden.e2e.slack: "${SLACK_AUTHORIZATION:+enabled}"
     ports:
       - "127.0.0.1:${E2E_WARDEN_PORT:-18081}:8080"
       - "127.0.0.1:${E2E_MANAGEMENT_PORT:-18082}:8081"
       - "127.0.0.1:${E2E_RECEIVER_PORT:-18090}:8090"
     volumes:
       - state:/data
-      - ./warden.yaml:/config/warden.yaml:ro
+      - ./warden${SLACK_AUTHORIZATION:+-slack}.yaml:/config/warden.yaml:ro
+      - ../../deploy/kubernetes/templates/slack-bot.json.tmpl:/config/templates/slack-bot.json.tmpl:ro
     environment:
-      # Variable for compose.yaml
+      SLACK_AUTHORIZATION: ${SLACK_AUTHORIZATION:-}
+      # Hookglass destination
       WARDEN_E2E_WEBHOOK_URL: http://127.0.0.1:8090/header
       WARDEN_E2E_WEBHOOK_KEY: development-outbound-key
       # Variable for warden itself

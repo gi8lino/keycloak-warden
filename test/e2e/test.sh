@@ -86,6 +86,24 @@ wait_for_webhook() {
   return 1
 }
 
+# Wait for Slack to acknowledge each revision before the next state change.
+wait_for_slack() {
+  [ "$slack_enabled" = enabled ] || return 0
+  expected=$1
+  attempt=0
+  while [ "$attempt" -lt 30 ]; do
+    if curl --silent --fail --max-time 3 "$warden_management/metrics" |
+      grep -Fqx "warden_delivery_attempts_total{destination=\"webhook.slack-bot\",outcome=\"success\"} $expected"; then
+      return 0
+    fi
+    attempt=$((attempt + 1))
+    sleep 1
+  done
+  printf 'Slack did not acknowledge delivery %s; check the Warden delivery log.\n' "$expected" >&2
+  return 1
+}
+
+slack_enabled=$(docker inspect --format '{{index .Config.Labels "warden.e2e.slack"}}' "$(compose ps -q warden)")
 wait_http "$warden_management/readyz" "Warden"
 wait_http "$receiver_url/healthz" "Hookglass"
 
@@ -127,6 +145,7 @@ fi
 printf 'Automatic ban: %s\n' "$ip"
 
 wait_for_webhook banned
+wait_for_slack 1
 printf 'Verified header-authenticated banned-state webhook\n'
 
 compose exec -T warden /keycloak-warden unban "$ip" \
@@ -134,6 +153,7 @@ compose exec -T warden /keycloak-warden unban "$ip" \
   --output json
 
 wait_for_webhook unbanned
+wait_for_slack 2
 if active_bans | grep -Eq '"state"[[:space:]]*:[[:space:]]*"banned"'; then
   printf 'Warden still reports an active ban after unban\n' >&2
   exit 1
