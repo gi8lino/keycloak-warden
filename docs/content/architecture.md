@@ -52,3 +52,7 @@ See [API](api.md) for the endpoints and [Operations](operations.md) for maintena
 ## Ban reconciliation ownership
 
 The `bans` application package evaluates source extension and effective decision revisions. SQLite exposes transactional read/write primitives and synchronizes persisted delivery rows without interpreting ban policy.
+
+## Delivery retry backoff
+
+The `actions` package calculates the capped exponential retry delay (10 seconds up to 5 minutes) using the destination's last persisted delay. SQLite only loads the previous delay and atomically stores the calculated pause and retry deadline along with the attempt result.

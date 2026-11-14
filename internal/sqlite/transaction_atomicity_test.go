@@ -187,7 +187,7 @@ BEGIN
 END
 `)
 		require.NoError(t, err)
-		require.ErrorContains(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now), "injected acknowledgement failure")
+		require.ErrorContains(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0), "injected acknowledgement failure")
 
 		current, err := store.GetDecision(ctx, created.Decision.ID, now)
 		require.NoError(t, err)
@@ -200,7 +200,7 @@ END
 
 		_, err = store.db.Exec("DROP TRIGGER reject_acknowledgement")
 		require.NoError(t, err)
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
 		pending, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, pending)
@@ -226,7 +226,7 @@ BEGIN
 END
 `)
 		require.NoError(t, err)
-		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now), "injected retry failure")
+		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)), "injected retry failure")
 
 		var backoffs int
 		require.NoError(t, store.db.QueryRowContext(ctx,
@@ -239,7 +239,7 @@ END
 
 		_, err = store.db.Exec("DROP TRIGGER reject_retry")
 		require.NoError(t, err)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
 		pending, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, pending)

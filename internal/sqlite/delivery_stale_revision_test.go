@@ -33,7 +33,7 @@ func TestFinishIgnoresStaleDeliveryFailure(t *testing.T) {
 	require.Greater(t, second.Decision.Revision, first.Decision.Revision)
 
 	// A failed attempt against revision 1 must not postpone revision 2.
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
 	pending, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, pending)
@@ -60,7 +60,7 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("not_authed"), actions.DefaultMaxAttempts, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("not_authed"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
 	retry, err := store.GetDecision(ctx, record.Decision.ID, now)
 	require.NoError(t, err)
 	require.Len(t, retry.DeliveryHistory, 1)
@@ -68,7 +68,7 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	assert.Equal(t, "retrying", delivery.Status)
 	require.NotNil(t, delivery.NextAttemptAt)
 	next := *delivery.NextAttemptAt
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, next))
+	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, next, 0))
 	require.NoError(t, store.Close())
 
 	reopened, _ := openStore(t, path, "slack")

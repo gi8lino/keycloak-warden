@@ -316,7 +316,7 @@ func TestRetiredDestination(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
+	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
 	require.NoError(t, store.Close())
 
 	store, _ = openStore(t, path, "new")
@@ -357,7 +357,7 @@ func TestIdempotentManualBan(t *testing.T) {
 	job, err := store.Next(t.Context(), now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(t.Context(), *job, nil, actions.DefaultMaxAttempts, now))
+	require.NoError(t, store.Finish(t.Context(), *job, nil, actions.DefaultMaxAttempts, now, 0))
 
 	// Neither identical requests nor a reason-only change affect delivered fields.
 	again, err := service.BanManual(t.Context(), request, now)

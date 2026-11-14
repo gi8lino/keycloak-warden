@@ -142,13 +142,13 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, a)
 		assert.Equal(t, "a", a.Destination)
-		require.NoError(t, store.Finish(ctx, *a, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *a, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(a.PreviousDelay)))
 		b, err := store.Next(ctx, now)
 
 		require.NoError(t, err)
 		require.NotNil(t, b)
 		assert.Equal(t, "b", b.Destination)
-		require.NoError(t, store.Finish(ctx, *b, nil, actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *b, nil, actions.DefaultMaxAttempts, now, 0))
 		retry, err := store.Next(ctx, now.Add(11*time.Second))
 
 		require.NoError(t, err)
@@ -161,7 +161,7 @@ func TestOpen(t *testing.T) {
 		require.NotNil(t, extended)
 		assert.Equal(t, decision.ID, extended.ID)
 		assert.Equal(t, int64(2), extended.Revision)
-		require.NoError(t, store.Finish(ctx, *a, nil, actions.DefaultMaxAttempts, later))
+		require.NoError(t, store.Finish(ctx, *a, nil, actions.DefaultMaxAttempts, later, 0))
 		pending, err := store.Next(ctx, later)
 
 		require.NoError(t, err)
@@ -193,7 +193,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, "a", release.Destination)
 		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now, 0))
 		release, err = store.Next(ctx, now)
 
 		require.NoError(t, err)
@@ -201,7 +201,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, "b", release.Destination)
 		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now, 0))
 		active, err = store.ListActive(ctx, now)
 
 		require.NoError(t, err)
@@ -224,7 +224,7 @@ func TestDestinationBackoff(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.NextRetryDelay(job.PreviousDelay)))
 
 	// A new IP shares the pause, even if the worker restarts.
 	for _, id := range []string{"three", "four"} {
@@ -251,20 +251,20 @@ func TestDestinationBackoff(t *testing.T) {
 		if seconds == 10 {
 			assert.Equal(t, "203.0.113.2", job.Decision.IP)
 		}
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.NextRetryDelay(job.PreviousDelay)))
 	}
 	now = now.Add(5 * time.Minute)
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
 	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
-	require.NoError(t, store.Finish(ctx, *job, nil, 10, now))
+	require.NoError(t, store.Finish(ctx, *job, nil, 10, now, 0))
 
 	// The other pending release gets a fresh first retry after the destination recovers.
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.NextRetryDelay(job.PreviousDelay)))
 	pending, err := store.Next(ctx, now.Add(10*time.Second))
 	require.NoError(t, err)
 	require.NotNil(t, pending)
@@ -320,7 +320,7 @@ func TestWorkerSchedule(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
 		require.NoError(t, store.Close())
 		store, _ = openStore(t, path, "receiver")
 		defer store.Close() //nolint:errcheck
@@ -336,7 +336,7 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due, 0))
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
 		assert.True(t, due.IsZero())
@@ -368,7 +368,7 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
+	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
 
 	latest, err := processor.Process(ctx, failed("third"), now)
 	require.NoError(t, err)
@@ -394,7 +394,7 @@ func TestAttemptBudget(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
 		now = now.Add(time.Minute)
 	}
 	require.NoError(t, store.Close())
@@ -421,7 +421,7 @@ func TestAttemptBudget(t *testing.T) {
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now, actions.NextRetryDelay(job.PreviousDelay)))
 	_, err = store.ReleaseAllSources(ctx, record.Decision.ID, now, []string{"receiver"})
 	require.NoError(t, err)
 	job, err = store.Next(ctx, now.Add(5*time.Minute))

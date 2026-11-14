@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+"github.com/gi8lino/keycloak-warden/internal/application/actions"
 )
 
 func TestReconcileAttemptLimit(t *testing.T) {
@@ -26,7 +27,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 3, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 3, now, actions.NextRetryDelay(job.PreviousDelay)))
 
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
@@ -57,7 +58,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 1, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 1, now, actions.NextRetryDelay(job.PreviousDelay)))
 
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
@@ -87,7 +88,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 3, now))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), 3, now, actions.NextRetryDelay(job.PreviousDelay)))
 		_, err = store.ApplyManualBan(ctx, "192.0.2.12", now.Add(2*time.Hour), "extended", now, []string{"webhook.receiver"})
 		require.NoError(t, err)
 
@@ -114,13 +115,13 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, receiverJob)
 		assert.Equal(t, "webhook.receiver", receiverJob.Destination)
-		require.NoError(t, store.Finish(ctx, *receiverJob, errors.New("unavailable"), 1, now))
+		require.NoError(t, store.Finish(ctx, *receiverJob, errors.New("unavailable"), 1, now, actions.NextRetryDelay(receiverJob.PreviousDelay)))
 
 		teamsJob, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, teamsJob)
 		assert.Equal(t, "webhook.teams", teamsJob.Destination)
-		require.NoError(t, store.Finish(ctx, *teamsJob, errors.New("unavailable"), 1, now))
+		require.NoError(t, store.Finish(ctx, *teamsJob, errors.New("unavailable"), 1, now, actions.NextRetryDelay(teamsJob.PreviousDelay)))
 
 		require.NoError(t, store.ReconcileAttemptLimit(ctx, "webhook.receiver", 2))
 
@@ -146,7 +147,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("unavailable"), 0, now), "max-attempts")
+		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("unavailable"), 0, now, actions.NextRetryDelay(job.PreviousDelay)), "max-attempts")
 
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)

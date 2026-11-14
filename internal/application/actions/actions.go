@@ -27,6 +27,8 @@ type Job struct {
 	Decision decisions.Decision
 	// Destination selects a configured provider instance.
 	Destination string
+	// PreviousDelay is the last persisted destination pause used by retry policy.
+	PreviousDelay time.Duration
 }
 
 // Provider reconciles the desired state and tolerates repeated delivery.
@@ -46,7 +48,7 @@ type Queue interface {
 	// Next returns the oldest ready destination job, or nil when idle.
 	Next(context.Context, time.Time) (*Job, error)
 	// Finish atomically records the outcome and applies the supplied attempt limit.
-	Finish(context.Context, Job, error, int, time.Time) error
+	Finish(context.Context, Job, error, int, time.Time, time.Duration) error
 }
 
 // Runner owns the background action worker and its cancellation lifecycle.
@@ -235,7 +237,7 @@ func dispatch(
 			"event", "delivery_failed",
 			"error", err,
 		)
-		return q.Finish(ctx, job, err, target.MaxAttempts, time.Now())
+		return q.Finish(ctx, job, err, target.MaxAttempts, time.Now(), NextRetryDelay(job.PreviousDelay))
 	}
 
 	log.Info("delivery completed",
@@ -243,5 +245,5 @@ func dispatch(
 		"state", job.Decision.State,
 	)
 
-	return q.Finish(ctx, job, nil, target.MaxAttempts, time.Now())
+	return q.Finish(ctx, job, nil, target.MaxAttempts, time.Now(), 0)
 }

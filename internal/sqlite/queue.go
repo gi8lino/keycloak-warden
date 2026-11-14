@@ -92,9 +92,10 @@ func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
 	var job actions.Job
 	var expires int64
 	var active bool
+	var previousDelayMillis int64
 	decision := &job.Decision
 	err := s.db.QueryRowContext(ctx, `
-SELECT d.id, d.revision, d.ip, d.active, d.expires, q.destination
+SELECT d.id, d.revision, d.ip, d.active, d.expires, q.destination, COALESCE(b.delay_ms, 0)
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
 JOIN delivery_history AS h ON h.ip = q.ip AND h.destination = q.destination AND h.revision = d.revision
@@ -113,6 +114,7 @@ LIMIT 1
 		&active,
 		&expires,
 		&job.Destination,
+		&previousDelayMillis,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -120,6 +122,7 @@ LIMIT 1
 	if err != nil {
 		return nil, err
 	}
+	job.PreviousDelay = time.Duration(previousDelayMillis) * time.Millisecond
 	decision.State = stateFromActive(active)
 	decision.ExpiresAt = time.UnixMilli(expires).UTC()
 
@@ -127,9 +130,19 @@ LIMIT 1
 }
 
 // Finish atomically records an attempt and acknowledges or retries within the supplied limit.
-func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, limit int, now time.Time) error {
+func (s *Store) Finish(
+	ctx context.Context,
+	job actions.Job,
+	deliveryErr error,
+	limit int,
+	now time.Time,
+	retryDelay time.Duration,
+) error {
 	if limit < 1 {
 		return errors.New("max-attempts must be at least 1")
+	}
+	if deliveryErr != nil && retryDelay <= 0 {
+		return errors.New("retry delay must be positive")
 	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -156,7 +169,7 @@ func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, 
 	if deliveryErr == nil {
 		err = acknowledgeDelivery(ctx, tx, job)
 	} else {
-		err = scheduleRetry(ctx, tx, job, now)
+		err = scheduleRetry(ctx, tx, job, now, retryDelay)
 		if err == nil {
 			err = applyAttemptLimit(ctx, tx, job.Destination, limit, job.Decision.IP, job.Decision.Revision)
 		}
@@ -180,26 +193,23 @@ WHERE ip = ? AND destination = ?
 	return err
 }
 
-// scheduleRetry pauses the destination and lets other queued IPs go first when it resumes.
-func scheduleRetry(ctx context.Context, tx *sql.Tx, job actions.Job, now time.Time) error {
-	const firstDelay = 10 * time.Second
-	const maxDelay = 5 * time.Minute
-
-	var previousMillis int64
-	err := tx.QueryRowContext(ctx, "SELECT delay_ms FROM destination_backoff WHERE destination = ?", job.Destination).Scan(&previousMillis)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	delay := min(maxDelay.Milliseconds(), max(firstDelay.Milliseconds(), 2*previousMillis))
-	retryAt := now.UnixMilli() + delay
+// scheduleRetry persists the pause calculated by the application and delays this job.
+func scheduleRetry(
+	ctx context.Context,
+	tx *sql.Tx,
+	job actions.Job,
+	now time.Time,
+	delay time.Duration,
+) error {
+	retryAt := now.Add(delay).UnixMilli()
 
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO destination_backoff (destination, delay_ms, retry_at) VALUES (?, ?, ?)
 ON CONFLICT (destination) DO UPDATE SET delay_ms = excluded.delay_ms, retry_at = excluded.retry_at
-`, job.Destination, delay, retryAt); err != nil {
+`, job.Destination, delay.Milliseconds(), retryAt); err != nil {
 		return err
 	}
-	_, err = tx.ExecContext(ctx, "UPDATE deliveries SET retry_at = ? WHERE ip = ? AND destination = ?", retryAt, job.Decision.IP, job.Destination)
+	_, err := tx.ExecContext(ctx, "UPDATE deliveries SET retry_at = ? WHERE ip = ? AND destination = ?", retryAt, job.Decision.IP, job.Destination)
 	return err
 }
 

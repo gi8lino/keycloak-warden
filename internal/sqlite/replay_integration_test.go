@@ -82,7 +82,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, provider.Apply(ctx, job.Decision))
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
 		mu.Lock()
 		assert.Equal(t, 1, created)
 		mu.Unlock()
@@ -106,7 +106,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, provider.Apply(ctx, job.Decision))
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now.Add(time.Second)))
+		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now.Add(time.Second), 0))
 
 		mu.Lock()
 		assert.Equal(t, 1, created)

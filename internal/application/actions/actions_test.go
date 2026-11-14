@@ -40,7 +40,9 @@ func (q *blockingQueue) Maintain(ctx context.Context, _ time.Time, _ []string) (
 func (q *blockingQueue) Next(context.Context, time.Time) (*Job, error) { return nil, nil }
 
 // Finish is not reached while Maintain blocks.
-func (q *blockingQueue) Finish(context.Context, Job, error, int, time.Time) error { return nil }
+func (q *blockingQueue) Finish(context.Context, Job, error, int, time.Time, time.Duration) error {
+	return nil
+}
 
 func TestStart(t *testing.T) {
 	t.Parallel()
@@ -167,7 +169,7 @@ func (q *scriptedQueue) Next(context.Context, time.Time) (*Job, error) {
 }
 
 // Finish records successfully dispatched work.
-func (q *scriptedQueue) Finish(_ context.Context, job Job, deliveryErr error, limit int, _ time.Time) error {
+func (q *scriptedQueue) Finish(_ context.Context, job Job, deliveryErr error, limit int, _ time.Time, _ time.Duration) error {
 	q.limits = append(q.limits, limit)
 	if deliveryErr == nil {
 		q.finished = append(q.finished, job)
