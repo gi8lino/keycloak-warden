@@ -157,14 +157,15 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		require.ErrorContains(t, err, "max-attempts")
 	})
 
-	t.Run("rejects unknown destination", func(t *testing.T) {
+	t.Run("accepts a destination with no delivery history", func(t *testing.T) {
 		t.Parallel()
 
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"), "webhook.receiver")
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 
-		err := store.ReconcileAttemptLimit(t.Context(), "webhook.unknown", 2)
+		// SQLite knows delivery history, not which targets are configured.
+		err := store.ReconcileAttemptLimit(t.Context(), "webhook.new", 2)
 
-		require.ErrorContains(t, err, `destination "webhook.unknown" is not configured`)
+		require.NoError(t, err)
 	})
 }
