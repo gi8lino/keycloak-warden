@@ -9,15 +9,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 )
 
-// Prune removes old observations independently of delivery activity.
-func (s *Store) Prune(ctx context.Context, cutoff time.Time) error {
-	_, err := s.db.ExecContext(ctx, `
-DELETE FROM failures
-WHERE received <= ?
-`, cutoff.UnixMilli())
-	return err
-}
-
 // Next loads the oldest pending target using its latest desired decision revision.
 func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
 	var job actions.Job

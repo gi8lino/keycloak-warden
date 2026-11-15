@@ -11,7 +11,8 @@ import (
 
 // Writer executes a domain workflow inside one atomic persistence transaction.
 type Writer interface {
-	TransactBan(context.Context, func(MutationTransaction) error) error
+	// TransactDecision atomically applies source changes and decision reconciliation.
+	TransactDecision(context.Context, func(MutationTransaction) error) error
 }
 
 // ApplyManualBan records a manual reason and reconciles its desired state atomically.
@@ -25,7 +26,7 @@ func ApplyManualBan(
 	targets []string,
 ) (Record, error) {
 	var record Record
-	err := store.TransactBan(ctx, func(tx MutationTransaction) error {
+	err := store.TransactDecision(ctx, func(tx MutationTransaction) error {
 		var err error
 		record, err = applyManualBan(ctx, tx, ip, until, reason, now, targets)
 		return err
@@ -70,7 +71,7 @@ func ReleaseAllSources(
 	targets []string,
 ) (Record, error) {
 	var record Record
-	err := store.TransactBan(ctx, func(tx MutationTransaction) error {
+	err := store.TransactDecision(ctx, func(tx MutationTransaction) error {
 		var err error
 		record, err = releaseAllSources(ctx, tx, id, now, targets)
 		return err
@@ -122,7 +123,7 @@ func ExpireSources(
 	targets []string,
 ) ([]decisions.Decision, error) {
 	var released []decisions.Decision
-	err := store.TransactBan(ctx, func(tx MutationTransaction) error {
+	err := store.TransactDecision(ctx, func(tx MutationTransaction) error {
 		var err error
 		released, err = expireSources(ctx, tx, now, targets)
 		return err

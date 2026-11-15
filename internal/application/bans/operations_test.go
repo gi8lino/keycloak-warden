@@ -63,7 +63,7 @@ type workflowWriter struct {
 	commitErr error
 }
 
-func (w workflowWriter) TransactBan(_ context.Context, fn func(MutationTransaction) error) error {
+func (w workflowWriter) TransactDecision(_ context.Context, fn func(MutationTransaction) error) error {
 	if err := fn(w.tx); err != nil {
 		return err
 	}

@@ -22,8 +22,8 @@ type fakeStore struct {
 	released bool
 }
 
-// TransactBan executes one application workflow on the fake transaction.
-func (r *fakeStore) TransactBan(ctx context.Context, apply func(bans.MutationTransaction) error) error {
+// TransactDecision executes one application workflow on the fake transaction.
+func (r *fakeStore) TransactDecision(ctx context.Context, apply func(bans.MutationTransaction) error) error {
 	return apply(r)
 }
 

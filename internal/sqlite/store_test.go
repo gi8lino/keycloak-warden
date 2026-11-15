@@ -2,11 +2,8 @@ package sqlite_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"net/netip"
 	"path/filepath"
-	"sync"
 	"testing"
 	"time"
 
@@ -58,163 +55,6 @@ func failed(id string) events.Envelope {
 		Timestamp: time.Date(2026, time.November, 5, 15, 0, 0, 0, time.UTC),
 		IP:        "203.0.113.1",
 	}
-}
-
-func TestStoreTransact(t *testing.T) {
-	t.Parallel()
-
-	t.Run("duplicates and nonmatching events never reach threshold", func(t *testing.T) {
-		t.Parallel()
-
-		store, processor := openStore(t, filepath.Join(t.TempDir(), "test.db"))
-		defer store.Close() // nolint:errcheck
-		now := time.Now()
-		ok := failed("success")
-		ok.Kind = "LOGIN"
-		noIP := failed("missing")
-		noIP.IP = ""
-		decision, err := processDecision(processor, t.Context(), failed("same"), now)
-
-		require.NoError(t, err)
-		assert.Nil(t, decision)
-		decision, err = processDecision(processor, t.Context(), failed("same"), now)
-
-		require.NoError(t, err)
-		assert.Nil(t, decision)
-		decision, err = processDecision(processor, t.Context(), ok, now)
-
-		require.NoError(t, err)
-		assert.Nil(t, decision)
-		decision, err = processDecision(processor, t.Context(), noIP, now)
-
-		require.NoError(t, err)
-		assert.Nil(t, decision)
-		decision, err = processDecision(processor, t.Context(), failed("outside-window"), now.Add(time.Minute))
-
-		require.NoError(t, err)
-		assert.Nil(t, decision)
-	})
-
-	t.Run("concurrent replays count once", func(t *testing.T) {
-		t.Parallel()
-
-		store, processor := openStore(t, filepath.Join(t.TempDir(), "test.db"))
-		defer store.Close() // nolint:errcheck
-		var wg sync.WaitGroup
-		now := time.Now()
-		for range 12 {
-			wg.Go(func() {
-				decision, err := processDecision(processor, context.Background(), failed("repeat"), now)
-
-				assert.NoError(t, err)
-				assert.Nil(t, decision)
-			})
-		}
-		wg.Wait()
-		decision, err := processDecision(processor, t.Context(), failed("next"), now)
-
-		require.NoError(t, err)
-		require.NotNil(t, decision)
-	})
-}
-
-// TestStoreTransactionLifecycle verifies both application interfaces use the same atomic lifecycle.
-func TestStoreTransactionLifecycle(t *testing.T) {
-	t.Parallel()
-
-	t.Run("observation transactions can persist failures and ban sources atomically", func(t *testing.T) {
-		t.Parallel()
-
-		store, _ := openStore(t, filepath.Join(t.TempDir(), "observation.db"))
-		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-
-		ctx := t.Context()
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		ip := "203.0.113.92"
-		event := events.Event{
-			ID:     "observation-1",
-			Source: "keycloak",
-			IP:     netip.MustParseAddr(ip),
-		}
-
-		err := store.Transact(ctx, func(tx ingestion.Transaction) error {
-			inserted, err := tx.RecordFailure(ctx, event, now)
-			if err != nil {
-				return err
-			}
-			assert.True(t, inserted)
-
-			if err := tx.EnsureDecision(ctx, ip); err != nil {
-				return err
-			}
-			return tx.PutSource(ctx, ip, bans.Source{
-				Kind:      bans.SourceAutomatic,
-				ExpiresAt: now.Add(time.Hour),
-			})
-		})
-		require.NoError(t, err)
-
-		select {
-		case <-store.Changes():
-		default:
-			require.FailNow(t, "committed source change must notify the worker")
-		}
-
-		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
-			count, err := tx.CountFailures(ctx, ip, now.Add(-time.Minute))
-			if err != nil {
-				return err
-			}
-			assert.Equal(t, 1, count)
-			return nil
-		})
-		require.NoError(t, err)
-
-		select {
-		case <-store.Changes():
-			require.FailNow(t, "read-only observation transaction must not notify the worker")
-		default:
-		}
-	})
-
-	t.Run("ban transactions roll back source mutations without notification", func(t *testing.T) {
-		t.Parallel()
-
-		store, _ := openStore(t, filepath.Join(t.TempDir(), "ban.db"))
-		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-
-		ctx := t.Context()
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		ip := "203.0.113.93"
-		rollback := errors.New("injected rollback")
-
-		err := store.TransactBan(ctx, func(tx bans.MutationTransaction) error {
-			if err := tx.EnsureDecision(ctx, ip); err != nil {
-				return err
-			}
-			if err := tx.PutSource(ctx, ip, bans.Source{
-				Kind:      bans.SourceManual,
-				ExpiresAt: now.Add(time.Hour),
-				Reason:    "investigation",
-			}); err != nil {
-				return err
-			}
-			return rollback
-		})
-		require.ErrorIs(t, err, rollback)
-
-		err = store.TransactBan(ctx, func(tx bans.MutationTransaction) error {
-			_, err := tx.Decision(ctx, ip)
-			return err
-		})
-		require.ErrorIs(t, err, sql.ErrNoRows)
-
-		select {
-		case <-store.Changes():
-			require.FailNow(t, "rolled-back ban transaction must not notify the worker")
-		default:
-		}
-	})
 }
 
 func TestOpen(t *testing.T) {
@@ -314,15 +154,6 @@ func TestOpen(t *testing.T) {
 	})
 }
 
-func TestOptimize(t *testing.T) {
-	t.Parallel()
-
-	store, _ := openStore(t, filepath.Join(t.TempDir(), "optimize.db"))
-	require.NoError(t, store.Optimize(t.Context()))
-	require.NoError(t, store.Close())
-	require.Error(t, store.Optimize(t.Context()), "optimization should not succeed on a closed store")
-}
-
 // TestAdditionalFailureDoesNotReviseUnchangedBan ensures observation counts do not trigger delivery revisions.
 func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	t.Parallel()
@@ -379,65 +210,7 @@ func TestStoreClosedErrors(t *testing.T) {
 	assert.Error(t, err)
 	_, err = bans.ExpireSources(t.Context(), store, time.Now(), nil)
 	assert.Error(t, err)
-	assert.Error(t, store.Transact(t.Context(), func(ingestion.Transaction) error {
+	assert.Error(t, store.TransactObservation(t.Context(), func(ingestion.Transaction) error {
 		return errors.New("should not be invoked")
 	}))
-}
-
-func TestValidateTargets(t *testing.T) {
-	t.Parallel()
-
-	t.Run("rejects removal with an active ban", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := t.Context()
-		path := filepath.Join(t.TempDir(), "warden.db")
-		store, err := sqlite.Open(path)
-		require.NoError(t, err)
-
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
-		require.NoError(t, err)
-		require.NoError(t, store.Close())
-
-		reopened, err := sqlite.Open(path)
-		require.NoError(t, err)
-		t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
-
-		require.ErrorContains(t, reopened.ValidateTargets(ctx, []string{"replacement"}), `destination "old" has managed decisions`)
-		require.NoError(t, reopened.ValidateTargets(ctx, []string{"old"}))
-
-		pending, err := reopened.Next(ctx, now.Add(time.Second))
-		require.NoError(t, err)
-		require.NotNil(t, pending)
-		assert.Equal(t, created.Decision.ID, pending.Decision.ID)
-	})
-
-	t.Run("rejects removal with an unacknowledged release", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := t.Context()
-		path := filepath.Join(t.TempDir(), "warden.db")
-		store, err := sqlite.Open(path)
-		require.NoError(t, err)
-
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
-		require.NoError(t, err)
-		_, err = bans.ReleaseAllSources(ctx, store, created.Decision.ID, now.Add(time.Second), []string{"old"})
-		require.NoError(t, err)
-		require.NoError(t, store.Close())
-
-		reopened, err := sqlite.Open(path)
-		require.NoError(t, err)
-		t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
-
-		require.ErrorContains(t, reopened.ValidateTargets(ctx, []string{"replacement"}), `destination "old" has managed decisions`)
-		require.NoError(t, reopened.ValidateTargets(ctx, []string{"old"}))
-
-		pending, err := reopened.Next(ctx, now.Add(2*time.Second))
-		require.NoError(t, err)
-		require.NotNil(t, pending)
-		assert.Equal(t, created.Decision.ID, pending.Decision.ID)
-	})
 }

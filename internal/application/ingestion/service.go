@@ -29,7 +29,8 @@ type Transaction interface {
 
 // Repository executes an application operation within one atomic transaction.
 type Repository interface {
-	Transact(context.Context, func(Transaction) error) error
+	// TransactObservation atomically records a failed login and any resulting decision.
+	TransactObservation(context.Context, func(Transaction) error) error
 }
 
 // Service coordinates event validation, detection, and durable decisions.
@@ -76,7 +77,7 @@ func (s *Service) Process(
 		return result, nil
 	}
 
-	err = s.repository.Transact(ctx, func(tx Transaction) error {
+	err = s.repository.TransactObservation(ctx, func(tx Transaction) error {
 		var processErr error
 		result, processErr = s.processFailure(ctx, tx, event, now)
 		return processErr

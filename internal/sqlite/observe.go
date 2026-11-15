@@ -40,3 +40,16 @@ WHERE ip = ?
 `, ip, since.UnixMilli(), ip).Scan(&count)
 	return count, err
 }
+
+// ResetFailures advances the observation generation while retaining producer IDs.
+func (t *transaction) ResetFailures(ctx context.Context, ip string) error {
+	_, err := t.tx.ExecContext(ctx, `
+UPDATE decisions
+SET failure_generation = failure_generation + 1
+WHERE ip = ?
+`, ip)
+	if err == nil {
+		t.changed = true
+	}
+	return err
+}

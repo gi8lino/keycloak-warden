@@ -27,8 +27,8 @@ type fakeRepository struct {
 	commitErr error
 }
 
-// Transact runs the application callback with the fake transaction.
-func (r *fakeRepository) Transact(_ context.Context, apply func(ingestion.Transaction) error) error {
+// TransactObservation runs the application callback with the fake transaction.
+func (r *fakeRepository) TransactObservation(_ context.Context, apply func(ingestion.Transaction) error) error {
 	r.calls++
 	if err := apply(r.tx); err != nil {
 		return err

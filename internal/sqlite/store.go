@@ -8,12 +8,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"slices"
 
 	_ "modernc.org/sqlite"
-
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
 
 // Store owns one SQLite database and serializes state changes on one connection.
@@ -72,79 +68,6 @@ PRAGMA foreign_keys = ON;
 	}, nil
 }
 
-// ValidateTargets refuses to abandon pending ownership of external bans.
-// Call it at startup with the resolved destination names before workers begin.
-func (s *Store) ValidateTargets(ctx context.Context, targets []string) error {
-	rows, err := s.db.QueryContext(ctx, `
-SELECT DISTINCT q.destination
-FROM deliveries AS q
-JOIN decisions AS d USING (ip)
-WHERE d.active = 1 OR q.acknowledged < d.revision
-`)
-	if err != nil {
-		return err
-	}
-	defer rows.Close() // nolint:errcheck
-
-	for rows.Next() {
-		var name string
-		if err := rows.Scan(&name); err != nil {
-			return err
-		}
-		if !slices.Contains(targets, name) {
-			return fmt.Errorf("destination %q has managed decisions; keep it configured until release", name)
-		}
-	}
-	return rows.Err()
-}
-
-// transaction implements both application transaction interfaces over one SQL transaction.
-// The changed flag requests a worker notification after a successful commit.
-type transaction struct {
-	// tx contains all observation, source, and decision changes until commit.
-	tx *sql.Tx
-	// changed records whether the transaction modified source or decision state.
-	changed bool
-}
-
-// Keep the application-facing capabilities narrow even though SQLite uses one type.
-var (
-	_ ingestion.Transaction    = (*transaction)(nil)
-	_ bans.MutationTransaction = (*transaction)(nil)
-)
-
-// Transact runs the application observation workflow in one SQLite transaction.
-func (s *Store) Transact(ctx context.Context, apply func(ingestion.Transaction) error) error {
-	return s.transact(ctx, func(tx *transaction) error {
-		return apply(tx)
-	})
-}
-
-// TransactBan runs the application's ban workflow in one SQLite transaction.
-func (s *Store) TransactBan(ctx context.Context, apply func(bans.MutationTransaction) error) error {
-	return s.transact(ctx, func(tx *transaction) error {
-		return apply(tx)
-	})
-}
-
-// transact shares the commit, rollback, and worker-notification lifecycle.
-func (s *Store) transact(ctx context.Context, apply func(*transaction) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	state := &transaction{tx: tx}
-	if err := apply(state); err != nil {
-		return err
-	}
-	if state.changed {
-		return s.commitDecision(tx)
-	}
-	return tx.Commit()
-}
-
 // Ping confirms that the underlying store can answer a query.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
@@ -153,24 +76,3 @@ func (s *Store) Close() error { return s.db.Close() }
 
 // Changes signals that a committed decision may have changed the worker's next deadline.
 func (s *Store) Changes() <-chan struct{} { return s.changes }
-
-// commitDecision wakes the worker only after the new state is visible to readers.
-func (s *Store) commitDecision(tx *sql.Tx) error {
-	if err := tx.Commit(); err != nil {
-		return err
-	}
-	select {
-	case s.changes <- struct{}{}:
-	default:
-	}
-	return nil
-}
-
-// Optimize refreshes SQLite query-planner statistics without rebuilding the database.
-func (s *Store) Optimize(ctx context.Context) error {
-	_, err := s.db.ExecContext(ctx, "PRAGMA optimize")
-	if err != nil {
-		return fmt.Errorf("optimize sqlite database: %w", err)
-	}
-	return nil
-}

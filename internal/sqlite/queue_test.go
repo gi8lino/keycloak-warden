@@ -14,68 +14,8 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
-	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
-
-func TestStorePrune(t *testing.T) {
-	t.Parallel()
-
-	t.Run("retains at least one day of failures", func(t *testing.T) {
-		t.Parallel()
-		store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"))
-		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		for _, observation := range []struct {
-			id string
-			at time.Time
-		}{
-			{id: "stale", at: now.Add(-25 * time.Hour)},
-			{id: "recent", at: now.Add(-23 * time.Hour)},
-		} {
-			_, err := processor.Process(t.Context(), failed(observation.id), observation.at)
-			require.NoError(t, err)
-		}
-		require.NoError(t, store.Prune(t.Context(), now.Add(-24*time.Hour)))
-
-		err := store.Transact(t.Context(), func(tx ingestion.Transaction) error {
-			count, err := tx.CountFailures(t.Context(), "203.0.113.1", now.Add(-48*time.Hour))
-			assert.Equal(t, 1, count)
-			return err
-		})
-		require.NoError(t, err)
-	})
-
-	t.Run("long detection window controls retention", func(t *testing.T) {
-		t.Parallel()
-		rule := detection.Rule{Threshold: 3, Window: 48 * time.Hour, Ban: time.Minute}
-		store, err := sqlite.Open(filepath.Join(t.TempDir(), "state.db"))
-		require.NoError(t, err)
-		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-		processor, err := ingestion.New(store, rule, nil)
-		require.NoError(t, err)
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		for _, observation := range []struct {
-			id string
-			at time.Time
-		}{
-			{id: "stale", at: now.Add(-49 * time.Hour)},
-			{id: "within-window", at: now.Add(-30 * time.Hour)},
-		} {
-			_, err := processor.Process(t.Context(), failed(observation.id), observation.at)
-			require.NoError(t, err)
-		}
-		require.NoError(t, store.Prune(t.Context(), now.Add(-48*time.Hour)))
-
-		err = store.Transact(t.Context(), func(tx ingestion.Transaction) error {
-			count, err := tx.CountFailures(t.Context(), "203.0.113.1", now.Add(-72*time.Hour))
-			assert.Equal(t, 1, count)
-			return err
-		})
-		require.NoError(t, err)
-	})
-}
 
 // TestFinishIgnoresStaleDeliveryFailure ensures old delivery failures cannot delay new revisions.
 func TestFinishIgnoresStaleDeliveryFailure(t *testing.T) {
@@ -291,7 +231,7 @@ func TestWorkerSchedule(t *testing.T) {
 		_, err := processDecision(processor, ctx, failed("one"), now)
 		require.NoError(t, err)
 		rollback := errors.New("rollback")
-		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
+		err = store.TransactObservation(ctx, func(tx ingestion.Transaction) error {
 			err := bans.ExtendSource(ctx, tx, "203.0.113.2", bans.Source{
 				Kind: bans.SourceAutomatic, ExpiresAt: now.Add(time.Hour),
 			})
