@@ -74,7 +74,7 @@ WHERE ip = ? AND revision = ? AND destination = ?
 // readDeliveryHistory loads at most one bounded page of destination/revision groups.
 // Completed attempts are retained in SQLite but only the most recent 16 per
 // group are included in the HTTP inspection view. Paging does not delete history.
-func readDeliveryHistory(ctx context.Context, tx *sql.Tx, ip string, page int) ([]decisions.Delivery, bool, error) {
+func readDeliveryHistory(ctx context.Context, tx *sql.Tx, ip string, page int, throughRevision int64) ([]decisions.Delivery, bool, error) {
 	offset, err := bans.HistoryOffset(page)
 	if err != nil {
 		return nil, false, err
@@ -83,7 +83,7 @@ func readDeliveryHistory(ctx context.Context, tx *sql.Tx, ip string, page int) (
 WITH page AS (
     SELECT revision, destination
     FROM delivery_history
-    WHERE ip = ?
+    WHERE ip = ? AND revision <= ?
     ORDER BY revision DESC, destination
     LIMIT ? OFFSET ?
 )
@@ -102,7 +102,7 @@ LEFT JOIN delivery_attempts AS a ON a.ip = h.ip AND a.revision = h.revision
 LEFT JOIN deliveries AS q ON q.ip = h.ip AND q.destination = h.destination
 LEFT JOIN destination_backoff AS b ON b.destination = h.destination
 ORDER BY h.revision DESC, h.destination, a.number
-`, ip, bans.HistoryPageSize+1, offset, ip)
+`, ip, throughRevision, bans.HistoryPageSize+1, offset, ip)
 	if err != nil {
 		return nil, false, err
 	}

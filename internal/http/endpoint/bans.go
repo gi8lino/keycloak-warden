@@ -24,7 +24,7 @@ type BanAdministration interface {
 	BanManual(context.Context, bans.ManualBanRequest, time.Time) (bans.Record, error)
 	Release(context.Context, string, time.Time) (bans.Record, error)
 	ListActive(context.Context, time.Time) ([]bans.Record, error)
-	GetDecisionPage(context.Context, string, time.Time, int) (bans.Record, error)
+	GetDecisionPage(context.Context, string, time.Time, int, int64) (bans.Record, error)
 }
 
 // createBanPayload contains the fields decoded independently for each administrative request.
@@ -125,15 +125,29 @@ func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// A page number selects a bounded slice of history with no precursor requests.
 		query, err := url.ParseQuery(r.URL.RawQuery)
-		if err != nil || len(query) > 1 || len(query["history-page"]) > 1 || (len(query) == 1 && len(query["history-page"]) != 1) {
-			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
+		if err != nil {
+			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")
 			return
 		}
+		for key, values := range query {
+			if (key != "history-page" && key != "history-through-revision") || len(values) != 1 {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")
+				return
+			}
+		}
 		page := 1
-		if values := query["history-page"]; len(values) == 1 {
-			page, err = strconv.Atoi(values[0])
+		if query.Has("history-page") {
+			page, err = strconv.Atoi(query.Get("history-page"))
 			if err != nil {
 				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
+				return
+			}
+		}
+		var throughRevision int64
+		if query.Has("history-through-revision") {
+			throughRevision, err = strconv.ParseInt(query.Get("history-through-revision"), 10, 64)
+			if err != nil || throughRevision < 1 {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history revision.")
 				return
 			}
 		}
@@ -141,7 +155,7 @@ func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
 			return
 		}
-		record, err := service.GetDecisionPage(r.Context(), r.PathValue("id"), time.Now(), page)
+		record, err := service.GetDecisionPage(r.Context(), r.PathValue("id"), time.Now(), page, throughRevision)
 		if writeBanError(w, logger, err) {
 			return
 		}

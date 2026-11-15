@@ -164,11 +164,11 @@ ORDER BY q.ip, q.destination
 
 // GetDecision returns the persisted decision and the newest bounded history page.
 func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Record, error) {
-	return s.GetDecisionPage(ctx, id, now, 1)
+	return s.GetDecisionPage(ctx, id, now, 1, 0)
 }
 
 // GetDecisionPage returns one consistent snapshot of a decision and its history page.
-func (s *Store) GetDecisionPage(ctx context.Context, id string, now time.Time, page int) (bans.Record, error) {
+func (s *Store) GetDecisionPage(ctx context.Context, id string, now time.Time, page int, throughRevision int64) (bans.Record, error) {
 	if _, err := bans.HistoryOffset(page); err != nil {
 		return bans.Record{}, err
 	}
@@ -181,8 +181,11 @@ func (s *Store) GetDecisionPage(ctx context.Context, id string, now time.Time, p
 	if err != nil {
 		return bans.Record{}, err
 	}
+	if throughRevision == 0 {
+		throughRevision = record.Decision.Revision
+	}
 	var hasMore bool
-	record.DeliveryHistory, hasMore, err = readDeliveryHistory(ctx, tx, record.Decision.IP, page)
+	record.DeliveryHistory, hasMore, err = readDeliveryHistory(ctx, tx, record.Decision.IP, page, throughRevision)
 	if err != nil {
 		return bans.Record{}, err
 	}

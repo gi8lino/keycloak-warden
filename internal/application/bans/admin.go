@@ -36,7 +36,7 @@ type Store interface {
 	// GetDecision returns the decision, including released historical decisions.
 	GetDecision(context.Context, string, time.Time) (Record, error)
 	// GetDecisionPage retrieves one bounded, numbered history page.
-	GetDecisionPage(context.Context, string, time.Time, int) (Record, error)
+	GetDecisionPage(context.Context, string, time.Time, int, int64) (Record, error)
 }
 
 // AdminService coordinates validated administrative ban operations independently of HTTP and SQLite.
@@ -118,12 +118,12 @@ func (s *AdminService) GetDecision(ctx context.Context, id string, now time.Time
 }
 
 // GetDecisionPage validates a one-based history page without coupling HTTP to SQLite.
-func (s *AdminService) GetDecisionPage(ctx context.Context, id string, now time.Time, page int) (Record, error) {
+func (s *AdminService) GetDecisionPage(ctx context.Context, id string, now time.Time, page int, throughRevision int64) (Record, error) {
 	if strings.TrimSpace(id) == "" {
 		return Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 	if _, err := HistoryOffset(page); err != nil {
 		return Record{}, err
 	}
-	return s.store.GetDecisionPage(ctx, id, now, page)
+	return s.store.GetDecisionPage(ctx, id, now, page, throughRevision)
 }

@@ -196,10 +196,13 @@ func TestRunPage(t *testing.T) {
 			mu.Unlock()
 			switch page {
 			case "":
-				_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":1,"historyNextPage":2,"deliveryHistory":[{"revision":3,"destination":"edge"}]}`))
+				assert.Empty(t, r.URL.Query().Get("history-through-revision"))
+				_, _ = w.Write([]byte(`{"decision":{"id":"one","revision":3},"historyPage":1,"historyNextPage":2,"deliveryHistory":[{"revision":3,"destination":"edge"}]}`))
 			case "2":
+				assert.Equal(t, "3", r.URL.Query().Get("history-through-revision"))
 				_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":2,"historyNextPage":3,"deliveryHistory":[{"revision":2,"destination":"edge"}]}`))
 			case "3":
+				assert.Equal(t, "3", r.URL.Query().Get("history-through-revision"))
 				_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":3,"deliveryHistory":[{"revision":1,"destination":"edge"}]}`))
 			default:
 				w.WriteHeader(http.StatusBadRequest)

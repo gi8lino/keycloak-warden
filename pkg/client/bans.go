@@ -45,15 +45,31 @@ func (c *Client) Get(ctx context.Context, decisionID string) (Record, error) {
 // GetPage retrieves a one-based history page directly using SQLite LIMIT/OFFSET.
 // The decision and acknowledgements always describe the latest persisted state.
 func (c *Client) GetPage(ctx context.Context, decisionID string, page int) (Record, error) {
+	return c.GetPageThroughRevision(ctx, decisionID, page, 0)
+}
+
+// GetPageThroughRevision excludes revisions newer than the first page of a traversal.
+// A zero revision selects the latest history.
+func (c *Client) GetPageThroughRevision(ctx context.Context, decisionID string, page int, throughRevision int64) (Record, error) {
 	if strings.TrimSpace(decisionID) == "" {
 		return Record{}, errors.New("decision ID is required")
+	}
+	if throughRevision < 0 {
+		return Record{}, errors.New("history revision must be nonnegative")
 	}
 	if page < 1 {
 		return Record{}, errors.New("history-page must be positive")
 	}
 	path := "/bans/" + url.PathEscape(decisionID)
+	query := url.Values{}
 	if page != 1 {
-		path += "?history-page=" + strconv.Itoa(page)
+		query.Set("history-page", strconv.Itoa(page))
+	}
+	if throughRevision != 0 {
+		query.Set("history-through-revision", strconv.FormatInt(throughRevision, 10))
+	}
+	if len(query) > 0 {
+		path += "?" + query.Encode()
 	}
 	return c.doBanRequest(ctx, http.MethodGet, path, nil)
 }

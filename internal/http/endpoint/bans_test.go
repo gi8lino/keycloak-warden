@@ -102,7 +102,7 @@ func (s *scriptedAdministration) ListActive(context.Context, time.Time) ([]bans.
 	return s.records, s.err
 }
 
-func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _ time.Time, page int) (bans.Record, error) {
+func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _ time.Time, page int, throughRevision int64) (bans.Record, error) {
 	s.calls++
 	s.id = id
 	s.page = page

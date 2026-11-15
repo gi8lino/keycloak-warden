@@ -318,7 +318,7 @@ func TestAdminServiceTargets(t *testing.T) {
 }
 
 // GetDecisionPage records the one-based page forwarded to persistence.
-func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page int) (bans.Record, error) {
+func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page int, throughRevision int64) (bans.Record, error) {
 	r.id = id
 	r.historyPage = page
 	return bans.Record{}, nil
@@ -333,7 +333,7 @@ func TestAdminServiceGetDecisionPage(t *testing.T) {
 		service, err := bans.NewAdminService(store, nil)
 		require.NoError(t, err)
 
-		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 100)
+		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 100, 0)
 		require.NoError(t, err)
 		assert.Equal(t, 100, store.historyPage)
 		assert.Equal(t, "one", store.id)
@@ -345,7 +345,7 @@ func TestAdminServiceGetDecisionPage(t *testing.T) {
 		service, err := bans.NewAdminService(store, nil)
 		require.NoError(t, err)
 
-		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 0)
+		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 0, 0)
 		require.ErrorIs(t, err, bans.ErrInvalid)
 		assert.Empty(t, store.id)
 	})

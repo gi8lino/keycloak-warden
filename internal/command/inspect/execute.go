@@ -54,7 +54,7 @@ func execute(ctx context.Context, api *client.Client, ids []string, page int, al
 				if next <= record.HistoryPage || len(record.DeliveryHistory) == 0 {
 					return nil, fmt.Errorf("inspect decision %q: invalid history page sequence", id)
 				}
-				older, err := api.GetPage(ctx, id, next)
+				older, err := api.GetPageThroughRevision(ctx, id, next, record.Decision.Revision)
 				if err != nil {
 					return nil, fmt.Errorf("inspect decision %q history page %d: %w", id, next, err)
 				}
