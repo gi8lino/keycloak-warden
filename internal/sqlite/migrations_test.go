@@ -266,3 +266,51 @@ func TestMigrateRejectsNewerDatabase(t *testing.T) {
 	}
 	require.ErrorContains(t, err, "newer than supported version")
 }
+
+func TestUpgradeVersionSixLayouts(t *testing.T) {
+	t.Parallel()
+	t.Run("integer active flag", func(t *testing.T) { t.Parallel(); verifyVersionSixUpgrade(t, false) })
+	t.Run("text decision state", func(t *testing.T) { t.Parallel(); verifyVersionSixUpgrade(t, true) })
+}
+
+// verifyVersionSixUpgrade opens a populated historical layout through the normal migration path.
+func verifyVersionSixUpgrade(t *testing.T, textState bool) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "v6.db")
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	baseline, err := os.ReadFile("migrations/0006_baseline.sql")
+	require.NoError(t, err)
+	schema := string(baseline)
+	banned, released := "1", "0"
+	if textState {
+		schema = strings.ReplaceAll(schema, "active INTEGER NOT NULL", "state TEXT NOT NULL")
+		schema = strings.ReplaceAll(schema, "decisions (active, expires)", "decisions (state, expires)")
+		banned, released = "'banned'", "'unbanned'"
+	}
+	_, err = db.Exec(schema)
+	require.NoError(t, err)
+	_, err = db.Exec(`
+ CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at INTEGER NOT NULL);
+ INSERT INTO schema_migrations VALUES(6,0);
+ INSERT INTO decisions VALUES('ip','ban',2,` + banned + `,100,5),('ip2','release',3,` + released + `,0,2);
+ INSERT INTO ban_sources VALUES('ip','manual',100,'reason');
+ INSERT INTO deliveries VALUES('ip','edge',1,123);
+ INSERT INTO delivery_history VALUES('ip',2,'edge','banned','retrying',NULL,NULL);
+ INSERT INTO delivery_attempts VALUES('ip',2,'edge',1,111,'timeout');`)
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+	migrateTestDatabase(t, path)
+	db, err = sql.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	var count int
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM decisions WHERE (id='ban' AND state='banned' AND failure_generation=5) OR (id='release' AND state='unbanned')`).Scan(&count))
+	assert.Equal(t, 2, count)
+	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM delivery_attempts JOIN deliveries USING(ip,destination) JOIN ban_sources USING(ip) WHERE error='timeout' AND retry_at=123 AND reason='reason'`).Scan(&count))
+	assert.Equal(t, 1, count)
+	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM pragma_foreign_key_check").Scan(&count))
+	assert.Zero(t, count)
+	_, err = db.Exec("UPDATE delivery_history SET status='invalid'")
+	require.ErrorContains(t, err, "CHECK")
+}
