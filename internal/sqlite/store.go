@@ -4,11 +4,13 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
 	"path/filepath"
 
+	"github.com/gofrs/flock"
 	_ "modernc.org/sqlite"
 )
 
@@ -16,6 +18,8 @@ import (
 type Store struct {
 	// db owns the single SQLite connection used for state changes.
 	db *sql.DB
+	// lock holds exclusive Warden ownership until the SQLite connection closes.
+	lock *flock.Flock
 	// changes coalesces committed decision changes until the worker observes them.
 	changes chan struct{}
 }
@@ -26,6 +30,7 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	file, err := os.OpenFile(absolute, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, err
@@ -34,13 +39,38 @@ func Open(path string) (*Store, error) {
 		return nil, err
 	}
 
-	location := url.URL{Scheme: "file", Path: absolute}
+	canonical, err := filepath.EvalSymlinks(absolute)
+	if err != nil {
+		return nil, err
+	}
+
+	lock := flock.New(canonical+".lock", flock.SetPermissions(0o600))
+	acquired, err := lock.TryLock()
+	if err != nil {
+		return nil, fmt.Errorf("lock Warden database %q: %w", canonical, err)
+	}
+	if !acquired {
+		return nil, fmt.Errorf("another Warden instance owns database %q", canonical)
+	}
+
+	db, err := openDatabase(canonical)
+	if err != nil {
+		return nil, errors.Join(err, lock.Close())
+	}
+	return &Store{db: db, lock: lock, changes: make(chan struct{}, 1)}, nil
+}
+
+// openDatabase initializes SQLite after the caller has acquired exclusive Warden ownership.
+func openDatabase(path string) (*sql.DB, error) {
+	location := url.URL{Scheme: "file", Path: path}
 	db, err := sql.Open("sqlite", location.String())
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 
+	// Wait up to five seconds for SQLite locks, use WAL so readers can run
+	// during a write, and enforce foreign key constraints on this connection.
 	if _, err := db.Exec(`
 PRAGMA busy_timeout = 5000;
 PRAGMA journal_mode = WAL;
@@ -62,17 +92,14 @@ PRAGMA foreign_keys = ON;
 		return nil, fmt.Errorf("optimize sqlite database: %w", err)
 	}
 
-	return &Store{
-		db:      db,
-		changes: make(chan struct{}, 1),
-	}, nil
+	return db, nil
 }
 
 // Ping confirms that the underlying store can answer a query.
 func (s *Store) Ping(ctx context.Context) error { return s.db.PingContext(ctx) }
 
 // Close releases the database after HTTP handlers and dispatch have stopped.
-func (s *Store) Close() error { return s.db.Close() }
+func (s *Store) Close() error { return errors.Join(s.db.Close(), s.lock.Close()) }
 
 // Changes signals that a committed decision may have changed the worker's next deadline.
 func (s *Store) Changes() <-chan struct{} { return s.changes }

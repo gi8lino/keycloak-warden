@@ -7,6 +7,7 @@
 *.db
 *.db-shm
 *.db-wal
+*.db.lock
 
 # Saved local development ports.
 /.dev-ports.json

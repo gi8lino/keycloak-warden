@@ -46,6 +46,6 @@ Use your real Service name and application route prefix if customized. Snitch an
 
 ## Upgrades
 
-Check the [release notes](https://github.com/gi8lino/keycloak-warden/releases), back up the database, and deploy one instance at a time. Database migrations run automatically on startup.
+Check the [release notes](https://github.com/gi8lino/keycloak-warden/releases), back up the database, and deploy one instance at a time. Database migrations run automatically on startup. Warden takes a nonblocking OS lock on `<database>.lock` before migration and holds it until shutdown. Use one database path on a filesystem that supports advisory locks. A second instance using that path exits immediately. The OS releases ownership after a crash; leave the lock file in place.
 
 See [Operations](operations.md) for health endpoints and baseline migration maintenance.

@@ -8,6 +8,7 @@ require (
 	github.com/containeroo/notifykit v0.11.0
 	github.com/containeroo/resolver v0.5.0
 	github.com/containeroo/tinyflags v0.12.0
+	github.com/gofrs/flock v0.13.2
 	github.com/prometheus/client_golang v1.25.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0
