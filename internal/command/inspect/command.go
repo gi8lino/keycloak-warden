@@ -17,7 +17,7 @@ func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode 
 	command.MinPositional(1)
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
-	page := command.Int("history-page", 1, "One-based delivery-history page (default: 1)").
+	page := command.Int("history-page", 1, "One-based delivery-history page").
 		Placeholder("NUMBER").
 		OneOfGroup("history").
 		Validate(tinyflags.Positive[int]()).

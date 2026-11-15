@@ -52,6 +52,7 @@ func RegisterAdmin(cmd *tinyflags.Command, server ServerFlags) AdminFlags {
 	flags := AdminFlags{
 		ApplicationURL: cmd.String("application-url", "", "Override the URL derived from --listen-address and --route-prefix").
 			Section(sectionAdminAPI).
+			Placeholder("URL").
 			Value(),
 		AdminToken: cmd.String("admin-token", "", "Application API administrator bearer token").
 			Section(sectionAdminAPI).
