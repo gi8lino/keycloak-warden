@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
@@ -25,7 +26,7 @@ func TestExecute(t *testing.T) {
 
 		batch, failures := execute(ctx, client, []string{"203.0.113.10", "203.0.113.20"}, time.Hour, "incident")
 
-		assert.Equal(t, "ban", batch.Operation)
+		assert.Equal(t, output.OperationBan, batch.Operation)
 		assert.Empty(t, batch.Results)
 		assert.Zero(t, batch.Succeeded)
 		assert.Zero(t, batch.Failed)

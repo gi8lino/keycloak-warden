@@ -17,7 +17,7 @@ func execute(
 	ids map[string]string,
 ) (batch output.Batch, failures []error) {
 	batch = output.Batch{
-		Operation: "unban",
+		Operation: output.OperationUnban,
 		Results:   make([]output.Item, 0, len(addresses)),
 	}
 

@@ -4,6 +4,16 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
+// Operation identifies an administrative batch command in CLI output.
+type Operation string
+
+const (
+	// OperationBan identifies a manual ban command.
+	OperationBan Operation = "ban"
+	// OperationUnban identifies a manual unban command.
+	OperationUnban Operation = "unban"
+)
+
 // Item describes the outcome of one requested IP operation.
 type Item struct {
 	// IPAddress is the canonical IP on which the operation was attempted.
@@ -19,7 +29,7 @@ type Item struct {
 // Batch is a complete response for a multi-IP administrative command.
 type Batch struct {
 	// Operation identifies whether this batch is a ban or unban request.
-	Operation string `json:"operation" yaml:"operation"`
+	Operation Operation `json:"operation" yaml:"operation"`
 	// Results contains one record per canonical requested address.
 	Results []Item `json:"results" yaml:"results"`
 	// Succeeded counts successful operations.

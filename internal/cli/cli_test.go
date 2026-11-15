@@ -231,7 +231,7 @@ func TestRun(t *testing.T) {
 		require.NoError(t, err, stderr.String())
 		var result struct {
 			// Operation identifies the requested administrative action.
-			Operation string `json:"operation"`
+			Operation output.Operation `json:"operation"`
 			// Results contains the outcome for each requested address.
 			Results []struct {
 				// IPAddress is the canonical address selected by the operation.
@@ -252,7 +252,7 @@ func TestRun(t *testing.T) {
 		}
 
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &result))
-		assert.Equal(t, "ban", result.Operation)
+		assert.Equal(t, output.OperationBan, result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		require.Len(t, result.Results, 1)
 		assert.Equal(t, "203.0.113.10", result.Results[0].IPAddress)
@@ -282,7 +282,7 @@ func TestRun(t *testing.T) {
 		require.NoError(t, err, stderr.String())
 		var result struct {
 			// Operation identifies the requested administrative action.
-			Operation string `yaml:"operation"`
+			Operation output.Operation `yaml:"operation"`
 			// Succeeded counts successful address operations.
 			Succeeded int `yaml:"succeeded"`
 			// Results contains the outcome for each requested address.
@@ -295,7 +295,7 @@ func TestRun(t *testing.T) {
 		}
 
 		require.NoError(t, yaml.Load(stdout.Bytes(), &result))
-		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, output.OperationUnban, result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		require.Len(t, result.Results, 1)
 		assert.Equal(t, "203.0.113.10", result.Results[0].IPAddress)
@@ -428,7 +428,7 @@ func TestRun(t *testing.T) {
 
 		var batch output.Batch
 		require.NoError(t, yaml.Load(stdout.Bytes(), &batch))
-		assert.Equal(t, "ban", batch.Operation)
+		assert.Equal(t, output.OperationBan, batch.Operation)
 		assert.Equal(t, 2, batch.Succeeded)
 		assert.Zero(t, batch.Failed)
 	})
@@ -462,7 +462,7 @@ func TestRun(t *testing.T) {
 		assert.EqualValues(t, 1, deletes.Load())
 		var batch output.Batch
 		require.NoError(t, yaml.Load(stdout.Bytes(), &batch))
-		assert.Equal(t, "unban", batch.Operation)
+		assert.Equal(t, output.OperationUnban, batch.Operation)
 		assert.Equal(t, 1, batch.Succeeded)
 		assert.Zero(t, batch.Failed)
 	})

@@ -45,7 +45,11 @@ func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, er
 }
 
 // readActiveBans selects active decisions in IP order and indexes their positions.
-func readActiveBans(ctx context.Context, tx *sql.Tx, now time.Time) (list []bans.Record, byIP map[string]int, err error) {
+func readActiveBans(
+	ctx context.Context,
+	tx *sql.Tx,
+	now time.Time,
+) (list []bans.Record, byIP map[string]int, err error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT id, revision, ip, active, expires
 FROM decisions
@@ -88,7 +92,13 @@ ORDER BY ip
 }
 
 // appendActiveSources attaches unexpired sources to the selected active decisions.
-func appendActiveSources(ctx context.Context, tx *sql.Tx, list []bans.Record, byIP map[string]int, now time.Time) error {
+func appendActiveSources(
+	ctx context.Context,
+	tx *sql.Tx,
+	list []bans.Record,
+	byIP map[string]int,
+	now time.Time,
+) error {
 	rows, err := tx.QueryContext(ctx, `
 SELECT s.ip, s.kind, s.expires, s.reason
 FROM ban_sources AS s
@@ -119,7 +129,13 @@ ORDER BY s.ip, s.kind
 }
 
 // appendActiveDeliveries attaches destination acknowledgements in destination order.
-func appendActiveDeliveries(ctx context.Context, tx *sql.Tx, list []bans.Record, byIP map[string]int, now time.Time) error {
+func appendActiveDeliveries(
+	ctx context.Context,
+	tx *sql.Tx,
+	list []bans.Record,
+	byIP map[string]int,
+	now time.Time,
+) error {
 	rows, err := tx.QueryContext(ctx, `
 SELECT q.ip, q.destination, q.acknowledged
 FROM deliveries AS q
@@ -185,5 +201,9 @@ func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Re
 		return bans.Record{}, err
 	}
 
-	return bans.Record{Decision: decision, Sources: sources, Deliveries: deliveries}, nil
+	return bans.Record{
+		Decision:   decision,
+		Sources:    sources,
+		Deliveries: deliveries,
+	}, nil
 }

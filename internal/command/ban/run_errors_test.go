@@ -83,7 +83,7 @@ func TestRunFailures(t *testing.T) {
 			return nil
 		})
 		require.ErrorIs(t, err, context.Canceled)
-		assert.Equal(t, "ban", batch.Operation)
+		assert.Equal(t, output.OperationBan, batch.Operation)
 		assert.Empty(t, batch.Results)
 	})
 }

@@ -2,6 +2,7 @@ package output
 
 import (
 	"bytes"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,8 @@ func TestBatchYAML(t *testing.T) {
 		t.Parallel()
 
 		batch := Batch{
-			Operation: "ban", Results: []Item{
+			Operation: OperationBan,
+			Results: []Item{
 				{IPAddress: "203.0.113.10", Success: true},
 				{IPAddress: "203.0.113.20", Error: "rejected"},
 			},
@@ -39,7 +41,8 @@ func TestBatchYAML(t *testing.T) {
 		t.Parallel()
 
 		batch := Batch{
-			Operation: "ban", Results: []Item{{
+			Operation: OperationBan,
+			Results: []Item{{
 				IPAddress: "203.0.113.10",
 				Success:   true,
 				Ban: &client.Record{
@@ -69,7 +72,7 @@ func TestBatchYAML(t *testing.T) {
 		t.Parallel()
 
 		batch := Batch{
-			Operation: "unban",
+			Operation: OperationUnban,
 			Results:   []Item{{IPAddress: "203.0.113.10", Success: true}},
 			Succeeded: 1,
 		}
@@ -80,5 +83,37 @@ func TestBatchYAML(t *testing.T) {
 		var result Batch
 		require.NoError(t, yaml.Load(output.Bytes(), &result))
 		assert.Equal(t, batch, result)
+	})
+}
+
+func TestOperationJSON(t *testing.T) {
+	t.Parallel()
+
+	t.Run("ban uses the existing wire value", func(t *testing.T) {
+		t.Parallel()
+
+		var encoded bytes.Buffer
+		err := New(ptr(FormatJSON), &encoded)(Batch{Operation: OperationBan})
+
+		require.NoError(t, err)
+		assert.Contains(t, encoded.String(), `"operation": "ban"`)
+
+		var decoded Batch
+		require.NoError(t, json.Unmarshal(encoded.Bytes(), &decoded))
+		assert.Equal(t, OperationBan, decoded.Operation)
+	})
+
+	t.Run("unban uses the existing wire value", func(t *testing.T) {
+		t.Parallel()
+
+		var encoded bytes.Buffer
+		err := New(ptr(FormatJSON), &encoded)(Batch{Operation: OperationUnban})
+
+		require.NoError(t, err)
+		assert.Contains(t, encoded.String(), `"operation": "unban"`)
+
+		var decoded Batch
+		require.NoError(t, json.Unmarshal(encoded.Bytes(), &decoded))
+		assert.Equal(t, OperationUnban, decoded.Operation)
 	})
 }

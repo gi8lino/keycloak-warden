@@ -18,7 +18,7 @@ func execute(
 	reason string,
 ) (batch output.Batch, failures []error) {
 	batch = output.Batch{
-		Operation: "ban",
+		Operation: output.OperationBan,
 		Results:   make([]output.Item, 0, len(addresses)),
 	}
 

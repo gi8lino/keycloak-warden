@@ -59,7 +59,7 @@ func TestRun(t *testing.T) {
 		assert.EqualValues(t, 1, gets.Load())
 		var result clioutput.Batch
 		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, clioutput.OperationUnban, result.Operation)
 		assert.Equal(t, 2, result.Succeeded)
 		assert.Zero(t, result.Failed)
 		require.Len(t, result.Results, 2)
@@ -111,7 +111,7 @@ func TestRun(t *testing.T) {
 		assert.EqualValues(t, 1, gets.Load())
 		var result clioutput.Batch
 		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, clioutput.OperationUnban, result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		assert.Equal(t, 1, result.Failed)
 		require.Len(t, result.Results, 2)
@@ -148,7 +148,7 @@ func TestRun(t *testing.T) {
 		assert.EqualValues(t, 1, deletes.Load())
 		var result clioutput.Batch
 		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, "unban", result.Operation)
+		assert.Equal(t, clioutput.OperationUnban, result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		assert.Equal(t, 1, result.Failed)
 		require.Len(t, result.Results, 2)
