@@ -268,7 +268,7 @@ func TestWaitUntilNoDeadline(t *testing.T) {
 		synctest.Wait()
 		select {
 		case <-done:
-			t.Fatal("idle worker did not wait")
+			require.FailNow(t, "idle worker did not wait")
 		default:
 		}
 		changes <- struct{}{}
@@ -276,7 +276,7 @@ func TestWaitUntilNoDeadline(t *testing.T) {
 		select {
 		case <-done:
 		default:
-			t.Fatal("idle worker did not resume on change")
+			require.FailNow(t, "idle worker did not resume on change")
 		}
 	})
 }

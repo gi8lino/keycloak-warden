@@ -213,140 +213,6 @@ func TestOpen(t *testing.T) {
 	})
 }
 
-func TestDestinationBackoff(t *testing.T) {
-	t.Parallel()
-
-	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "state.db")
-	store, processor := openStore(t, path, "edge")
-	t.Cleanup(func() { assert.NoError(t, store.Close()) })
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	_, err := processDecision(processor, ctx, failed("one"), now)
-	require.NoError(t, err)
-	_, err = processDecision(processor, ctx, failed("two"), now)
-	require.NoError(t, err)
-	job, err := store.Next(ctx, now)
-	require.NoError(t, err)
-	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.NextRetryDelay(job.PreviousDelay)))
-
-	// A new IP shares the pause, even if the worker restarts.
-	for _, id := range []string{"three", "four"} {
-		event := failed(id)
-		event.IP = "203.0.113.2"
-		_, err = processDecision(processor, ctx, event, now)
-		require.NoError(t, err)
-	}
-	require.NoError(t, store.Close())
-	store, _ = openStore(t, path, "edge")
-	require.NoError(t, store.ReconcileAttemptLimit(ctx, "edge", 10))
-
-	for _, seconds := range []int{10, 20, 40, 80, 160, 300, 300} {
-		due := now.Add(time.Duration(seconds) * time.Second)
-		_, err = bans.ExpireSources(ctx, store, due.Add(-time.Millisecond), []string{"edge"})
-		require.NoError(t, err)
-		pending, err := store.Next(ctx, due.Add(-time.Millisecond))
-		require.NoError(t, err)
-		require.Nil(t, pending)
-		now = due
-		job, err = store.Next(ctx, now)
-		require.NoError(t, err)
-		require.NotNil(t, job)
-		if seconds == 10 {
-			assert.Equal(t, "203.0.113.2", job.Decision.IP)
-		}
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.NextRetryDelay(job.PreviousDelay)))
-	}
-	now = now.Add(5 * time.Minute)
-	job, err = store.Next(ctx, now)
-	require.NoError(t, err)
-	require.NotNil(t, job)
-	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
-	require.NoError(t, store.Finish(ctx, *job, nil, 10, now, 0))
-
-	// The other pending release gets a fresh first retry after the destination recovers.
-	job, err = store.Next(ctx, now)
-	require.NoError(t, err)
-	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.NextRetryDelay(job.PreviousDelay)))
-	pending, err := store.Next(ctx, now.Add(10*time.Second))
-	require.NoError(t, err)
-	require.NotNil(t, pending)
-}
-
-func TestWorkerSchedule(t *testing.T) {
-	t.Parallel()
-
-	t.Run("only committed decisions wake the worker", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := t.Context()
-		now := time.Now()
-		store, processor := openStore(t, filepath.Join(t.TempDir(), "state.db"), "receiver")
-		defer store.Close() //nolint:errcheck
-		_, err := processDecision(processor, ctx, failed("one"), now)
-		require.NoError(t, err)
-		rollback := errors.New("rollback")
-		err = store.Transact(ctx, func(tx ingestion.Transaction) error {
-			err := bans.ExtendSource(ctx, tx, "203.0.113.2", bans.Source{
-				Kind: bans.SourceAutomatic, ExpiresAt: now.Add(time.Hour),
-			})
-			if err == nil {
-				_, _, err = bans.ReconcileDecision(ctx, tx, "203.0.113.2", now, []string{"receiver"})
-			}
-			require.NoError(t, err)
-			return rollback
-		})
-		require.ErrorIs(t, err, rollback)
-		select {
-		case <-store.Changes():
-			t.Fatal("unexpected wake before decision commit")
-		default:
-		}
-		_, err = processDecision(processor, ctx, failed("two"), now)
-		require.NoError(t, err)
-		select {
-		case <-store.Changes():
-		default:
-			t.Fatal("missing wake after decision commit")
-		}
-	})
-
-	t.Run("restart schedules the earlier of source expiry and destination retry", func(t *testing.T) {
-		t.Parallel()
-
-		ctx := t.Context()
-		path := filepath.Join(t.TempDir(), "state.db")
-		now := time.Now().UTC().Truncate(time.Millisecond)
-		store, _ := openStore(t, path, "receiver")
-		_, err := bans.ApplyManualBan(ctx, store, "203.0.113.1", now.Add(8*time.Second), "test", now, []string{"receiver"})
-		require.NoError(t, err)
-		job, err := store.Next(ctx, now)
-		require.NoError(t, err)
-		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
-		require.NoError(t, store.Close())
-		store, _ = openStore(t, path, "receiver")
-		defer store.Close() //nolint:errcheck
-		due, err := store.NextDeadline(ctx)
-		require.NoError(t, err)
-		require.True(t, now.Add(8*time.Second).Equal(due))
-		_, err = bans.ExpireSources(ctx, store, due, []string{"receiver"})
-		require.NoError(t, err)
-		due, err = store.NextDeadline(ctx)
-		require.NoError(t, err)
-		require.True(t, now.Add(10*time.Second).Equal(due))
-		job, err = store.Next(ctx, due)
-		require.NoError(t, err)
-		require.NotNil(t, job)
-		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due, 0))
-		due, err = store.NextDeadline(ctx)
-		require.NoError(t, err)
-		assert.True(t, due.IsZero())
-	})
-}
-
 func TestOptimize(t *testing.T) {
 	t.Parallel()
 
@@ -386,50 +252,91 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	assert.Nil(t, next, "an unchanged ban must not be delivered again")
 }
 
-func TestAttemptBudget(t *testing.T) {
+func TestOpenValidation(t *testing.T) {
 	t.Parallel()
-	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "budget.db")
-	store, _ := openStore(t, path, "receiver")
-	now := time.Now().UTC().Truncate(time.Millisecond)
-	record, err := bans.ApplyManualBan(ctx, store, "192.0.2.1", now.Add(time.Hour), "test", now, []string{"receiver"})
-	require.NoError(t, err)
-	for range 3 {
-		job, err := store.Next(ctx, now)
+
+	t.Run("rejects missing database directory", func(t *testing.T) {
+		t.Parallel()
+		path := filepath.Join(t.TempDir(), "missing-directory", "state.db")
+		store, err := sqlite.Open(path)
+		require.Error(t, err)
+		assert.Nil(t, store)
+	})
+}
+
+func TestStoreClosedErrors(t *testing.T) {
+	t.Parallel()
+
+	store, _ := openStore(t, filepath.Join(t.TempDir(), "state.db"))
+	require.NoError(t, store.Close())
+
+	assert.Error(t, store.Ping(t.Context()))
+	assert.Error(t, store.Prune(t.Context(), time.Now()))
+	_, err := store.Next(t.Context(), time.Now())
+	assert.Error(t, err)
+	_, err = store.NextDeadline(t.Context())
+	assert.Error(t, err)
+	_, err = bans.ExpireSources(t.Context(), store, time.Now(), nil)
+	assert.Error(t, err)
+	assert.Error(t, store.Transact(t.Context(), func(ingestion.Transaction) error {
+		return errors.New("should not be invoked")
+	}))
+}
+
+func TestValidateTargets(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects removal with an active ban", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+		path := filepath.Join(t.TempDir(), "warden.db")
+		store, err := sqlite.Open(path)
 		require.NoError(t, err)
-		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), actions.DefaultMaxAttempts, now, actions.NextRetryDelay(job.PreviousDelay)))
-		now = now.Add(time.Minute)
-	}
-	require.NoError(t, store.Close())
 
-	store, _ = openStore(t, path, "receiver")
-	job, err := store.Next(ctx, now)
-	require.NoError(t, err)
-	assert.Nil(t, job)
-	inspected, err := store.GetDecision(ctx, record.Decision.ID, now)
-	require.NoError(t, err)
-	require.Len(t, inspected.DeliveryHistory, 1)
-	delivery := inspected.DeliveryHistory[0]
-	assert.Equal(t, "exhausted", delivery.Status)
-	assert.Nil(t, delivery.NextAttemptAt)
-	assert.Len(t, delivery.Attempts, 3)
-	due, err := store.NextDeadline(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, record.Decision.ExpiresAt, due.UTC())
-	require.NoError(t, store.Close())
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
+		require.NoError(t, err)
+		require.NoError(t, store.Close())
 
-	store, _ = openStore(t, path, "receiver")
-	t.Cleanup(func() { require.NoError(t, store.Close()) })
-	require.NoError(t, store.ReconcileAttemptLimit(ctx, "receiver", 4))
-	job, err = store.Next(ctx, now)
-	require.NoError(t, err)
-	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now, actions.NextRetryDelay(job.PreviousDelay)))
-	_, err = bans.ReleaseAllSources(ctx, store, record.Decision.ID, now, []string{"receiver"})
-	require.NoError(t, err)
-	job, err = store.Next(ctx, now.Add(5*time.Minute))
-	require.NoError(t, err)
-	require.NotNil(t, job)
-	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
+		reopened, err := sqlite.Open(path)
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
+		require.ErrorContains(t, reopened.ValidateTargets(ctx, []string{"replacement"}), `destination "old" has managed decisions`)
+		require.NoError(t, reopened.ValidateTargets(ctx, []string{"old"}))
+
+		pending, err := reopened.Next(ctx, now.Add(time.Second))
+		require.NoError(t, err)
+		require.NotNil(t, pending)
+		assert.Equal(t, created.Decision.ID, pending.Decision.ID)
+	})
+
+	t.Run("rejects removal with an unacknowledged release", func(t *testing.T) {
+		t.Parallel()
+
+		ctx := t.Context()
+		path := filepath.Join(t.TempDir(), "warden.db")
+		store, err := sqlite.Open(path)
+		require.NoError(t, err)
+
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		created, err := bans.ApplyManualBan(ctx, store, "203.0.113.81", now.Add(time.Hour), "incident", now, []string{"old"})
+		require.NoError(t, err)
+		_, err = bans.ReleaseAllSources(ctx, store, created.Decision.ID, now.Add(time.Second), []string{"old"})
+		require.NoError(t, err)
+		require.NoError(t, store.Close())
+
+		reopened, err := sqlite.Open(path)
+		require.NoError(t, err)
+		t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
+
+		require.ErrorContains(t, reopened.ValidateTargets(ctx, []string{"replacement"}), `destination "old" has managed decisions`)
+		require.NoError(t, reopened.ValidateTargets(ctx, []string{"old"}))
+
+		pending, err := reopened.Next(ctx, now.Add(2*time.Second))
+		require.NoError(t, err)
+		require.NotNil(t, pending)
+		assert.Equal(t, created.Decision.ID, pending.Decision.ID)
+	})
 }

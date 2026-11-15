@@ -246,52 +246,80 @@ func TestServiceProcess(t *testing.T) {
 }
 
 // TestProcessingOutcomes distinguishes every non-error detection path for diagnostic logging.
+// assertProcessingOutcome checks one independent processing path.
+func assertProcessingOutcome(t *testing.T, kind, ip string, inserted bool, count int, unchanged bool, outcome ingestion.Outcome, reason string) {
+	t.Helper()
+
+	tx := &fakeTx{
+		inserted:  inserted,
+		count:     count,
+		unchanged: unchanged,
+	}
+	repo := &fakeRepository{tx: tx}
+	service, err := ingestion.New(repo, detection.Rule{
+		Threshold: 5,
+		Window:    time.Minute,
+		Ban:       15 * time.Minute,
+	}, nil)
+	require.NoError(t, err)
+
+	event := validEvent()
+	event.Kind = kind
+	event.IP = ip
+	result, err := service.Process(t.Context(), event, time.Now())
+
+	require.NoError(t, err)
+	assert.Equal(t, outcome, result.Outcome)
+	assert.Equal(t, reason, result.Reason)
+	if outcome == ingestion.OutcomeUpdated {
+		require.NotNil(t, result.Decision)
+	} else {
+		assert.Nil(t, result.Decision)
+	}
+	if outcome == ingestion.OutcomeBelowThreshold || outcome == ingestion.OutcomeUpdated || outcome == ingestion.OutcomeUnchanged {
+		assert.Equal(t, count, result.Failures)
+		assert.Equal(t, 5, result.Threshold)
+	}
+}
+
 func TestProcessingOutcomes(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		name      string
-		kind      string
-		ip        string
-		inserted  bool
-		count     int
-		unchanged bool
-		outcome   ingestion.Outcome
-		reason    string
-	}{
-		{name: "ignored event type", kind: "LOGIN", ip: "203.0.113.5", outcome: ingestion.OutcomeIgnored, reason: "unsupported_event_type"},
-		{name: "missing address", kind: "LOGIN_ERROR", outcome: ingestion.OutcomeIgnored, reason: "missing_ip"},
-		{name: "duplicate", kind: "LOGIN_ERROR", ip: "203.0.113.5", outcome: ingestion.OutcomeDuplicate},
-		{name: "below threshold", kind: "LOGIN_ERROR", ip: "203.0.113.5", inserted: true, count: 4, outcome: ingestion.OutcomeBelowThreshold},
-		{name: "threshold met", kind: "LOGIN_ERROR", ip: "203.0.113.5", inserted: true, count: 5, outcome: ingestion.OutcomeUpdated},
-		{name: "unchanged decision", kind: "LOGIN_ERROR", ip: "203.0.113.5", inserted: true, count: 5, unchanged: true, outcome: ingestion.OutcomeUnchanged},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	t.Run("ignored event type", func(t *testing.T) {
+		t.Parallel()
 
-			tx := &fakeTx{inserted: tt.inserted, count: tt.count, unchanged: tt.unchanged}
-			repo := &fakeRepository{tx: tx}
-			service, err := ingestion.New(repo, detection.Rule{Threshold: 5, Window: time.Minute, Ban: 15 * time.Minute}, nil)
-			require.NoError(t, err)
-			event := validEvent()
-			event.Kind = tt.kind
-			event.IP = tt.ip
-			result, err := service.Process(t.Context(), event, time.Now())
-			require.NoError(t, err)
-			assert.Equal(t, tt.outcome, result.Outcome)
-			assert.Equal(t, tt.reason, result.Reason)
-			if tt.outcome == ingestion.OutcomeUpdated {
-				require.NotNil(t, result.Decision)
-			} else {
-				assert.Nil(t, result.Decision)
-			}
-			if tt.outcome == ingestion.OutcomeBelowThreshold || tt.outcome == ingestion.OutcomeUpdated || tt.outcome == ingestion.OutcomeUnchanged {
-				assert.Equal(t, tt.count, result.Failures)
-				assert.Equal(t, 5, result.Threshold)
-			}
-		})
-	}
+		assertProcessingOutcome(t, "LOGIN", "203.0.113.5", false, 0, false, ingestion.OutcomeIgnored, "unsupported_event_type")
+	})
+
+	t.Run("missing address", func(t *testing.T) {
+		t.Parallel()
+
+		assertProcessingOutcome(t, "LOGIN_ERROR", "", false, 0, false, ingestion.OutcomeIgnored, "missing_ip")
+	})
+
+	t.Run("duplicate", func(t *testing.T) {
+		t.Parallel()
+
+		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", false, 0, false, ingestion.OutcomeDuplicate, "")
+	})
+
+	t.Run("below threshold", func(t *testing.T) {
+		t.Parallel()
+
+		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", true, 4, false, ingestion.OutcomeBelowThreshold, "")
+	})
+
+	t.Run("threshold met", func(t *testing.T) {
+		t.Parallel()
+
+		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", true, 5, false, ingestion.OutcomeUpdated, "")
+	})
+
+	t.Run("unchanged decision", func(t *testing.T) {
+		t.Parallel()
+
+		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", true, 5, true, ingestion.OutcomeUnchanged, "")
+	})
 }
 
 func TestServicePassesTargetsToStorage(t *testing.T) {

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-"github.com/gi8lino/keycloak-warden/internal/application/actions"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )

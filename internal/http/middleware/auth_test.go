@@ -22,6 +22,37 @@ type failingBody struct{}
 func (failingBody) Read([]byte) (int, error) { return 0, errors.New("body unavailable") }
 func (failingBody) Close() error             { return nil }
 
+// assertSnitchAuthentication exercises the request validator and its original-body contract.
+func assertSnitchAuthentication(t *testing.T, secret, content, timestamp, signature, body string, want int) {
+	t.Helper()
+
+	calls := 0
+	var received string
+	handler := AuthenticateSnitch(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		contents, err := io.ReadAll(r.Body)
+		require.NoError(t, err)
+		received = string(contents)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	request := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body))
+	request.Header.Set("Content-Type", content)
+	request.Header.Set("X-Snitch-Timestamp", timestamp)
+	request.Header.Set("X-Snitch-Signature", signature)
+	request.Header.Set("X-Forwarded-For", "198.51.100.99")
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+
+	assert.Equal(t, want, response.Code)
+	if want == http.StatusNoContent {
+		assert.Equal(t, 1, calls)
+		assert.Equal(t, body, received, "middleware must preserve the exact authenticated bytes")
+	} else {
+		assert.Zero(t, calls)
+		assert.NotContains(t, response.Body.String(), secret)
+	}
+}
+
 func TestAuthenticateSnitch(t *testing.T) {
 	t.Parallel()
 
@@ -29,67 +60,89 @@ func TestAuthenticateSnitch(t *testing.T) {
 	const body = `{"id":"one","type":"LOGIN_ERROR"}`
 	now := time.Now()
 	fresh := strconv.FormatInt(now.Unix(), 10)
+	validSignature := signing.Signature(secret, fresh, []byte(body))
 
-	tests := []struct {
-		name      string
-		content   string
-		timestamp string
-		signature string
-		body      string
-		want      int
-	}{
-		{name: "valid signature", content: "application/json", timestamp: fresh, signature: signing.Signature(secret, fresh, []byte(body)), body: body, want: http.StatusNoContent},
-		{name: "JSON charset", content: "application/json; charset=utf-8", timestamp: fresh, signature: signing.Signature(secret, fresh, []byte(body)), body: body, want: http.StatusNoContent},
-		{name: "missing content type", timestamp: fresh, signature: signing.Signature(secret, fresh, []byte(body)), body: body, want: http.StatusUnsupportedMediaType},
-		{name: "wrong content type", content: "text/plain", timestamp: fresh, signature: signing.Signature(secret, fresh, []byte(body)), body: body, want: http.StatusUnsupportedMediaType},
-		{name: "malformed content type", content: "application/json; charset=", timestamp: fresh, signature: signing.Signature(secret, fresh, []byte(body)), body: body, want: http.StatusUnsupportedMediaType},
-		{name: "missing signature", content: "application/json", timestamp: fresh, body: body, want: http.StatusUnauthorized},
-		{name: "wrong signature", content: "application/json", timestamp: fresh, signature: signing.Signature("other-secret", fresh, []byte(body)), body: body, want: http.StatusUnauthorized},
-		{name: "body differs from signed bytes", content: "application/json", timestamp: fresh, signature: signing.Signature(secret, fresh, []byte(body)), body: body + " ", want: http.StatusUnauthorized},
-		{name: "stale timestamp", content: "application/json", timestamp: strconv.FormatInt(now.Add(-6*time.Minute).Unix(), 10), body: body, want: http.StatusUnauthorized},
-		{name: "future timestamp", content: "application/json", timestamp: strconv.FormatInt(now.Add(6*time.Minute).Unix(), 10), body: body, want: http.StatusUnauthorized},
-		{name: "invalid timestamp", content: "application/json", timestamp: "not-a-timestamp", body: body, want: http.StatusUnauthorized},
-		{name: "oversized body", content: "application/json", timestamp: fresh, body: strings.Repeat("x", maxEventBodyBytes+1), want: http.StatusRequestEntityTooLarge},
-		{name: "exact body size accepted", content: "application/json", timestamp: fresh, body: strings.Repeat("x", maxEventBodyBytes), want: http.StatusNoContent},
-	}
+	t.Run("valid signature", func(t *testing.T) {
+		t.Parallel()
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			calls := 0
-			var received string
-			handler := AuthenticateSnitch(secret)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls++
-				contents, err := io.ReadAll(r.Body)
-				require.NoError(t, err)
-				received = string(contents)
-				w.WriteHeader(http.StatusNoContent)
-			}))
-			request := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(tt.body))
-			request.Header.Set("Content-Type", tt.content)
-			request.Header.Set("X-Snitch-Timestamp", tt.timestamp)
-			signature := tt.signature
-			if tt.name == "exact body size accepted" {
-				signature = signing.Signature(secret, fresh, []byte(tt.body))
-			}
-			request.Header.Set("X-Snitch-Signature", signature)
-			request.Header.Set("X-Forwarded-For", "198.51.100.99")
-			response := httptest.NewRecorder()
-			handler.ServeHTTP(response, request)
+		assertSnitchAuthentication(t, secret, "application/json", fresh, validSignature, body, http.StatusNoContent)
+	})
 
-			assert.Equal(t, tt.want, response.Code)
-			if tt.want == http.StatusNoContent {
-				assert.Equal(t, 1, calls)
-				assert.Equal(t, tt.body, received, "middleware must preserve the exact authenticated bytes")
-			} else {
-				assert.Zero(t, calls)
-				assert.NotContains(t, response.Body.String(), secret)
-			}
-		})
-	}
+	t.Run("JSON charset", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json; charset=utf-8", fresh, validSignature, body, http.StatusNoContent)
+	})
+
+	t.Run("missing content type", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "", fresh, validSignature, body, http.StatusUnsupportedMediaType)
+	})
+
+	t.Run("wrong content type", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "text/plain", fresh, validSignature, body, http.StatusUnsupportedMediaType)
+	})
+
+	t.Run("malformed content type", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json; charset=", fresh, validSignature, body, http.StatusUnsupportedMediaType)
+	})
+
+	t.Run("missing signature", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", fresh, "", body, http.StatusUnauthorized)
+	})
+
+	t.Run("wrong signature", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", fresh, signing.Signature("other-secret", fresh, []byte(body)), body, http.StatusUnauthorized)
+	})
+
+	t.Run("body differs from signed bytes", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", fresh, validSignature, body+" ", http.StatusUnauthorized)
+	})
+
+	t.Run("stale timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", strconv.FormatInt(now.Add(-6*time.Minute).Unix(), 10), "", body, http.StatusUnauthorized)
+	})
+
+	t.Run("future timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", strconv.FormatInt(now.Add(6*time.Minute).Unix(), 10), "", body, http.StatusUnauthorized)
+	})
+
+	t.Run("invalid timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", "not-a-timestamp", "", body, http.StatusUnauthorized)
+	})
+
+	t.Run("oversized body", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", fresh, "", strings.Repeat("x", maxEventBodyBytes+1), http.StatusRequestEntityTooLarge)
+	})
+
+	t.Run("exact body size accepted", func(t *testing.T) {
+		t.Parallel()
+
+		assertSnitchAuthentication(t, secret, "application/json", fresh, signing.Signature(secret, fresh, []byte(strings.Repeat("x", maxEventBodyBytes))), strings.Repeat("x", maxEventBodyBytes), http.StatusNoContent)
+	})
 
 	t.Run("broken request body", func(t *testing.T) {
 		t.Parallel()
+
 		called := false
 		handler := AuthenticateSnitch(secret)(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { called = true }))
 		request := httptest.NewRequest(http.MethodPost, "/events", nil)

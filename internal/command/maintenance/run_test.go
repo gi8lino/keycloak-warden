@@ -127,7 +127,7 @@ func TestRun(t *testing.T) {
 		t.Parallel()
 
 		err := Run(t.Context(), "http://127.0.0.1:8080", "admin-secret", "vacuum", func(any) error {
-			t.Fatal("must not encode an unsupported operation")
+			require.FailNow(t, "must not encode an unsupported operation")
 			return nil
 		})
 
@@ -141,7 +141,7 @@ func TestRun(t *testing.T) {
 		cancel()
 
 		err := Run(ctx, "http://127.0.0.1:8080", "admin-secret", ActionStatus, func(any) error {
-			t.Fatal("must not encode canceled request")
+			require.FailNow(t, "must not encode canceled request")
 			return nil
 		})
 

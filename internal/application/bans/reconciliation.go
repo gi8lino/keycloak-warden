@@ -59,7 +59,13 @@ func ExtendSource(ctx context.Context, tx Transaction, ip string, source Source)
 }
 
 // ReconcileDecision evaluates the sources in the application and persists the result.
-func ReconcileDecision(ctx context.Context, tx Transaction, ip string, now time.Time, targets []string) (decisions.Decision, bool, error) {
+func ReconcileDecision(
+	ctx context.Context,
+	tx Transaction,
+	ip string,
+	now time.Time,
+	targets []string,
+) (decisions.Decision, bool, error) {
 	previous, err := tx.Decision(ctx, ip)
 	if err != nil {
 		return decisions.Decision{}, false, err

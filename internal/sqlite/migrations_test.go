@@ -173,3 +173,23 @@ SELECT version, applied_at FROM schema_migrations
 	require.NoError(t, rows.Err())
 	return history
 }
+
+// TestMigrateRejectsNewerDatabase protects stores created by future releases.
+func TestMigrateRejectsNewerDatabase(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "test.db")
+	migrateTestDatabase(t, path)
+
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	_, err = db.ExecContext(t.Context(), "INSERT INTO schema_migrations (version, applied_at) VALUES (999, 0)")
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	store, err := sqlite.Open(path)
+	if store != nil {
+		t.Cleanup(func() { assert.NoError(t, store.Close()) })
+	}
+	require.ErrorContains(t, err, "newer than supported version")
+}

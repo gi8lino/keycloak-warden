@@ -89,14 +89,26 @@ func TestNew(t *testing.T) {
 		require.ErrorContains(t, New(ptr("xml"), io.Discard)(sampleResult{}), "unsupported output format")
 	})
 
-	for _, format := range []string{FormatJSON, FormatYAML, FormatText} {
-		t.Run("propagates "+format+" write errors", func(t *testing.T) {
-			t.Parallel()
+	t.Run("propagates json write errors", func(t *testing.T) {
+		t.Parallel()
 
-			err := New(ptr(format), failingWriter{})(sampleResult{IP: "203.0.113.10"})
-			require.ErrorContains(t, err, "write failed")
-		})
-	}
+		err := New(ptr(FormatJSON), failingWriter{})(sampleResult{IP: "203.0.113.10"})
+		require.ErrorContains(t, err, "write failed")
+	})
+
+	t.Run("propagates yaml write errors", func(t *testing.T) {
+		t.Parallel()
+
+		err := New(ptr(FormatYAML), failingWriter{})(sampleResult{IP: "203.0.113.10"})
+		require.ErrorContains(t, err, "write failed")
+	})
+
+	t.Run("propagates text write errors", func(t *testing.T) {
+		t.Parallel()
+
+		err := New(ptr(FormatText), failingWriter{})(sampleResult{IP: "203.0.113.10"})
+		require.ErrorContains(t, err, "write failed")
+	})
 }
 
 // failingWriter simulates a broken stdout stream.

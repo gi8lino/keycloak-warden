@@ -55,7 +55,7 @@ END
 	assert.Zero(t, deliveriesCount)
 	select {
 	case <-store.Changes():
-		t.Fatal("failed transaction must not notify the delivery worker")
+		require.FailNow(t, "failed transaction must not notify the delivery worker")
 	default:
 	}
 
@@ -104,7 +104,7 @@ END
 	assert.Zero(t, generation, "rollback must restore the previous observation generation")
 	select {
 	case <-store.Changes():
-		t.Fatal("failed release must not notify the delivery worker")
+		require.FailNow(t, "failed release must not notify the delivery worker")
 	default:
 	}
 

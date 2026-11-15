@@ -208,35 +208,69 @@ func TestEventDiagnosticLogging(t *testing.T) {
 	t.Parallel()
 
 	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","realmId":"hq","ipAddress":"203.0.113.5"}`
-	tests := []struct {
-		name   string
-		result ingestion.Result
-		event  string
-	}{
-		{name: "ignored event", result: ingestion.Result{Outcome: ingestion.OutcomeIgnored, Reason: "unsupported_event_type"}, event: "security_event_ignored"},
-		{name: "duplicate", result: ingestion.Result{Outcome: ingestion.OutcomeDuplicate, IP: "203.0.113.5"}, event: "security_event_duplicate"},
-		{name: "below threshold", result: ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 2, Threshold: 5}, event: "detection_threshold_not_reached"},
-		{name: "unchanged decision", result: ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5", Failures: 5, Threshold: 5}, event: "decision_unchanged"},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	t.Run("ignored event", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("info is silent", func(t *testing.T) {
 			t.Parallel()
 
-			for _, level := range []slog.Level{slog.LevelInfo, slog.LevelDebug} {
-				var logs bytes.Buffer
-				logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: level}))
-				processor := &capture{result: tt.result}
-				handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
-				require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))
-				if level == slog.LevelDebug {
-					assert.Contains(t, logs.String(), `"event":"`+tt.event+`"`)
-					assert.Contains(t, logs.String(), `"level":"DEBUG"`)
-				} else {
-					assert.Empty(t, logs.String(), "routine non-changing events should be silent without --debug")
-				}
-			}
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeIgnored, Reason: "unsupported_event_type"}, "security_event_ignored", slog.LevelInfo)
 		})
-	}
+
+		t.Run("debug records outcome", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeIgnored, Reason: "unsupported_event_type"}, "security_event_ignored", slog.LevelDebug)
+		})
+	})
+
+	t.Run("duplicate", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("info is silent", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeDuplicate, IP: "203.0.113.5"}, "security_event_duplicate", slog.LevelInfo)
+		})
+
+		t.Run("debug records outcome", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeDuplicate, IP: "203.0.113.5"}, "security_event_duplicate", slog.LevelDebug)
+		})
+	})
+
+	t.Run("below threshold", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("info is silent", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 2, Threshold: 5}, "detection_threshold_not_reached", slog.LevelInfo)
+		})
+
+		t.Run("debug records outcome", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 2, Threshold: 5}, "detection_threshold_not_reached", slog.LevelDebug)
+		})
+	})
+
+	t.Run("unchanged decision", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("info is silent", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5", Failures: 5, Threshold: 5}, "decision_unchanged", slog.LevelInfo)
+		})
+
+		t.Run("debug records outcome", func(t *testing.T) {
+			t.Parallel()
+
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5", Failures: 5, Threshold: 5}, "decision_unchanged", slog.LevelDebug)
+		})
+	})
 
 	t.Run("malformed authenticated JSON logs a warning without the body", func(t *testing.T) {
 		t.Parallel()
@@ -268,4 +302,23 @@ func TestEventDiagnosticLogging(t *testing.T) {
 		require.Equal(t, http.StatusUnauthorized, post(handler, body, "wrong", time.Now()))
 		assert.Empty(t, logs.String())
 	})
+}
+
+// assertEventDiagnosticLog verifies a single outcome at a particular log level.
+func assertEventDiagnosticLog(t *testing.T, result ingestion.Result, event string, level slog.Level) {
+	t.Helper()
+
+	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","realmId":"hq","ipAddress":"203.0.113.5"}`
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: level}))
+	processor := &capture{result: result}
+	handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
+	require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))
+
+	if level == slog.LevelDebug {
+		assert.Contains(t, logs.String(), `"event":"`+event+`"`)
+		assert.Contains(t, logs.String(), `"level":"DEBUG"`)
+	} else {
+		assert.Empty(t, logs.String(), "routine non-changing events should be silent without --debug")
+	}
 }

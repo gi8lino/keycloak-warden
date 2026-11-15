@@ -18,7 +18,7 @@ func loadResponseRule(t *testing.T, body string) (WebhookResponse, error) {
 
 	target := cfg.Targets.Webhook["ops"]
 	if target.Response == nil {
-		t.Fatal("expected response rule")
+		require.FailNow(t, "expected response rule")
 	}
 	return *target.Response, cfg.Validate()
 }

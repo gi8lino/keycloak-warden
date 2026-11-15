@@ -57,6 +57,8 @@ func TestRegisterAdmin(t *testing.T) {
 	})
 
 	t.Run("rejects insecure remote administration URL", func(t *testing.T) {
+		t.Parallel()
+
 		root, _ := adminCommand()
 		require.ErrorContains(t, root.Parse([]string{"ban", "--application-url=http://warden.example"}), "HTTPS")
 	})
