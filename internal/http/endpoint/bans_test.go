@@ -401,45 +401,16 @@ func TestGetBanHistoryPageValidation(t *testing.T) {
 		assert.Zero(t, service.calls)
 	})
 
-	t.Run("rejects nonpositive page", func(t *testing.T) {
+	t.Run("maps an invalid application page to bad request", func(t *testing.T) {
 		t.Parallel()
-		service := &scriptedAdministration{}
-		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=0", nil)
-		request.SetPathValue("id", "one")
-		response := httptest.NewRecorder()
-
-		endpoint.GetBan(service, slog.Default())(response, request)
-
-		assert.Equal(t, http.StatusBadRequest, response.Code)
-		assert.Zero(t, service.calls)
-	})
-
-	t.Run("rejects negative page", func(t *testing.T) {
-		t.Parallel()
-		service := &scriptedAdministration{}
+		service := &scriptedAdministration{err: bans.ErrInvalid}
 		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=-1", nil)
 		request.SetPathValue("id", "one")
 		response := httptest.NewRecorder()
-
 		endpoint.GetBan(service, slog.Default())(response, request)
-
 		assert.Equal(t, http.StatusBadRequest, response.Code)
-		assert.Zero(t, service.calls)
+		assert.Equal(t, -1, service.page)
 	})
-
-	t.Run("rejects overflowing page offset", func(t *testing.T) {
-		t.Parallel()
-		service := &scriptedAdministration{}
-		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=9223372036854775807", nil)
-		request.SetPathValue("id", "one")
-		response := httptest.NewRecorder()
-
-		endpoint.GetBan(service, slog.Default())(response, request)
-
-		assert.Equal(t, http.StatusBadRequest, response.Code)
-		assert.Zero(t, service.calls)
-	})
-
 	t.Run("rejects missing page value", func(t *testing.T) {
 		t.Parallel()
 		service := &scriptedAdministration{}

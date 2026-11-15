@@ -318,9 +318,9 @@ func TestAdminServiceTargets(t *testing.T) {
 }
 
 // GetDecisionPage records the one-based page forwarded to persistence.
-func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page int, throughRevision int64) (bans.Record, error) {
+func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page bans.HistoryPage) (bans.Record, error) {
 	r.id = id
-	r.historyPage = page
+	r.historyPage = page.Number
 	return bans.Record{}, nil
 }
 

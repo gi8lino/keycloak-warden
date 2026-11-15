@@ -151,10 +151,6 @@ func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 				return
 			}
 		}
-		if _, err := bans.HistoryOffset(page); err != nil {
-			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
-			return
-		}
 		record, err := service.GetDecisionPage(r.Context(), r.PathValue("id"), time.Now(), page, throughRevision)
 		if writeBanError(w, logger, err) {
 			return

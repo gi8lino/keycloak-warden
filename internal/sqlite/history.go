@@ -30,7 +30,13 @@ ON CONFLICT DO NOTHING
 }
 
 // recordAttempt stores a completed call and its delivery status within the queue transaction.
-func recordAttempt(ctx context.Context, tx *sql.Tx, job actions.Job, deliveryErr error, now time.Time) error {
+func recordAttempt(
+	ctx context.Context,
+	tx *sql.Tx,
+	job actions.Job,
+	deliveryErr error,
+	now time.Time,
+) error {
 	d := job.Decision
 	var message *string
 	if deliveryErr != nil {
@@ -51,7 +57,13 @@ FROM delivery_attempts WHERE ip = ? AND revision = ? AND destination = ?
 // finishAttemptStatus marks only the current revision as retrying or delivered.
 // A stale provider response remains recorded as an attempt but never changes
 // the superseded revision's status or current destination scheduling.
-func finishAttemptStatus(ctx context.Context, tx *sql.Tx, job actions.Job, deliveryErr error, now time.Time) error {
+func finishAttemptStatus(
+	ctx context.Context,
+	tx *sql.Tx,
+	job actions.Job,
+	deliveryErr error,
+	now time.Time,
+) error {
 	status := deliverystate.StatusDelivered
 	if deliveryErr != nil {
 		status = deliverystate.StatusRetrying
@@ -74,11 +86,12 @@ WHERE ip = ? AND revision = ? AND destination = ?
 // readDeliveryHistory loads at most one bounded page of destination/revision groups.
 // Completed attempts are retained in SQLite but only the most recent 16 per
 // group are included in the HTTP inspection view. Paging does not delete history.
-func readDeliveryHistory(ctx context.Context, tx *sql.Tx, ip string, page int, throughRevision int64) ([]decisions.Delivery, bool, error) {
-	offset, err := bans.HistoryOffset(page)
-	if err != nil {
-		return nil, false, err
-	}
+func readDeliveryHistory(
+	ctx context.Context,
+	tx *sql.Tx,
+	ip string,
+	page bans.HistoryPage,
+) ([]decisions.Delivery, bool, error) {
 	rows, err := tx.QueryContext(ctx, `
 WITH page AS (
     SELECT revision, destination
@@ -90,25 +103,25 @@ WITH page AS (
 SELECT h.destination, h.revision, COALESCE(h.desired_state, ''), h.status,
        h.acknowledged_at, COALESCE(h.superseded_by, 0),
        CASE WHEN h.status = 'retrying' THEN MAX(q.retry_at, COALESCE(b.retry_at, 0)) END,
-       a.number, a.completed_at, SUBSTR(a.error, 1, 512)
+       a.number, a.completed_at, SUBSTR(a.error, 1, ?)
 FROM page AS p
 JOIN delivery_history AS h ON h.ip = ? AND h.revision = p.revision AND h.destination = p.destination
 LEFT JOIN delivery_attempts AS a ON a.ip = h.ip AND a.revision = h.revision
     AND a.destination = h.destination AND a.number > (
-        SELECT COALESCE(MAX(number), 0) - 16
+        SELECT COALESCE(MAX(number), 0) - ?
         FROM delivery_attempts
         WHERE ip = h.ip AND revision = h.revision AND destination = h.destination
     )
 LEFT JOIN deliveries AS q ON q.ip = h.ip AND q.destination = h.destination
 LEFT JOIN destination_backoff AS b ON b.destination = h.destination
 ORDER BY h.revision DESC, h.destination, a.number
-`, ip, throughRevision, bans.HistoryPageSize+1, offset, ip)
+`, ip, page.ThroughRevision, page.Groups+1, page.Offset, page.ErrorCharacters, ip, page.Attempts)
 	if err != nil {
 		return nil, false, err
 	}
 	defer rows.Close() //nolint:errcheck
 
-	history := make([]decisions.Delivery, 0, bans.HistoryPageSize)
+	history := make([]decisions.Delivery, 0, page.Groups)
 	for rows.Next() {
 		var d decisions.Delivery
 		var acknowledged, retry, number, completed sql.NullInt64
@@ -129,7 +142,7 @@ ORDER BY h.revision DESC, h.destination, a.number
 		}
 
 		if startsNewDelivery(history, d) {
-			if len(history) == bans.HistoryPageSize {
+			if len(history) == page.Groups {
 				return history, true, rows.Err()
 			}
 			d.AcknowledgedAt = optionalTime(acknowledged)

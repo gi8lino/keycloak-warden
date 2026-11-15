@@ -8,38 +8,38 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestHistoryOffset(t *testing.T) {
+func TestNewHistoryPage(t *testing.T) {
 	t.Parallel()
 
 	t.Run("first page", func(t *testing.T) {
 		t.Parallel()
-		offset, err := HistoryOffset(1)
+		page, err := NewHistoryPage(1, 0)
 		require.NoError(t, err)
-		assert.Zero(t, offset)
+		assert.Zero(t, page.Offset)
 	})
 
 	t.Run("hundredth page", func(t *testing.T) {
 		t.Parallel()
-		offset, err := HistoryOffset(100)
+		page, err := NewHistoryPage(100, 0)
 		require.NoError(t, err)
-		assert.EqualValues(t, 1584, offset)
+		assert.EqualValues(t, 1584, page.Offset)
 	})
 
 	t.Run("zero page", func(t *testing.T) {
 		t.Parallel()
-		_, err := HistoryOffset(0)
+		_, err := NewHistoryPage(0, 0)
 		require.ErrorIs(t, err, ErrInvalid)
 	})
 
 	t.Run("negative page", func(t *testing.T) {
 		t.Parallel()
-		_, err := HistoryOffset(-1)
+		_, err := NewHistoryPage(-1, 0)
 		require.ErrorIs(t, err, ErrInvalid)
 	})
 
 	t.Run("overflowing page", func(t *testing.T) {
 		t.Parallel()
-		_, err := HistoryOffset(math.MaxInt)
+		_, err := NewHistoryPage(math.MaxInt, 0)
 		require.ErrorIs(t, err, ErrInvalid)
 	})
 }

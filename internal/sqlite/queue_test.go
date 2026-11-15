@@ -438,7 +438,7 @@ func TestDeliveryHistoryPaging(t *testing.T) {
 	}
 
 	// Request page 3 first to prove no earlier page or cursor is required.
-	third, err := store.GetDecisionPage(ctx, id, now, 3, 0)
+	third, err := store.GetDecisionPage(ctx, id, now, testHistoryPage(t, 3, 0))
 	require.NoError(t, err)
 	assert.Equal(t, 3, third.HistoryPage)
 	assert.Zero(t, third.HistoryNextPage)
@@ -446,14 +446,14 @@ func TestDeliveryHistoryPaging(t *testing.T) {
 	assert.EqualValues(t, 4, third.DeliveryHistory[0].Revision)
 	assert.EqualValues(t, 1, third.DeliveryHistory[7].Revision)
 
-	first, err := store.GetDecisionPage(ctx, id, now, 1, 0)
+	first, err := store.GetDecisionPage(ctx, id, now, testHistoryPage(t, 1, 0))
 	require.NoError(t, err)
 	assert.Equal(t, 2, first.HistoryNextPage)
 	require.Len(t, first.DeliveryHistory, bans.HistoryPageSize)
 
 	_, err = bans.ApplyManualBan(ctx, store, "203.0.113.69", now.Add(21*time.Hour), "new revision between pages", now, []string{"edge", "notifications"})
 	require.NoError(t, err)
-	second, err := store.GetDecisionPage(ctx, id, now, 2, first.Decision.Revision)
+	second, err := store.GetDecisionPage(ctx, id, now, testHistoryPage(t, 2, first.Decision.Revision))
 	require.NoError(t, err)
 	assert.Equal(t, 3, second.HistoryNextPage)
 	require.Len(t, second.DeliveryHistory, bans.HistoryPageSize)
@@ -468,7 +468,7 @@ func TestDeliveryHistoryPaging(t *testing.T) {
 	}
 	assert.Len(t, seen, 40)
 
-	beyond, err := store.GetDecisionPage(ctx, id, now, 100, 0)
+	beyond, err := store.GetDecisionPage(ctx, id, now, testHistoryPage(t, 100, 0))
 	require.NoError(t, err)
 	assert.Equal(t, 100, beyond.HistoryPage)
 	assert.Empty(t, beyond.DeliveryHistory)
@@ -502,4 +502,12 @@ func TestDeliveryAttemptHistoryBounded(t *testing.T) {
 	require.Len(t, view.DeliveryHistory[0].Attempts, 16)
 	assert.EqualValues(t, 5, view.DeliveryHistory[0].Attempts[0].Number)
 	assert.Len(t, view.DeliveryHistory[0].Attempts[0].Error, 512)
+}
+
+// testHistoryPage constructs application-validated bounds for storage tests.
+func testHistoryPage(t *testing.T, number int, throughRevision int64) bans.HistoryPage {
+	t.Helper()
+	page, err := bans.NewHistoryPage(number, throughRevision)
+	require.NoError(t, err)
+	return page
 }

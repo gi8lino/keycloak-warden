@@ -164,14 +164,20 @@ ORDER BY q.ip, q.destination
 
 // GetDecision returns the persisted decision and the newest bounded history page.
 func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Record, error) {
-	return s.GetDecisionPage(ctx, id, now, 1, 0)
+	bounds, err := bans.NewHistoryPage(1, 0)
+	if err != nil {
+		return bans.Record{}, err
+	}
+	return s.GetDecisionPage(ctx, id, now, bounds)
 }
 
 // GetDecisionPage returns one consistent snapshot of a decision and its history page.
-func (s *Store) GetDecisionPage(ctx context.Context, id string, now time.Time, page int, throughRevision int64) (bans.Record, error) {
-	if _, err := bans.HistoryOffset(page); err != nil {
-		return bans.Record{}, err
-	}
+func (s *Store) GetDecisionPage(
+	ctx context.Context,
+	id string,
+	now time.Time,
+	page bans.HistoryPage,
+) (bans.Record, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return bans.Record{}, err
@@ -181,17 +187,17 @@ func (s *Store) GetDecisionPage(ctx context.Context, id string, now time.Time, p
 	if err != nil {
 		return bans.Record{}, err
 	}
-	if throughRevision == 0 {
-		throughRevision = record.Decision.Revision
+	if page.ThroughRevision == 0 {
+		page.ThroughRevision = record.Decision.Revision
 	}
 	var hasMore bool
-	record.DeliveryHistory, hasMore, err = readDeliveryHistory(ctx, tx, record.Decision.IP, page, throughRevision)
+	record.DeliveryHistory, hasMore, err = readDeliveryHistory(ctx, tx, record.Decision.IP, page)
 	if err != nil {
 		return bans.Record{}, err
 	}
-	record.HistoryPage = page
+	record.HistoryPage = page.Number
 	if hasMore {
-		record.HistoryNextPage = page + 1
+		record.HistoryNextPage = page.Number + 1
 	}
 	return record, tx.Commit()
 }
