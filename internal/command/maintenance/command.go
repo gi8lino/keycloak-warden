@@ -37,6 +37,12 @@ func registerOperation(
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 
 	command.Run(func(ctx context.Context) error {
-		return Run(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, action, encode)
+		return Run(
+			ctx,
+			*adminFlags.ApplicationURL,
+			*adminFlags.AdminToken,
+			action,
+			encode,
+		)
 	})
 }

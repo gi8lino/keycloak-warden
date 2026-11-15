@@ -39,18 +39,23 @@ func validateWebhookTarget(name string, target WebhookTarget) error {
 	if err := validateMaxAttempts(id, target.MaxAttempts); err != nil {
 		return err
 	}
+
 	if err := validateTargetName(name); err != nil {
 		return fmt.Errorf("target %q: %w", id, err)
 	}
+
 	if strings.TrimSpace(target.URL) == "" {
 		return fmt.Errorf("target %q: url: value must not be blank", id)
 	}
+
 	if target.BodyTemplate != "" && strings.TrimSpace(target.BodyTemplate) == "" {
 		return fmt.Errorf("target %q: body-template: value must not be blank", id)
 	}
+
 	if len(target.TemplateVars) > 0 && target.BodyTemplate == "" {
 		return fmt.Errorf("target %q: template-vars requires body-template", id)
 	}
+
 	if target.Response != nil {
 		if _, err := target.Response.Rule(); err != nil {
 			return fmt.Errorf("target %q: response: %w", id, err)
@@ -73,6 +78,7 @@ func validateWebhookTarget(name string, target WebhookTarget) error {
 			return fmt.Errorf("target %q: headers %s: value must not be blank", id, header)
 		}
 	}
+
 	return nil
 }
 
@@ -82,15 +88,19 @@ func validateCloudflareTarget(name string, target CloudflareTarget) error {
 	if err := validateMaxAttempts(id, target.MaxAttempts); err != nil {
 		return err
 	}
+
 	if err := validateTargetName(name); err != nil {
 		return fmt.Errorf("target %q: %w", id, err)
 	}
+
 	if strings.TrimSpace(target.ZoneID) == "" {
 		return fmt.Errorf("target %q: zone-id: value must not be blank", id)
 	}
+
 	if strings.TrimSpace(target.APIToken) == "" {
 		return fmt.Errorf("target %q: api-token: value must not be blank", id)
 	}
+
 	return nil
 }
 

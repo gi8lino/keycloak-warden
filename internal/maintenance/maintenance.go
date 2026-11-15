@@ -55,9 +55,11 @@ func (s Schedule) Validate() error {
 	if !validMaintenanceInterval(s.PruneInterval) {
 		return fmt.Errorf("prune-interval must be between %s and %s", MinInterval, MaxInterval)
 	}
+
 	if !validMaintenanceInterval(s.OptimizeInterval) {
 		return fmt.Errorf("optimize-interval must be between %s and %s", MinInterval, MaxInterval)
 	}
+
 	return nil
 }
 
@@ -176,9 +178,11 @@ func (r *Runner) Trigger(ctx context.Context, operation Operation) error {
 	if operation != OperationPrune && operation != OperationOptimize {
 		return ErrInvalidOperation
 	}
+
 	if err := ctx.Err(); err != nil {
 		return err
 	}
+
 	if !r.executeMu.TryLock() {
 		return ErrBusy
 	}

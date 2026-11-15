@@ -40,6 +40,7 @@ func Reconcile(
 	if changed {
 		next.Revision++
 	}
+
 	return next, changed
 }
 

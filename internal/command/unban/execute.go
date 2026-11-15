@@ -31,7 +31,10 @@ func execute(
 		if !exists {
 			failures = append(failures, fmt.Errorf("failed %s: %w", ip, bans.ErrNotFound))
 			batch.Failed++
-			batch.Results = append(batch.Results, output.Item{IPAddress: ip, Error: bans.ErrNotFound.Error()})
+			batch.Results = append(batch.Results, output.Item{
+				IPAddress: ip,
+				Error:     bans.ErrNotFound.Error(),
+			})
 			continue
 		}
 
@@ -39,11 +42,18 @@ func execute(
 		if err != nil {
 			failures = append(failures, fmt.Errorf("failed %s: %w", ip, err))
 			batch.Failed++
-			batch.Results = append(batch.Results, output.Item{IPAddress: ip, Error: err.Error()})
+			batch.Results = append(batch.Results, output.Item{
+				IPAddress: ip,
+				Error:     err.Error(),
+			})
 			continue
 		}
 
-		batch.Results = append(batch.Results, output.Item{IPAddress: ip, Success: true, Ban: &record})
+		batch.Results = append(batch.Results, output.Item{
+			IPAddress: ip,
+			Success:   true,
+			Ban:       &record,
+		})
 		batch.Succeeded++
 	}
 

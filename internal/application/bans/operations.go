@@ -97,12 +97,15 @@ func releaseAllSources(
 	if err != nil {
 		return Record{}, err
 	}
+
 	if current.State != decisions.StateBanned || !current.ExpiresAt.After(now) {
 		return Record{}, ErrNotFound
 	}
+
 	if err := tx.DeleteSources(ctx, current.IP); err != nil {
 		return Record{}, err
 	}
+
 	// Retain producer IDs for replay protection while resetting the count.
 	if err := tx.ResetFailures(ctx, current.IP); err != nil {
 		return Record{}, err
@@ -112,6 +115,7 @@ func releaseAllSources(
 	if err != nil {
 		return Record{}, err
 	}
+
 	return tx.Record(ctx, next.ID, now)
 }
 
@@ -131,6 +135,7 @@ func ExpireSources(
 	if err != nil {
 		return nil, err
 	}
+
 	return released, nil
 }
 
@@ -148,6 +153,7 @@ func expireSources(
 	if len(ips) == 0 {
 		return nil, nil
 	}
+
 	if err := tx.DeleteExpiredSources(ctx, now); err != nil {
 		return nil, err
 	}
@@ -162,6 +168,7 @@ func expireSources(
 			released = append(released, decision)
 		}
 	}
+
 	return released, nil
 }
 
@@ -178,6 +185,7 @@ func NewExpiryService(store Writer, targets []string) (*ExpiryService, error) {
 	if store == nil {
 		return nil, errors.New("expiry store is required")
 	}
+
 	return &ExpiryService{store: store, targets: slices.Clone(targets)}, nil
 }
 

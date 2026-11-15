@@ -17,5 +17,6 @@ func ParseUnicast(value string) (netip.Addr, error) {
 	if address.IsUnspecified() || address.IsMulticast() {
 		return netip.Addr{}, errors.New("expected a single unicast IPv4 or IPv6 address")
 	}
+
 	return address, nil
 }

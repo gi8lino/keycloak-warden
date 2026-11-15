@@ -16,10 +16,12 @@ func newManagement(config Config) http.Handler {
 		Health:    endpoint.Health(),
 		Readiness: endpoint.Ready(config.Readiness, config.WorkerDone),
 	}
+
 	if config.MetricsEnabled {
 		routes.Metrics = config.Metrics.Metrics()
 	}
 
 	probes := appkithttpserver.NewManagement(routes)
+
 	return httpkitmiddleware.Chain(probes, middleware.RecoverPanics(config.Logger))
 }

@@ -38,12 +38,15 @@ func (r Rule) hasValidThreshold() bool {
 
 // hasValidDurations reports whether both durations are at least one second.
 func (r Rule) hasValidDurations() bool {
-	return r.Window >= time.Second && r.Ban >= time.Second
+	return r.Window >= time.Second &&
+		r.Ban >= time.Second
 }
 
 // Matches selects Keycloak login errors that can be attributed to an address.
 func (r Rule) Matches(e events.Event) bool {
-	return e.Source == "keycloak" && e.Kind == "LOGIN_ERROR" && e.IP.IsValid()
+	return e.Source == "keycloak" &&
+		e.Kind == "LOGIN_ERROR" &&
+		e.IP.IsValid()
 }
 
 // Triggered reports whether the observed count satisfies the configured threshold.

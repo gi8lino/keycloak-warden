@@ -26,8 +26,7 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 		var envelope events.Envelope
 		decoder := json.NewDecoder(r.Body)
 		if err := decoder.Decode(&envelope); err != nil {
-			logger.Warn(
-				"security event rejected",
+			logger.Warn("security event rejected",
 				"event", "security_event_rejected",
 				"reason", "invalid_json",
 			)
@@ -37,8 +36,7 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 
 		// The bounded middleware body must contain exactly one JSON value.
 		if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-			logger.Warn(
-				"security event rejected",
+			logger.Warn("security event rejected",
 				"event", "security_event_rejected",
 				"reason", "multiple_or_invalid_json_values",
 			)
@@ -48,8 +46,7 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 
 		result, err := processor.Process(r.Context(), envelope, time.Now())
 		if errors.Is(err, ingestion.ErrInvalidEvent) {
-			logger.Warn(
-				"security event rejected",
+			logger.Warn("security event rejected",
 				"event", "security_event_rejected",
 				"event_id", envelope.ID,
 				"event_type", envelope.Kind,
@@ -61,8 +58,7 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 		}
 
 		if err != nil {
-			logger.Warn(
-				"processing security event failed",
+			logger.Warn("processing security event failed",
 				"event", "security_event_processing_failed",
 				"realm_id", envelope.RealmID,
 				"error", err,

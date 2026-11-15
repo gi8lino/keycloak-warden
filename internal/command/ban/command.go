@@ -37,7 +37,15 @@ func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode 
 		Value()
 
 	command.Run(func(ctx context.Context) error {
-		return Run(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, command.Args(), *duration, *reason, encode)
+		return Run(
+			ctx,
+			*adminFlags.ApplicationURL,
+			*adminFlags.AdminToken,
+			command.Args(),
+			*duration,
+			*reason,
+			encode,
+		)
 	})
 }
 

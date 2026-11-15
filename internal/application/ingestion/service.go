@@ -95,7 +95,10 @@ func (s *Service) processFailure(
 	event events.Event,
 	now time.Time,
 ) (Result, error) {
-	result := Result{IP: event.IP.String()}
+	result := Result{
+		IP: event.IP.String(),
+	}
+
 	inserted, err := tx.RecordFailure(ctx, event, now)
 	if err != nil {
 		return Result{}, err
@@ -122,6 +125,7 @@ func (s *Service) processFailure(
 	}); err != nil {
 		return Result{}, err
 	}
+
 	decision, changed, err := bans.ReconcileDecision(ctx, tx, result.IP, now, s.targets)
 	if err != nil {
 		return Result{}, err
@@ -130,8 +134,10 @@ func (s *Service) processFailure(
 		result.Outcome = OutcomeUnchanged
 		return result, nil
 	}
+
 	result.Outcome = OutcomeUpdated
 	result.Decision = &decision
+
 	return result, nil
 }
 

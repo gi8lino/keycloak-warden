@@ -28,14 +28,25 @@ func AuthenticateAdmin(token string) func(http.Handler) http.Handler {
 
 // matchesBearerToken validates one Bearer header and compares its credential in constant time.
 func matchesBearerToken(values []string, expected [sha256.Size]byte) bool {
+	// Reject missing or duplicate Authorization headers to avoid ambiguous credentials.
 	if len(values) != 1 {
 		return false
 	}
+
+	// Separate the authentication scheme from the supplied credential.
 	scheme, value, found := strings.Cut(values[0], " ")
-	if !found || value == "" || !strings.EqualFold(scheme, "Bearer") {
+	if !found || value == "" {
 		return false
 	}
 
+	// Require the Bearer authentication scheme, ignoring case.
+	if !strings.EqualFold(scheme, "Bearer") {
+		return false
+	}
+
+	// Hash the supplied credential to match the stored token digest.
 	actual := sha256.Sum256([]byte(value))
+
+	// Compare digests in constant time to avoid leaking credential information.
 	return subtle.ConstantTimeCompare(expected[:], actual[:]) == 1
 }

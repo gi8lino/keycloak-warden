@@ -157,8 +157,7 @@ func writeBanError(w http.ResponseWriter, logger *slog.Logger, err error) bool {
 	case errors.Is(err, bans.ErrNotFound):
 		httpresponse.Problem(w, http.StatusNotFound, "Manual ban or decision not found.")
 	default:
-		logger.Error(
-			"manual ban operation failed",
+		logger.Error("manual ban operation failed",
 			"event", "manual_ban_operation_failed",
 			"error", err,
 		)

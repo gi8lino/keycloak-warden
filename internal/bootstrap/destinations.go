@@ -149,6 +149,7 @@ func resolveTemplateVars(values *resolver.Registry, configured map[string]string
 		}
 		vars[name] = value
 	}
+
 	return vars, nil
 }
 
