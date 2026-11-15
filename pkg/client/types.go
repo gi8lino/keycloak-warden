@@ -3,6 +3,8 @@ package client
 import (
 	"fmt"
 	"time"
+
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // Decision is Warden's desired block or release state, independent of delivery.
@@ -13,8 +15,8 @@ type Decision struct {
 	Revision int64 `json:"revision" yaml:"revision"`
 	// IP is the canonical address to block or release.
 	IP string `json:"ipAddress" yaml:"ipAddress"`
-	// State is either banned or unbanned.
-	State string `json:"state" yaml:"state"`
+	// State is the desired blocking state.
+	State decisionstate.State `json:"state" yaml:"state"`
 	// ExpiresAt is the expiration of the desired ban.
 	ExpiresAt time.Time `json:"expiresAt" yaml:"expiresAt"`
 }

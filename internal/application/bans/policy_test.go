@@ -8,6 +8,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 func TestExtendExpiry(t *testing.T) {
@@ -26,7 +27,7 @@ func TestReconcile(t *testing.T) {
 		ID:        "stable",
 		IP:        "203.0.113.10",
 		Revision:  3,
-		State:     decisions.StateBanned,
+		State:     decisionstate.StateBanned,
 		ExpiresAt: now.Add(time.Hour),
 	}
 
@@ -59,7 +60,7 @@ func TestReconcile(t *testing.T) {
 		assert.True(t, changed)
 		assert.Equal(t, prior.Revision+1, next.Revision)
 		assert.Equal(t, now.Add(2*time.Hour), next.ExpiresAt)
-		assert.Equal(t, decisions.StateBanned, next.State)
+		assert.Equal(t, decisionstate.StateBanned, next.State)
 	})
 
 	t.Run("last source expiry releases without losing historical expiry", func(t *testing.T) {
@@ -68,7 +69,7 @@ func TestReconcile(t *testing.T) {
 		next, changed := bans.Reconcile(prior, []bans.Source{{ExpiresAt: now.Add(-time.Minute)}}, now)
 		assert.True(t, changed)
 		assert.Equal(t, prior.Revision+1, next.Revision)
-		assert.Equal(t, decisions.StateUnbanned, next.State)
+		assert.Equal(t, decisionstate.StateUnbanned, next.State)
 		assert.Equal(t, prior.ExpiresAt, next.ExpiresAt)
 		released, again := bans.Reconcile(next, nil, now)
 		assert.False(t, again)

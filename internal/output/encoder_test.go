@@ -15,6 +15,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // sampleResult verifies that JSON and YAML use the same field names.
@@ -144,7 +145,7 @@ func TestBanRecordsYAML(t *testing.T) {
 			Decision: decisions.Decision{
 				ID:        "one",
 				IP:        "203.0.113.10",
-				State:     decisions.StateBanned,
+				State:     decisionstate.StateBanned,
 				Revision:  4,
 				ExpiresAt: deadline,
 			},
@@ -177,13 +178,13 @@ func TestBanRecordsYAML(t *testing.T) {
 	t.Run("includes released historical decisions", func(t *testing.T) {
 		t.Parallel()
 
-		records := []bans.Record{{Decision: decisions.Decision{ID: "released", State: decisions.StateUnbanned}}}
+		records := []bans.Record{{Decision: decisions.Decision{ID: "released", State: decisionstate.StateUnbanned}}}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(records))
 		var decoded []bans.Record
 		require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 		require.Len(t, decoded, 1)
-		assert.Equal(t, decisions.StateUnbanned, decoded[0].Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, decoded[0].Decision.State)
 	})
 
 	t.Run("preserves record order", func(t *testing.T) {

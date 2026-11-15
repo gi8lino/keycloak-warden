@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // blockingExpirer waits for cancellation to test the worker's shutdown ordering.
@@ -293,7 +294,7 @@ func TestDispatchLogging(t *testing.T) {
 	t.Parallel()
 
 	job := Job{
-		Decision:    decisions.Decision{ID: "decision", IP: "203.0.113.5", Revision: 14, State: decisions.StateBanned},
+		Decision:    decisions.Decision{ID: "decision", IP: "203.0.113.5", Revision: 14, State: decisionstate.StateBanned},
 		Destination: "webhook.receiver",
 	}
 
@@ -351,7 +352,7 @@ func TestExpiryLogging(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	q := &scriptedQueue{}
 	expirer := &scriptedExpirer{expired: []decisions.Decision{{
-		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: decisions.StateUnbanned,
+		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: decisionstate.StateUnbanned,
 	}}}
 
 	_, err := processReady(t.Context(), q, expirer, nil, logger)
@@ -375,7 +376,7 @@ func TestProcessReadyUsesExpirer(t *testing.T) {
 
 		q := &scriptedQueue{}
 		expirer := &scriptedExpirer{expired: []decisions.Decision{{
-			ID: "release", State: decisions.StateUnbanned,
+			ID: "release", State: decisionstate.StateUnbanned,
 		}}}
 
 		_, err := processReady(t.Context(), q, expirer, nil, slog.Default())

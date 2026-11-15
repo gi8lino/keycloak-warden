@@ -17,6 +17,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
 	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 func TestDestinations(t *testing.T) {
@@ -735,7 +736,7 @@ func TestWebhookTemplateVars(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		t.Setenv("WARDEN_TEST_CHANNEL", "changed")
-		require.NoError(t, providers["webhook.slack"].Provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned, IP: "192.0.2.1"}))
+		require.NoError(t, providers["webhook.slack"].Provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned, IP: "192.0.2.1"}))
 		assert.Equal(t, channel, <-received)
 	})
 

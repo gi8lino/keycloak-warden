@@ -10,7 +10,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 func TestStoreApplyManualBan(t *testing.T) {
@@ -39,7 +39,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, "203.0.113.7", created.Decision.IP)
-		assert.Equal(t, decisions.StateBanned, created.Decision.State)
+		assert.Equal(t, decisionstate.StateBanned, created.Decision.State)
 		require.Len(t, created.Sources, 1)
 		assert.Equal(t, bans.SourceManual, created.Sources[0].Kind)
 		require.NoError(t, store.Close())
@@ -70,7 +70,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, released, 1)
 		assert.Equal(t, created.Decision.ID, released[0].ID)
-		assert.Equal(t, decisions.StateUnbanned, released[0].State)
+		assert.Equal(t, decisionstate.StateUnbanned, released[0].State)
 		released, err = bans.ExpireSources(ctx, store, created.Decision.ExpiresAt, []string{"edge"})
 		require.NoError(t, err)
 		assert.Empty(t, released, "expiration must only be reported once")
@@ -81,7 +81,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		view, err := service.GetDecision(ctx, created.Decision.ID, created.Decision.ExpiresAt)
 
 		require.NoError(t, err)
-		assert.Equal(t, decisions.StateUnbanned, view.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, view.Decision.State)
 		assert.Empty(t, view.Sources)
 		_, err = service.GetDecision(ctx, "does-not-exist", now)
 
@@ -118,7 +118,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		view, err := service.GetDecision(ctx, manual.Decision.ID, auto.ExpiresAt)
 
 		require.NoError(t, err)
-		assert.Equal(t, decisions.StateBanned, view.Decision.State)
+		assert.Equal(t, decisionstate.StateBanned, view.Decision.State)
 		require.Len(t, view.Sources, 1)
 		assert.Equal(t, bans.SourceManual, view.Sources[0].Kind)
 		assert.Equal(t, manual.Decision.ExpiresAt, view.Decision.ExpiresAt)
@@ -162,7 +162,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		unbanned, err := service.Release(ctx, manual.Decision.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
-		assert.Equal(t, decisions.StateUnbanned, unbanned.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, unbanned.Decision.State)
 		assert.Empty(t, unbanned.Sources)
 		assert.Equal(t, manual.Decision.Revision+1, unbanned.Decision.Revision)
 
@@ -170,7 +170,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisions.StateUnbanned, job.Decision.State, "the release must be queued")
+		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State, "the release must be queued")
 		assert.Equal(t, unbanned.Decision.Revision, job.Decision.Revision)
 
 		views, err := service.ListActive(ctx, now.Add(time.Second))
@@ -220,14 +220,14 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		result, err := service.Release(ctx, auto.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
-		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, result.Decision.State)
 		assert.Empty(t, result.Sources)
 
 		job, err := store.Next(ctx, now.Add(time.Second))
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
 	})
 
 	t.Run("removes a purely manual ban", func(t *testing.T) {
@@ -250,7 +250,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		result, err := service.Release(t.Context(), created.Decision.ID, now.Add(time.Second))
 
 		require.NoError(t, err)
-		assert.Equal(t, decisions.StateUnbanned, result.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, result.Decision.State)
 		assert.Empty(t, result.Sources)
 	})
 }
@@ -422,7 +422,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	require.NoError(t, err)
 	released, err := service.GetDecision(t.Context(), manual.Decision.ID, now.Add(time.Hour))
 	require.NoError(t, err)
-	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
+	assert.Equal(t, decisionstate.StateUnbanned, released.Decision.State)
 	assert.Equal(t, manual.Decision.Revision+1, released.Decision.Revision)
 	_, err = bans.ExpireSources(t.Context(), store, now.Add(time.Hour), []string{"edge"})
 	require.NoError(t, err)

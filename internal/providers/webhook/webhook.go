@@ -15,6 +15,7 @@ import (
 	"github.com/containeroo/notifykit/templates"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 const (
@@ -105,14 +106,14 @@ func (p Provider) ValidateTemplate() error {
 		ID:        "startup-check",
 		Revision:  1,
 		IP:        "203.0.113.1",
-		State:     decisions.StateBanned,
+		State:     decisionstate.StateBanned,
 		ExpiresAt: time.Unix(0, 0).UTC(),
 	}
 	if _, err := p.renderBody(decision); err != nil {
 		return fmt.Errorf("banned state: %w", err)
 	}
 
-	decision.State = decisions.StateUnbanned
+	decision.State = decisionstate.StateUnbanned
 	if _, err := p.renderBody(decision); err != nil {
 		return fmt.Errorf("unbanned state: %w", err)
 	}

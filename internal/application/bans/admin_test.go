@@ -10,6 +10,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // fakeStore implements an in-memory transaction for administration service tests.
@@ -48,7 +49,7 @@ func (r *fakeStore) PutSource(_ context.Context, ip string, source bans.Source) 
 
 // Decision returns a stable current decision for the requested IP.
 func (r *fakeStore) Decision(_ context.Context, ip string) (decisions.Decision, error) {
-	return decisions.Decision{ID: "decision-one", IP: ip, State: decisions.StateUnbanned}, nil
+	return decisions.Decision{ID: "decision-one", IP: ip, State: decisionstate.StateUnbanned}, nil
 }
 
 // Sources returns the previously recorded manual source unless it was cleared.
@@ -69,7 +70,7 @@ func (r *fakeStore) SaveDecision(_ context.Context, _, _ decisions.Decision, _ b
 func (r *fakeStore) DecisionByID(_ context.Context, id string) (decisions.Decision, error) {
 	r.id = id
 	return decisions.Decision{
-		ID: id, IP: "203.0.113.1", State: decisions.StateBanned,
+		ID: id, IP: "203.0.113.1", State: decisionstate.StateBanned,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}, nil
 }

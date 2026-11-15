@@ -8,6 +8,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 	"uuid"
 )
 
@@ -38,7 +39,7 @@ func (t *transaction) SaveDecision(ctx context.Context, previous, decision decis
 UPDATE decisions
 SET revision = ?, active = ?, expires = ?
 WHERE ip = ?
-`, decision.Revision, decision.State == decisions.StateBanned,
+`, decision.Revision, decision.State == decisionstate.StateBanned,
 			decision.ExpiresAt.UnixMilli(), decision.IP); err != nil {
 			return err
 		}
@@ -49,7 +50,7 @@ WHERE ip = ?
 	if _, err := t.tx.ExecContext(ctx, `
 DELETE FROM deliveries
 WHERE ip = ? AND acknowledged = ? AND ? = 1
-`, decision.IP, previous.Revision, previous.State == decisions.StateUnbanned); err != nil {
+`, decision.IP, previous.Revision, previous.State == decisionstate.StateUnbanned); err != nil {
 		return err
 	}
 

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // Writer executes a domain workflow inside one atomic persistence transaction.
@@ -98,7 +99,7 @@ func releaseAllSources(
 		return Record{}, err
 	}
 
-	if current.State != decisions.StateBanned || !current.ExpiresAt.After(now) {
+	if current.State != decisionstate.StateBanned || !current.ExpiresAt.After(now) {
 		return Record{}, ErrNotFound
 	}
 
@@ -164,7 +165,7 @@ func expireSources(
 		if err != nil {
 			return nil, err
 		}
-		if changed && decision.State == decisions.StateUnbanned {
+		if changed && decision.State == decisionstate.StateUnbanned {
 			released = append(released, decision)
 		}
 	}

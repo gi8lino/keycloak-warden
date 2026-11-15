@@ -6,19 +6,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
-func TestStateValid(t *testing.T) {
-	t.Parallel()
-
-	assert.True(t, StateBanned.Valid())
-	assert.True(t, StateUnbanned.Valid())
-	assert.False(t, State("").Valid())
-	assert.False(t, State("pending").Valid())
-}
-
 // assertDecisionJSONState verifies that each state round trips without legacy fields.
-func assertDecisionJSONState(t *testing.T, state State) {
+func assertDecisionJSONState(t *testing.T, state decisionstate.State) {
 	t.Helper()
 
 	encoded, err := json.Marshal(Decision{ID: "stable", State: state})
@@ -38,12 +31,12 @@ func TestDecisionJSONState(t *testing.T) {
 	t.Run("banned", func(t *testing.T) {
 		t.Parallel()
 
-		assertDecisionJSONState(t, StateBanned)
+		assertDecisionJSONState(t, decisionstate.StateBanned)
 	})
 
 	t.Run("unbanned", func(t *testing.T) {
 		t.Parallel()
 
-		assertDecisionJSONState(t, StateUnbanned)
+		assertDecisionJSONState(t, decisionstate.StateUnbanned)
 	})
 }

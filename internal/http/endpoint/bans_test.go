@@ -19,6 +19,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // assertCreateBanStatus checks the response status for a request body sent to POST /bans.
@@ -111,7 +112,7 @@ func TestCreateBan(t *testing.T) {
 	t.Run("accepts one ban request and writes the decision", func(t *testing.T) {
 		t.Parallel()
 		service := &scriptedAdministration{record: bans.Record{Decision: decisions.Decision{
-			ID: "decision-id", IP: "203.0.113.10", State: decisions.StateBanned,
+			ID: "decision-id", IP: "203.0.113.10", State: decisionstate.StateBanned,
 		}}}
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, nil))
@@ -213,7 +214,7 @@ func assertBanAdministrationHandler(t *testing.T, method, path string, handler f
 	record := bans.Record{Decision: decisions.Decision{
 		ID:    "decision-id",
 		IP:    "203.0.113.10",
-		State: decisions.StateBanned,
+		State: decisionstate.StateBanned,
 	}}
 	service := &scriptedAdministration{
 		record:  record,

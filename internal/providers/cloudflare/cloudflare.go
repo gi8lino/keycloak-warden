@@ -13,6 +13,7 @@ import (
 	"net/url"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 const (
@@ -106,7 +107,7 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 		return err
 	}
 
-	if d.State == decisions.StateBanned {
+	if d.State == decisionstate.StateBanned {
 		if len(owned) > 0 {
 			return nil
 		}

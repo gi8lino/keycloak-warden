@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // ExtendExpiry keeps the later deadline when an independent ban source is renewed.
@@ -30,9 +31,9 @@ func Reconcile(
 
 	if until.IsZero() {
 		// Preserve the last expiry for historical inspection after release.
-		next.State = decisions.StateUnbanned
+		next.State = decisionstate.StateUnbanned
 	} else {
-		next.State = decisions.StateBanned
+		next.State = decisionstate.StateBanned
 		next.ExpiresAt = until.UTC()
 	}
 

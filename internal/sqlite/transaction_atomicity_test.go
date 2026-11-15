@@ -12,6 +12,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // openAtomicityStore creates a disposable database for injected SQLite failures.
@@ -63,7 +64,7 @@ END
 	require.NoError(t, err)
 	created, err := bans.ApplyManualBan(ctx, store, ip, now.Add(time.Hour), "investigation", now, []string{"edge"})
 	require.NoError(t, err)
-	assert.Equal(t, decisions.StateBanned, created.Decision.State)
+	assert.Equal(t, decisionstate.StateBanned, created.Decision.State)
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
@@ -112,7 +113,7 @@ END
 	require.NoError(t, err)
 	released, err := bans.ReleaseAllSources(ctx, store, created.Decision.ID, now.Add(time.Second), []string{"edge"})
 	require.NoError(t, err)
-	assert.Equal(t, decisions.StateUnbanned, released.Decision.State)
+	assert.Equal(t, decisionstate.StateUnbanned, released.Decision.State)
 	require.NoError(t, store.db.QueryRowContext(ctx,
 		"SELECT failure_generation FROM decisions WHERE ip = ?", created.Decision.IP,
 	).Scan(&generation))
@@ -158,7 +159,7 @@ END
 	require.Len(t, released, 2)
 	assert.ElementsMatch(t, []string{first.Decision.ID, second.Decision.ID}, []string{released[0].ID, released[1].ID})
 	for _, decision := range released {
-		assert.Equal(t, decisions.StateUnbanned, decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, decision.State)
 	}
 	current, err := store.GetDecision(ctx, remaining.Decision.ID, now.Add(10*time.Second))
 	require.NoError(t, err)

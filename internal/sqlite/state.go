@@ -1,11 +1,13 @@
 package sqlite
 
-import "github.com/gi8lino/keycloak-warden/internal/application/decisions"
+import (
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+)
 
 // stateFromActive maps the persisted SQLite boolean to the domain state.
-func stateFromActive(active bool) decisions.State {
+func stateFromActive(active bool) decisionstate.State {
 	if active {
-		return decisions.StateBanned
+		return decisionstate.StateBanned
 	}
-	return decisions.StateUnbanned
+	return decisionstate.StateUnbanned
 }

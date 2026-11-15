@@ -14,8 +14,8 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 func TestDeliveryReplayAfterRestart(t *testing.T) {
@@ -96,7 +96,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		job, err = store.Next(ctx, now.Add(time.Second))
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
 		require.NoError(t, provider.Apply(ctx, job.Decision))
 
 		// Simulate another crash after release but before acknowledgement.

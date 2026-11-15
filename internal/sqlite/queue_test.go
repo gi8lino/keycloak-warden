@@ -13,8 +13,8 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // TestFinishIgnoresStaleDeliveryFailure ensures old delivery failures cannot delay new revisions.
@@ -84,7 +84,7 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	require.Len(t, result.DeliveryHistory, 1)
 	delivery = result.DeliveryHistory[0]
 	assert.Equal(t, "delivered", delivery.Status)
-	assert.Equal(t, "banned", delivery.DesiredState)
+	assert.Equal(t, decisionstate.StateBanned, delivery.DesiredState)
 	assert.Equal(t, &next, delivery.AcknowledgedAt)
 	assert.Nil(t, delivery.NextAttemptAt)
 	require.Len(t, delivery.Attempts, 2)
@@ -205,7 +205,7 @@ func TestDestinationBackoff(t *testing.T) {
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
+	assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
 	require.NoError(t, store.Finish(ctx, *job, nil, 10, now, 0))
 
 	// The other pending release gets a fresh first retry after the destination recovers.
@@ -283,7 +283,7 @@ func TestWorkerSchedule(t *testing.T) {
 		job, err = store.Next(ctx, due)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
 		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due, 0))
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
@@ -336,5 +336,5 @@ func TestAttemptBudget(t *testing.T) {
 	job, err = store.Next(ctx, now.Add(5*time.Minute))
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	assert.Equal(t, decisions.StateUnbanned, job.Decision.State)
+	assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
 }

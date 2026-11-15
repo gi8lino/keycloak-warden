@@ -1,6 +1,10 @@
 package decisions
 
-import "time"
+import (
+	"time"
+
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+)
 
 // Delivery describes one destination's progress applying a decision revision.
 type Delivery struct {
@@ -9,7 +13,7 @@ type Delivery struct {
 	// Revision identifies the desired decision version.
 	Revision int64 `json:"revision" yaml:"revision"`
 	// DesiredState is the requested state when known.
-	DesiredState string `json:"desiredState,omitempty" yaml:"desiredState,omitempty"`
+	DesiredState decisionstate.State `json:"desiredState,omitempty" yaml:"desiredState,omitempty"`
 	// Status is pending, retrying, delivered, exhausted, or superseded.
 	Status string `json:"status" yaml:"status"`
 	// AcknowledgedAt records successful completion.

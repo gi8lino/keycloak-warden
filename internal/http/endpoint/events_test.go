@@ -23,6 +23,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/http/middleware"
 	"github.com/gi8lino/keycloak-warden/internal/metrics"
 	"github.com/gi8lino/keycloak-warden/internal/signing"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // capture receives authenticated envelopes and keeps their original source details.
@@ -170,7 +171,7 @@ func TestEventsRealmTelemetry(t *testing.T) {
 			ID:       "decision",
 			IP:       "203.0.113.5",
 			Revision: 14,
-			State:    decisions.StateBanned,
+			State:    decisionstate.StateBanned,
 		}}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, registry), middleware.AuthenticateSnitch("key"))
 

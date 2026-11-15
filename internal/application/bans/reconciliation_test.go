@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // policyTx captures storage primitives requested by the domain reconciliation.
@@ -105,7 +106,7 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 		t.Parallel()
 
 		now := time.Now()
-		previous := decisions.Decision{ID: "id", IP: "203.0.113.3", State: decisions.StateUnbanned, Revision: 1}
+		previous := decisions.Decision{ID: "id", IP: "203.0.113.3", State: decisionstate.StateUnbanned, Revision: 1}
 		tx := &policyTx{
 			prior:          previous,
 			currentSources: []Source{{Kind: SourceManual, ExpiresAt: now.Add(time.Hour)}},
@@ -115,7 +116,7 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, changed)
 		assert.EqualValues(t, 2, next.Revision)
-		assert.Equal(t, decisions.StateBanned, next.State)
+		assert.Equal(t, decisionstate.StateBanned, next.State)
 		assert.Equal(t, next, tx.saved)
 		assert.Equal(t, []string{"cloudflare.edge"}, tx.savedTargets)
 	})
@@ -125,7 +126,7 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 
 		now := time.Now()
 		previous := decisions.Decision{
-			ID: "id", IP: "203.0.113.4", State: decisions.StateBanned,
+			ID: "id", IP: "203.0.113.4", State: decisionstate.StateBanned,
 			Revision: 4, ExpiresAt: now.Add(time.Hour),
 		}
 		tx := &policyTx{

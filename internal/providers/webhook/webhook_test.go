@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 func TestProviderApply(t *testing.T) {
@@ -28,7 +29,7 @@ func TestProviderApply(t *testing.T) {
 			ID:        "stable",
 			IP:        "203.0.113.2",
 			Revision:  3,
-			State:     decisions.StateUnbanned,
+			State:     decisionstate.StateUnbanned,
 			ExpiresAt: time.Now().UTC(),
 		}
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -67,7 +68,7 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider{URL: server.URL, Client: server.Client()}
-		require.NoError(t, p.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}))
+		require.NoError(t, p.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}))
 	})
 
 	t.Run("rejects unknown desired state before sending webhook", func(t *testing.T) {
@@ -83,7 +84,7 @@ func TestProviderApply(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }))
 		defer server.Close()
 		p := Provider{URL: server.URL, Client: server.Client()}
-		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}), "503")
+		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}), "503")
 	})
 }
 
@@ -97,7 +98,7 @@ func TestProviderTemplate(t *testing.T) {
 			ID:        "decision-id",
 			Revision:  7,
 			IP:        "203.0.113.42",
-			State:     decisions.StateBanned,
+			State:     decisionstate.StateBanned,
 			ExpiresAt: time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC),
 		}
 
@@ -146,7 +147,7 @@ func TestProviderTemplate(t *testing.T) {
 			ID:       "quoted \"id\"\nnew line",
 			Revision: 5,
 			IP:       "203.0.113.42",
-			State:    decisions.StateBanned,
+			State:    decisionstate.StateBanned,
 		}
 
 		require.NoError(t, provider.Apply(t.Context(), decision))
@@ -166,11 +167,11 @@ func TestProviderTemplate(t *testing.T) {
 		provider := Provider{Template: tmpl}
 		require.NoError(t, provider.ValidateTemplate())
 
-		banBody, err := provider.renderBody(decisions.Decision{State: decisions.StateBanned})
+		banBody, err := provider.renderBody(decisions.Decision{State: decisionstate.StateBanned})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"banned"}`, string(banBody))
 
-		releaseBody, err := provider.renderBody(decisions.Decision{State: decisions.StateUnbanned})
+		releaseBody, err := provider.renderBody(decisions.Decision{State: decisionstate.StateUnbanned})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"released"}`, string(releaseBody))
 	})
@@ -189,7 +190,7 @@ func TestProviderTemplate(t *testing.T) {
 		defer server.Close()
 
 		provider := Provider{URL: server.URL, Client: server.Client(), Template: tmpl}
-		err = provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned})
+		err = provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned})
 		require.ErrorContains(t, err, "invalid JSON")
 		assert.Zero(t, requests.Load())
 	})
@@ -240,7 +241,7 @@ func TestProviderResponseRule(t *testing.T) {
 		defer server.Close()
 
 		provider := Provider{URL: server.URL, Client: server.Client()}
-		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}))
+		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}))
 	})
 
 	t.Run("no rule still rejects non 2xx status", func(t *testing.T) {
@@ -253,7 +254,7 @@ func TestProviderResponseRule(t *testing.T) {
 		defer server.Close()
 
 		provider := Provider{URL: server.URL, Client: server.Client()}
-		err := provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned})
+		err := provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned})
 		require.ErrorContains(t, err, "403")
 		assert.NotContains(t, err.Error(), "secret")
 	})
@@ -272,7 +273,7 @@ func TestProviderResponseRule(t *testing.T) {
 			ErrorPointer: "/error",
 		}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}))
+		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}))
 	})
 
 	t.Run("rule rejects Slack HTTP 200 failure and extracts error", func(t *testing.T) {
@@ -289,7 +290,7 @@ func TestProviderResponseRule(t *testing.T) {
 			ErrorPointer: "/error",
 		}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		err := provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned})
+		err := provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned})
 		require.ErrorContains(t, err, "channel_not_found")
 		assert.NotContains(t, err.Error(), "private-secret")
 	})
@@ -309,7 +310,7 @@ func TestProviderResponseRule(t *testing.T) {
 			ErrorPointer: "/error",
 		}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		err := provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned})
+		err := provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned})
 		require.ErrorContains(t, err, "403")
 		assert.ErrorContains(t, err, "invalid_auth")
 		assert.NotContains(t, err.Error(), "private-secret")
@@ -328,7 +329,7 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:  json.RawMessage(`true`),
 		}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.Error(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateUnbanned}))
+		assert.Error(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateUnbanned}))
 	})
 
 	t.Run("rule allows explicitly configured non 2xx response", func(t *testing.T) {
@@ -341,7 +342,7 @@ func TestProviderResponseRule(t *testing.T) {
 
 		rule := response.Rule{StatusCodes: []int{http.StatusTeapot}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}))
+		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}))
 	})
 
 	t.Run("status-only rule rejects unconfigured 2xx response", func(t *testing.T) {
@@ -354,7 +355,7 @@ func TestProviderResponseRule(t *testing.T) {
 
 		rule := response.Rule{StatusCodes: []int{http.StatusAccepted}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.ErrorContains(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}), "204")
+		assert.ErrorContains(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}), "204")
 	})
 
 	t.Run("text rule matches exact response", func(t *testing.T) {
@@ -368,7 +369,7 @@ func TestProviderResponseRule(t *testing.T) {
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}))
+		assert.NoError(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}))
 	})
 
 	t.Run("text rule extracts sanitized bounded error details", func(t *testing.T) {
@@ -383,7 +384,7 @@ func TestProviderResponseRule(t *testing.T) {
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		err := provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned})
+		err := provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned})
 		require.ErrorContains(t, err, "Invalid key")
 		assert.NotContains(t, err.Error(), "\n")
 		assert.Less(t, len(err.Error()), 400)
@@ -400,6 +401,6 @@ func TestProviderResponseRule(t *testing.T) {
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
 		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.ErrorContains(t, provider.Apply(t.Context(), decisions.Decision{State: decisions.StateBanned}), "64 KiB")
+		assert.ErrorContains(t, provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}), "64 KiB")
 	})
 }

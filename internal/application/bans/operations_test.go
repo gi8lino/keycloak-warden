@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // workflowTx extends the reconciliation fake with observable release operations.
@@ -78,14 +79,14 @@ func TestBanWorkflows(t *testing.T) {
 
 		now := time.Now().UTC()
 		tx := &workflowTx{policyTx: policyTx{prior: decisions.Decision{
-			ID: "id", IP: "203.0.113.10", State: decisions.StateUnbanned,
+			ID: "id", IP: "203.0.113.10", State: decisionstate.StateUnbanned,
 		}}}
 		record, err := ApplyManualBan(t.Context(), workflowWriter{tx: tx}, "203.0.113.10", now.Add(time.Hour), "investigation", now, []string{"edge"})
 
 		require.NoError(t, err)
 		assert.Equal(t, SourceManual, tx.written.Kind)
 		assert.Equal(t, "investigation", tx.written.Reason)
-		assert.Equal(t, decisions.StateBanned, record.Decision.State)
+		assert.Equal(t, decisionstate.StateBanned, record.Decision.State)
 		assert.Equal(t, []string{"edge"}, tx.savedTargets)
 	})
 
@@ -95,7 +96,7 @@ func TestBanWorkflows(t *testing.T) {
 		now := time.Now().UTC()
 		previous := decisions.Decision{
 			ID: "id", IP: "203.0.113.11", Revision: 4,
-			State: decisions.StateBanned, ExpiresAt: now.Add(time.Hour),
+			State: decisionstate.StateBanned, ExpiresAt: now.Add(time.Hour),
 		}
 		tx := &workflowTx{policyTx: policyTx{
 			prior:          previous,
@@ -107,7 +108,7 @@ func TestBanWorkflows(t *testing.T) {
 		assert.True(t, tx.deletedSources)
 		assert.True(t, tx.resetFailures)
 		assert.EqualValues(t, 5, record.Decision.Revision)
-		assert.Equal(t, decisions.StateUnbanned, record.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, record.Decision.State)
 		assert.Equal(t, []string{"edge"}, tx.savedTargets)
 	})
 
@@ -116,7 +117,7 @@ func TestBanWorkflows(t *testing.T) {
 
 		now := time.Now().UTC()
 		tx := &workflowTx{policyTx: policyTx{prior: decisions.Decision{
-			ID: "id", IP: "203.0.113.12", State: decisions.StateUnbanned,
+			ID: "id", IP: "203.0.113.12", State: decisionstate.StateUnbanned,
 		}}}
 		_, err := ReleaseAllSources(t.Context(), workflowWriter{tx: tx}, "id", now, []string{"edge"})
 
@@ -131,7 +132,7 @@ func TestBanWorkflows(t *testing.T) {
 		now := time.Now().UTC()
 		previous := decisions.Decision{
 			ID: "id", IP: "203.0.113.13", Revision: 4,
-			State: decisions.StateBanned, ExpiresAt: now.Add(-time.Second),
+			State: decisionstate.StateBanned, ExpiresAt: now.Add(-time.Second),
 		}
 		tx := &workflowTx{
 			policyTx: policyTx{prior: previous, currentSources: []Source{{
@@ -145,7 +146,7 @@ func TestBanWorkflows(t *testing.T) {
 		assert.True(t, tx.deletedExpired)
 		require.Len(t, released, 1)
 		assert.Equal(t, previous.ID, released[0].ID)
-		assert.Equal(t, decisions.StateUnbanned, released[0].State)
+		assert.Equal(t, decisionstate.StateUnbanned, released[0].State)
 		assert.EqualValues(t, 5, released[0].Revision)
 	})
 }
@@ -159,7 +160,7 @@ func TestWorkflowCommitFailure(t *testing.T) {
 
 		now := time.Now().UTC()
 		tx := &workflowTx{policyTx: policyTx{prior: decisions.Decision{
-			ID: "decision", IP: "203.0.113.10", State: decisions.StateUnbanned,
+			ID: "decision", IP: "203.0.113.10", State: decisionstate.StateUnbanned,
 		}}}
 		writer := workflowWriter{tx: tx, commitErr: errors.New("commit failed")}
 
@@ -174,7 +175,7 @@ func TestWorkflowCommitFailure(t *testing.T) {
 
 		now := time.Now().UTC()
 		prior := decisions.Decision{
-			ID: "decision", IP: "203.0.113.11", State: decisions.StateBanned,
+			ID: "decision", IP: "203.0.113.11", State: decisionstate.StateBanned,
 			ExpiresAt: now.Add(time.Hour),
 		}
 		tx := &workflowTx{policyTx: policyTx{
@@ -194,7 +195,7 @@ func TestWorkflowCommitFailure(t *testing.T) {
 
 		now := time.Now().UTC()
 		prior := decisions.Decision{
-			ID: "decision", IP: "203.0.113.12", State: decisions.StateBanned,
+			ID: "decision", IP: "203.0.113.12", State: decisionstate.StateBanned,
 			ExpiresAt: now.Add(-time.Second),
 		}
 		tx := &workflowTx{

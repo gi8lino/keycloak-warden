@@ -1,22 +1,11 @@
 // Package decisions defines the desired security state shared by storage and delivery.
 package decisions
 
-import "time"
+import (
+	"time"
 
-// State identifies the desired blocking state, independently of delivery status.
-type State string
-
-const (
-	// StateBanned requests that destinations block the address.
-	StateBanned State = "banned"
-	// StateUnbanned requests that destinations release the address.
-	StateUnbanned State = "unbanned"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
-
-// Valid reports whether the state is a supported desired blocking state.
-func (s State) Valid() bool {
-	return s == StateBanned || s == StateUnbanned
-}
 
 // Decision describes the latest desired state for one address.
 type Decision struct {
@@ -27,7 +16,7 @@ type Decision struct {
 	// IP is the canonical address to block or release.
 	IP string `json:"ipAddress" yaml:"ipAddress"`
 	// State is the desired block or release operation.
-	State State `json:"state" yaml:"state"`
+	State decisionstate.State `json:"state" yaml:"state"`
 	// ExpiresAt is the deadline for the desired block.
 	ExpiresAt time.Time `json:"expiresAt" yaml:"expiresAt"`
 }

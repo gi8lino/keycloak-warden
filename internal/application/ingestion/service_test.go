@@ -15,6 +15,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // fakeRepository captures ingestion transactions for service tests.
@@ -86,11 +87,11 @@ func (tx *fakeTx) PutSource(_ context.Context, _ string, source bans.Source) err
 func (tx *fakeTx) Decision(_ context.Context, ip string) (decisions.Decision, error) {
 	if tx.unchanged {
 		return decisions.Decision{
-			ID: "decision", IP: ip, State: decisions.StateBanned,
+			ID: "decision", IP: ip, State: decisionstate.StateBanned,
 			ExpiresAt: tx.until,
 		}, nil
 	}
-	return decisions.Decision{ID: "decision", IP: ip, State: decisions.StateUnbanned}, nil
+	return decisions.Decision{ID: "decision", IP: ip, State: decisionstate.StateUnbanned}, nil
 }
 
 // Sources exposes the new automatic source to application reconciliation.

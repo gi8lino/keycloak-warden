@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 func TestProviderApply(t *testing.T) {
@@ -24,7 +25,7 @@ func TestProviderApply(t *testing.T) {
 		d := decisions.Decision{
 			ID:    "decision-one",
 			IP:    "2001:db8::1",
-			State: decisions.StateBanned,
+			State: decisionstate.StateBanned,
 		}
 		var rules = []rule{{
 			ID:            "foreign",
@@ -79,7 +80,7 @@ func TestProviderApply(t *testing.T) {
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
-		d.State = decisions.StateUnbanned
+		d.State = decisionstate.StateUnbanned
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
@@ -107,7 +108,7 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider{RulesURL: server.URL, Client: server.Client()}
-		require.EqualError(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisions.StateBanned}), "Cloudflare HTTP 403 (code 10000)")
+		require.EqualError(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisionstate.StateBanned}), "Cloudflare HTTP 403 (code 10000)")
 	})
 
 	t.Run("API failure is retryable", func(t *testing.T) {
@@ -121,7 +122,7 @@ func TestProviderApply(t *testing.T) {
 			Token:    "secret",
 		}
 
-		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisions.StateBanned}), "429")
+		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisionstate.StateBanned}), "429")
 	})
 }
 

@@ -17,6 +17,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // openStore constructs an isolated store and matching application ingestion use case.
@@ -136,7 +137,7 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, release)
 		assert.Equal(t, "a", release.Destination)
-		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
 		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now, 0))
 		release, err = store.Next(ctx, now)
@@ -144,7 +145,7 @@ func TestOpen(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, release)
 		assert.Equal(t, "b", release.Destination)
-		assert.Equal(t, decisions.StateUnbanned, release.Decision.State)
+		assert.Equal(t, decisionstate.StateUnbanned, release.Decision.State)
 		assert.Equal(t, int64(3), release.Decision.Revision)
 		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now, 0))
 		active, err = store.ListActive(ctx, now)
