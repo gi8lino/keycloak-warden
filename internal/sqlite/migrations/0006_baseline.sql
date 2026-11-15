@@ -39,7 +39,7 @@ CREATE TABLE delivery_history (
     revision INTEGER NOT NULL,
     destination TEXT NOT NULL,
     desired_state TEXT,
-    status TEXT NOT NULL,
+    status TEXT NOT NULL CHECK (status IN ('pending', 'retrying', 'delivered', 'exhausted', 'superseded')),
     acknowledged_at INTEGER,
     superseded_by INTEGER,
     PRIMARY KEY (ip, revision, destination)

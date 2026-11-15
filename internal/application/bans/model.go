@@ -34,6 +34,10 @@ type Record struct {
 	Sources []Source `json:"sources" yaml:"sources"`
 	// DeliveryHistory contains per-revision history on individual decision reads.
 	DeliveryHistory []decisions.Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
+	// HistoryPage identifies the one-based page included in an individual inspection.
+	HistoryPage int `json:"historyPage,omitempty" yaml:"historyPage,omitempty"`
+	// HistoryNextPage identifies the next older page; zero means the last page.
+	HistoryNextPage int `json:"historyNextPage,omitempty" yaml:"historyNextPage,omitempty"`
 	// Deliveries records each destination’s acknowledged revision.
 	Deliveries []decisions.Acknowledgement `json:"deliveries" yaml:"deliveries"`
 }

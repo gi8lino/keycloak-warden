@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 )
 
@@ -36,12 +37,25 @@ func (c *Client) Unban(ctx context.Context, decisionID string) (Record, error) {
 	return c.doBanRequest(ctx, http.MethodDelete, "/bans/"+url.PathEscape(decisionID), nil)
 }
 
-// Get retrieves one persisted decision, including released records and delivery acknowledgements.
+// Get retrieves one persisted decision with its newest bounded history page.
 func (c *Client) Get(ctx context.Context, decisionID string) (Record, error) {
+	return c.GetPage(ctx, decisionID, 1)
+}
+
+// GetPage retrieves a one-based history page directly using SQLite LIMIT/OFFSET.
+// The decision and acknowledgements always describe the latest persisted state.
+func (c *Client) GetPage(ctx context.Context, decisionID string, page int) (Record, error) {
 	if strings.TrimSpace(decisionID) == "" {
 		return Record{}, errors.New("decision ID is required")
 	}
-	return c.doBanRequest(ctx, http.MethodGet, "/bans/"+url.PathEscape(decisionID), nil)
+	if page < 1 {
+		return Record{}, errors.New("history-page must be positive")
+	}
+	path := "/bans/" + url.PathEscape(decisionID)
+	if page != 1 {
+		path += "?history-page=" + strconv.Itoa(page)
+	}
+	return c.doBanRequest(ctx, http.MethodGet, path, nil)
 }
 
 // List fetches effective bans with their automatic and manual sources.

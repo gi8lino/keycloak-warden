@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
@@ -32,8 +33,8 @@ func TestValidateTargets(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
 
-		require.ErrorContains(t, reopened.ValidateTargets(ctx, []string{"replacement"}), `destination "old" has managed decisions`)
-		require.NoError(t, reopened.ValidateTargets(ctx, []string{"old"}))
+		require.ErrorContains(t, actions.ValidateTargets(ctx, reopened, []string{"replacement"}), `destination "old" has managed decisions`)
+		require.NoError(t, actions.ValidateTargets(ctx, reopened, []string{"old"}))
 
 		pending, err := reopened.Next(ctx, now.Add(time.Second))
 		require.NoError(t, err)
@@ -60,8 +61,8 @@ func TestValidateTargets(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, reopened.Close()) })
 
-		require.ErrorContains(t, reopened.ValidateTargets(ctx, []string{"replacement"}), `destination "old" has managed decisions`)
-		require.NoError(t, reopened.ValidateTargets(ctx, []string{"old"}))
+		require.ErrorContains(t, actions.ValidateTargets(ctx, reopened, []string{"replacement"}), `destination "old" has managed decisions`)
+		require.NoError(t, actions.ValidateTargets(ctx, reopened, []string{"old"}))
 
 		pending, err := reopened.Next(ctx, now.Add(2*time.Second))
 		require.NoError(t, err)

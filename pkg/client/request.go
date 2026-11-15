@@ -52,7 +52,12 @@ func (c *Client) doWithTimeout(
 	}
 
 	destination := *c.url
-	destination.Path = c.url.Path + path
+	// Preserve the optional, URL-encoded inspection history page.
+	pathPart, query, hasQuery := strings.Cut(path, "?")
+	destination.Path = c.url.Path + pathPart
+	if hasQuery {
+		destination.RawQuery = query
+	}
 
 	req, err := http.NewRequestWithContext(ctx, method, destination.String(), body)
 	if err != nil {

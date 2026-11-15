@@ -79,6 +79,8 @@ type scriptedAdministration struct {
 	requested bans.ManualBanRequest
 	// id captures the decision selected for retrieval or release.
 	id string
+	// page records the requested history page.
+	page int
 	// calls counts application operations invoked after input validation.
 	calls int
 }
@@ -100,9 +102,10 @@ func (s *scriptedAdministration) ListActive(context.Context, time.Time) ([]bans.
 	return s.records, s.err
 }
 
-func (s *scriptedAdministration) GetDecision(_ context.Context, id string, _ time.Time) (bans.Record, error) {
+func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _ time.Time, page int) (bans.Record, error) {
 	s.calls++
 	s.id = id
+	s.page = page
 	return s.record, s.err
 }
 
@@ -352,5 +355,129 @@ func TestBanAdministrationErrors(t *testing.T) {
 
 			assertBanAdministrationError(t, http.MethodDelete, "/bans/decision-id", "", endpoint.DeleteBan, errors.New("private database error"), http.StatusServiceUnavailable)
 		})
+	})
+}
+
+func TestGetBanHistoryPageValidation(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects duplicate page parameters", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=1&history-page=2", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects malformed URL encoding", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one", nil)
+		request.URL.RawQuery = "history-page=%"
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects nonnumeric page", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=nope", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects nonpositive page", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=0", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects negative page", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=-1", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects overflowing page offset", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=9223372036854775807", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects missing page value", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("passes page 100 directly to the application", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-page=100", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, 1, service.calls)
+		assert.Equal(t, "one", service.id)
+		assert.Equal(t, 100, service.page)
+	})
+
+	t.Run("defaults to first page", func(t *testing.T) {
+		t.Parallel()
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, 1, service.page)
 	})
 }

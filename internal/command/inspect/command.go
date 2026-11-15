@@ -17,14 +17,16 @@ func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode 
 	command.MinPositional(1)
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
+	page := command.Int("history-page", 1, "One-based delivery-history page (default: 1)").
+		Placeholder("NUMBER").
+		OneOfGroup("history").
+		Validate(tinyflags.Positive[int]()).
+		Value()
+	allFlag := command.Bool("history-all", false, "Fetch every delivery-history page").
+		OneOfGroup("history").
+		Value()
 
 	command.Run(func(ctx context.Context) error {
-		return Run(
-			ctx,
-			*adminFlags.ApplicationURL,
-			*adminFlags.AdminToken,
-			command.Args(),
-			encode,
-		)
+		return RunPage(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, command.Args(), *page, *allFlag, encode)
 	})
 }

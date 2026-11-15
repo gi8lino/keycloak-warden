@@ -32,7 +32,7 @@ func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *in
 	store, err := sqlite.Open(path)
 	require.NoError(t, err)
 
-	require.NoError(t, store.ValidateTargets(t.Context(), targets))
+	require.NoError(t, actions.ValidateTargets(t.Context(), store, targets))
 
 	processor, err := ingestion.New(store, rule, targets)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, *extended, view.Decision)
 		assert.Equal(
 			t,
-			[]decisions.Acknowledgement{{Destination: "a", Revision: 1}, {Destination: "b", Revision: 1}},
+			[]decisions.Acknowledgement{{Destination: "a", Revision: 0}, {Destination: "b", Revision: 1}},
 			view.Deliveries,
 		)
 
@@ -132,22 +132,36 @@ func TestOpen(t *testing.T) {
 
 		_, err = bans.ExpireSources(ctx, store, now, []string{"a", "b"})
 		require.NoError(t, err)
-		release, err := store.Next(ctx, now)
+		firstRelease, err := store.Next(ctx, now)
 
 		require.NoError(t, err)
-		require.NotNil(t, release)
-		assert.Equal(t, "a", release.Destination)
-		assert.Equal(t, decisionstate.StateUnbanned, release.Decision.State)
-		assert.Equal(t, int64(3), release.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now, 0))
-		release, err = store.Next(ctx, now)
+		require.NotNil(t, firstRelease)
+		assert.Equal(t, decisionstate.StateUnbanned, firstRelease.Decision.State)
+		assert.Equal(t, int64(3), firstRelease.Decision.Revision)
+		require.NoError(t, store.Finish(ctx, *firstRelease, nil, actions.DefaultMaxAttempts, now, 0))
+
+		secondRelease, err := store.Next(ctx, now)
 
 		require.NoError(t, err)
-		require.NotNil(t, release)
-		assert.Equal(t, "b", release.Destination)
-		assert.Equal(t, decisionstate.StateUnbanned, release.Decision.State)
-		assert.Equal(t, int64(3), release.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *release, nil, actions.DefaultMaxAttempts, now, 0))
+		require.NotNil(t, secondRelease)
+		assert.Equal(t, decisionstate.StateUnbanned, secondRelease.Decision.State)
+		assert.Equal(t, int64(3), secondRelease.Decision.Revision)
+		assert.ElementsMatch(t, []string{"a", "b"}, []string{firstRelease.Destination, secondRelease.Destination})
+		require.NoError(t, store.Finish(ctx, *secondRelease, nil, actions.DefaultMaxAttempts, now, 0))
+
+		noMoreWork, err := store.Next(ctx, now)
+
+		require.NoError(t, err)
+		assert.Nil(t, noMoreWork)
+
+		releasedRecord, err := store.GetDecision(ctx, extended.ID, now)
+
+		require.NoError(t, err)
+		assert.Equal(t, []decisions.Acknowledgement{
+			{Destination: "a", Revision: 3},
+			{Destination: "b", Revision: 3},
+		}, releasedRecord.Deliveries)
+
 		active, err = store.ListActive(ctx, now)
 
 		require.NoError(t, err)

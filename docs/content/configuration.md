@@ -30,6 +30,8 @@ targets:
 
 {code highlight="2-4,8-9,11-19" note="2:Number of failed logins needed to trigger a ban." note="3:Rolling detection window, counted per client IP." note="4:Duration of an automatic ban." note="8-9:Cloudflare credentials resolve from the environment." note="11-19:Named webhook destinations with optional headers and body templates." reference-position="right" reference-color="blue" line-numbers="true"}
 
+**Destination names** must be at most 128 bytes and cannot contain whitespace or control characters.
+
 **At least one destination is required.** Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
 
 ### Templated webhook bodies

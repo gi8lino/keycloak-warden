@@ -62,3 +62,7 @@ The `actions` package calculates the capped exponential retry delay (10 seconds 
 ## Expiry and release workflows
 
 `bans` orchestrates manual releases and source expiry using atomic `TransactDecision` callbacks. The application clears sources, advances the observation generation, computes effective decisions and enqueues delivery revisions; SQLite provides only the corresponding persistence primitives. The action worker delegates expiry to `bans.ExpiryService`, rather than asking SQLite to maintain ban policy.
+
+## Policy and persistence boundaries
+
+At startup, SQLite reports the destinations that still own bans or unacknowledged revisions; `actions.ValidateTargets` decides whether the configured target set is safe. The application owns the delivery attempt-limit decision (`actions.StatusAfterFailure`), while SQLite counts recorded attempts and applies status updates transactionally. The administrative history API returns bounded, numbered-page snapshots using SQLite LIMIT/OFFSET; all attempts remain durably stored, including successful responses that arrive after a newer revision supersedes an in-flight attempt. Such stale completions never advance current acknowledgements or backoff state.

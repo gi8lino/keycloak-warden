@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"mime"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
@@ -22,7 +24,7 @@ type BanAdministration interface {
 	BanManual(context.Context, bans.ManualBanRequest, time.Time) (bans.Record, error)
 	Release(context.Context, string, time.Time) (bans.Record, error)
 	ListActive(context.Context, time.Time) ([]bans.Record, error)
-	GetDecision(context.Context, string, time.Time) (bans.Record, error)
+	GetDecisionPage(context.Context, string, time.Time, int) (bans.Record, error)
 }
 
 // createBanPayload contains the fields decoded independently for each administrative request.
@@ -121,7 +123,25 @@ func ListBans(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 // GetBan returns one persisted decision together with its sources and deliveries.
 func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		record, err := service.GetDecision(r.Context(), r.PathValue("id"), time.Now())
+		// A page number selects a bounded slice of history with no precursor requests.
+		query, err := url.ParseQuery(r.URL.RawQuery)
+		if err != nil || len(query) > 1 || len(query["history-page"]) > 1 || (len(query) == 1 && len(query["history-page"]) != 1) {
+			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
+			return
+		}
+		page := 1
+		if values := query["history-page"]; len(values) == 1 {
+			page, err = strconv.Atoi(values[0])
+			if err != nil {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
+				return
+			}
+		}
+		if _, err := bans.HistoryOffset(page); err != nil {
+			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
+			return
+		}
+		record, err := service.GetDecisionPage(r.Context(), r.PathValue("id"), time.Now(), page)
 		if writeBanError(w, logger, err) {
 			return
 		}

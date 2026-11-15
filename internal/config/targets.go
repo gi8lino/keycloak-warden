@@ -109,6 +109,9 @@ func validateTargetName(name string) error {
 	if name == "" {
 		return errors.New("name must not be empty")
 	}
+	if len(name) > 128 {
+		return errors.New("name must not exceed 128 bytes")
+	}
 
 	for _, r := range name {
 		if unicode.IsSpace(r) || unicode.IsControl(r) {

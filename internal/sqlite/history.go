@@ -6,24 +6,26 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
 )
 
 // syncDeliveryHistory registers queued destinations and retires unfinished earlier revisions.
 func syncDeliveryHistory(ctx context.Context, tx *sql.Tx, d decisions.Decision) error {
 	if _, err := tx.ExecContext(ctx, `
 UPDATE delivery_history
-SET status = 'superseded', superseded_by = ?
+SET status = ?, superseded_by = ?
 WHERE ip = ? AND revision < ? AND status IN ('pending', 'retrying')
-`, d.Revision, d.IP, d.Revision); err != nil {
+`, deliverystate.StatusSuperseded, d.Revision, d.IP, d.Revision); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
 INSERT INTO delivery_history (ip, revision, destination, desired_state, status)
-SELECT ip, ?, destination, ?, 'pending'
+SELECT ip, ?, destination, ?, ?
 FROM deliveries WHERE ip = ?
 ON CONFLICT DO NOTHING
-`, d.Revision, d.State, d.IP)
+`, d.Revision, d.State, deliverystate.StatusPending, d.IP)
 	return err
 }
 
@@ -43,39 +45,70 @@ FROM delivery_attempts WHERE ip = ? AND revision = ? AND destination = ?
 		return err
 	}
 
+	return nil
+}
+
+// finishAttemptStatus marks only the current revision as retrying or delivered.
+// A stale provider response remains recorded as an attempt but never changes
+// the superseded revision's status or current destination scheduling.
+func finishAttemptStatus(ctx context.Context, tx *sql.Tx, job actions.Job, deliveryErr error, now time.Time) error {
+	status := deliverystate.StatusDelivered
+	if deliveryErr != nil {
+		status = deliverystate.StatusRetrying
+	}
 	if deliveryErr != nil {
 		_, err := tx.ExecContext(ctx, `
-UPDATE delivery_history SET status = 'retrying'
-WHERE ip = ? AND revision = ? AND destination = ? AND status = 'pending'
-`, d.IP, d.Revision, job.Destination)
+UPDATE delivery_history SET status = ?
+WHERE ip = ? AND revision = ? AND destination = ? AND status IN ('pending', 'retrying')
+`, status, job.Decision.IP, job.Decision.Revision, job.Destination)
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
-UPDATE delivery_history SET status = 'delivered', acknowledged_at = ?, superseded_by = NULL
+UPDATE delivery_history
+SET status = ?, acknowledged_at = ?, superseded_by = NULL
 WHERE ip = ? AND revision = ? AND destination = ?
-`, now.UnixMilli(), d.IP, d.Revision, job.Destination)
+`, status, now.UnixMilli(), job.Decision.IP, job.Decision.Revision, job.Destination)
 	return err
 }
 
-// readDeliveryHistory groups completed attempts under their revision in a single snapshot.
-func readDeliveryHistory(ctx context.Context, tx *sql.Tx, ip string) ([]decisions.Delivery, error) {
+// readDeliveryHistory loads at most one bounded page of destination/revision groups.
+// Completed attempts are retained in SQLite but only the most recent 16 per
+// group are included in the HTTP inspection view. Paging does not delete history.
+func readDeliveryHistory(ctx context.Context, tx *sql.Tx, ip string, page int) ([]decisions.Delivery, bool, error) {
+	offset, err := bans.HistoryOffset(page)
+	if err != nil {
+		return nil, false, err
+	}
 	rows, err := tx.QueryContext(ctx, `
+WITH page AS (
+    SELECT revision, destination
+    FROM delivery_history
+    WHERE ip = ?
+    ORDER BY revision DESC, destination
+    LIMIT ? OFFSET ?
+)
 SELECT h.destination, h.revision, COALESCE(h.desired_state, ''), h.status,
        h.acknowledged_at, COALESCE(h.superseded_by, 0),
        CASE WHEN h.status = 'retrying' THEN MAX(q.retry_at, COALESCE(b.retry_at, 0)) END,
-       a.number, a.completed_at, a.error
-FROM delivery_history h
-LEFT JOIN delivery_attempts a USING (ip, revision, destination)
-LEFT JOIN deliveries q USING (ip, destination)
-LEFT JOIN destination_backoff b USING (destination)
-WHERE h.ip = ?
+       a.number, a.completed_at, SUBSTR(a.error, 1, 512)
+FROM page AS p
+JOIN delivery_history AS h ON h.ip = ? AND h.revision = p.revision AND h.destination = p.destination
+LEFT JOIN delivery_attempts AS a ON a.ip = h.ip AND a.revision = h.revision
+    AND a.destination = h.destination AND a.number > (
+        SELECT COALESCE(MAX(number), 0) - 16
+        FROM delivery_attempts
+        WHERE ip = h.ip AND revision = h.revision AND destination = h.destination
+    )
+LEFT JOIN deliveries AS q ON q.ip = h.ip AND q.destination = h.destination
+LEFT JOIN destination_backoff AS b ON b.destination = h.destination
 ORDER BY h.revision DESC, h.destination, a.number
-`, ip)
+`, ip, bans.HistoryPageSize+1, offset, ip)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close() //nolint:errcheck
-	var history []decisions.Delivery
+
+	history := make([]decisions.Delivery, 0, bans.HistoryPageSize)
 	for rows.Next() {
 		var d decisions.Delivery
 		var acknowledged, retry, number, completed sql.NullInt64
@@ -92,9 +125,13 @@ ORDER BY h.revision DESC, h.destination, a.number
 			&completed,
 			&message,
 		); err != nil {
-			return nil, err
+			return nil, false, err
 		}
+
 		if startsNewDelivery(history, d) {
+			if len(history) == bans.HistoryPageSize {
+				return history, true, rows.Err()
+			}
 			d.AcknowledgedAt = optionalTime(acknowledged)
 			d.NextAttemptAt = optionalTime(retry)
 			history = append(history, d)
@@ -103,17 +140,20 @@ ORDER BY h.revision DESC, h.destination, a.number
 			attempt := decisions.DeliveryAttempt{
 				Number:  number.Int64,
 				At:      time.UnixMilli(completed.Int64).UTC(),
-				Outcome: "succeeded",
+				Outcome: deliverystate.OutcomeSucceeded,
 			}
 			if message.Valid {
-				attempt.Outcome = "failed"
+				attempt.Outcome = deliverystate.OutcomeFailed
 				attempt.Error = message.String
 			}
 			last := &history[len(history)-1]
+			if len(last.Attempts) == 0 && number.Int64 > 1 {
+				last.AttemptsTruncated = true
+			}
 			last.Attempts = append(last.Attempts, attempt)
 		}
 	}
-	return history, rows.Err()
+	return history, false, rows.Err()
 }
 
 // startsNewDelivery reports whether the row begins a new revision or destination group.

@@ -162,8 +162,16 @@ ORDER BY q.ip, q.destination
 	return rows.Close()
 }
 
-// GetDecision returns the persisted decision and all currently active sources.
+// GetDecision returns the persisted decision and the newest bounded history page.
 func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Record, error) {
+	return s.GetDecisionPage(ctx, id, now, 1)
+}
+
+// GetDecisionPage returns one consistent snapshot of a decision and its history page.
+func (s *Store) GetDecisionPage(ctx context.Context, id string, now time.Time, page int) (bans.Record, error) {
+	if _, err := bans.HistoryOffset(page); err != nil {
+		return bans.Record{}, err
+	}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return bans.Record{}, err
@@ -173,9 +181,14 @@ func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans
 	if err != nil {
 		return bans.Record{}, err
 	}
-	record.DeliveryHistory, err = readDeliveryHistory(ctx, tx, record.Decision.IP)
+	var hasMore bool
+	record.DeliveryHistory, hasMore, err = readDeliveryHistory(ctx, tx, record.Decision.IP, page)
 	if err != nil {
 		return bans.Record{}, err
+	}
+	record.HistoryPage = page
+	if hasMore {
+		record.HistoryNextPage = page + 1
 	}
 	return record, tx.Commit()
 }

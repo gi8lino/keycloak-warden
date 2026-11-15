@@ -15,12 +15,14 @@ import (
 
 // fakeStore implements an in-memory transaction for administration service tests.
 type fakeStore struct {
-	ip       string
-	until    time.Time
-	reason   string
-	id       string
-	targets  []string
-	released bool
+	// historyCursor records the page selected for a decision read.
+	historyPage int
+	ip          string
+	until       time.Time
+	reason      string
+	id          string
+	targets     []string
+	released    bool
 }
 
 // TransactDecision executes one application workflow on the fake transaction.
@@ -312,5 +314,39 @@ func TestAdminServiceTargets(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{"webhook.slack"}, store.targets)
+	})
+}
+
+// GetDecisionPage records the one-based page forwarded to persistence.
+func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page int) (bans.Record, error) {
+	r.id = id
+	r.historyPage = page
+	return bans.Record{}, nil
+}
+
+func TestAdminServiceGetDecisionPage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("passes page 100 to persistence", func(t *testing.T) {
+		t.Parallel()
+		store := &fakeStore{}
+		service, err := bans.NewAdminService(store, nil)
+		require.NoError(t, err)
+
+		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 100)
+		require.NoError(t, err)
+		assert.Equal(t, 100, store.historyPage)
+		assert.Equal(t, "one", store.id)
+	})
+
+	t.Run("rejects an invalid page before persistence", func(t *testing.T) {
+		t.Parallel()
+		store := &fakeStore{}
+		service, err := bans.NewAdminService(store, nil)
+		require.NoError(t, err)
+
+		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 0)
+		require.ErrorIs(t, err, bans.ErrInvalid)
+		assert.Empty(t, store.id)
 	})
 }

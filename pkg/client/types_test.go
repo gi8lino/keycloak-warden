@@ -14,6 +14,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
 )
 
 func TestPublicResponseTypes(t *testing.T) {
@@ -162,5 +163,46 @@ func TestDeliveryDesiredStateSerialization(t *testing.T) {
 		var decoded client.Delivery
 		require.NoError(t, yaml.Unmarshal(encoded, &decoded))
 		assert.Equal(t, decisionstate.StateUnbanned, decoded.DesiredState)
+	})
+}
+
+// TestDeliveryStatusSerialization ensures the public enums preserve the HTTP wire strings.
+func TestDeliveryStatusSerialization(t *testing.T) {
+	t.Parallel()
+
+	t.Run("JSON status and outcome", func(t *testing.T) {
+		t.Parallel()
+		input := client.Delivery{
+			Status:   deliverystate.StatusRetrying,
+			Attempts: []client.DeliveryAttempt{{Outcome: deliverystate.OutcomeFailed}},
+		}
+		encoded, err := json.Marshal(input)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"status":"retrying"`)
+		assert.Contains(t, string(encoded), `"outcome":"failed"`)
+
+		var decoded client.Delivery
+		require.NoError(t, json.Unmarshal(encoded, &decoded))
+		assert.Equal(t, deliverystate.StatusRetrying, decoded.Status)
+		require.Len(t, decoded.Attempts, 1)
+		assert.Equal(t, deliverystate.OutcomeFailed, decoded.Attempts[0].Outcome)
+	})
+
+	t.Run("YAML status and outcome", func(t *testing.T) {
+		t.Parallel()
+		input := client.Delivery{
+			Status:   deliverystate.StatusDelivered,
+			Attempts: []client.DeliveryAttempt{{Outcome: deliverystate.OutcomeSucceeded}},
+		}
+		encoded, err := yaml.Marshal(input)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), "status: delivered")
+		assert.Contains(t, string(encoded), "outcome: succeeded")
+
+		var decoded client.Delivery
+		require.NoError(t, yaml.Unmarshal(encoded, &decoded))
+		assert.Equal(t, deliverystate.StatusDelivered, decoded.Status)
+		require.Len(t, decoded.Attempts, 1)
+		assert.Equal(t, deliverystate.OutcomeSucceeded, decoded.Attempts[0].Outcome)
 	})
 }

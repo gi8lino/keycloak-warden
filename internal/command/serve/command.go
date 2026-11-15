@@ -111,24 +111,23 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 			)
 		}
 
-		if err := Run(
-			ctx,
-			cfg,
-			*flags.RoutePrefix,
-			*flags.ListenAddress,
-			*managementAddr,
-			*database,
-			*secret,
-			*adminToken,
-			logger,
-			*accessLog,
-			*metricsEnabled,
-			maintenance.Schedule{
+		if err := Run(ctx, Options{
+			Config:                  cfg,
+			RoutePrefix:             *flags.RoutePrefix,
+			ListenAddress:           *flags.ListenAddress,
+			ManagementListenAddress: *managementAddr,
+			Database:                *database,
+			SnitchSecret:            *secret,
+			AdminToken:              *adminToken,
+			Logger:                  logger,
+			AccessLog:               *accessLog,
+			MetricsEnabled:          *metricsEnabled,
+			Maintenance: maintenance.Schedule{
 				PruneInterval:    *pruneInterval,
 				OptimizeInterval: *optimizeInterval,
 			},
-			version,
-		); err != nil {
+			Version: version,
+		}); err != nil {
 			logger.Error(
 				"run server error",
 				"event", "server_run_failed",

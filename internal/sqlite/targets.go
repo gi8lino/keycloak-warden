@@ -1,35 +1,29 @@
 package sqlite
 
-import (
-	"context"
-	"fmt"
-	"slices"
+import "context"
 
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-)
-
-// ValidateTargets refuses to abandon pending ownership of external bans.
-// Call it at startup with the resolved destination names before workers begin.
-func (s *Store) ValidateTargets(ctx context.Context, targets []string) error {
+// ManagedTargets returns destinations that still own a banned decision or an
+// unacknowledged revision. It reports persisted facts without choosing a policy.
+func (s *Store) ManagedTargets(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT DISTINCT q.destination
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
-WHERE d.state = ? OR q.acknowledged < d.revision
-`, decisionstate.StateBanned)
+WHERE d.state = 'banned' OR q.acknowledged < d.revision
+ORDER BY q.destination
+`)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer rows.Close() // nolint:errcheck
+	defer rows.Close() //nolint:errcheck
 
+	var names []string
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return err
+			return nil, err
 		}
-		if !slices.Contains(targets, name) {
-			return fmt.Errorf("destination %q has managed decisions; keep it configured until release", name)
-		}
+		names = append(names, name)
 	}
-	return rows.Err()
+	return names, rows.Err()
 }

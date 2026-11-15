@@ -1,7 +1,9 @@
 package sqlite_test
 
 import (
+	"database/sql"
 	"errors"
+	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )
@@ -34,7 +37,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, "retrying", view.DeliveryHistory[0].Status)
+		assert.Equal(t, deliverystate.StatusRetrying, view.DeliveryHistory[0].Status)
 
 		err = store.ReconcileAttemptLimit(ctx, "webhook.receiver", 1)
 		require.NoError(t, err)
@@ -42,7 +45,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err = store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, "exhausted", view.DeliveryHistory[0].Status)
+		assert.Equal(t, deliverystate.StatusExhausted, view.DeliveryHistory[0].Status)
 		assert.Len(t, view.DeliveryHistory[0].Attempts, 1)
 		assert.Nil(t, view.DeliveryHistory[0].NextAttemptAt)
 	})
@@ -65,14 +68,14 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, "exhausted", view.DeliveryHistory[0].Status)
+		assert.Equal(t, deliverystate.StatusExhausted, view.DeliveryHistory[0].Status)
 
 		require.NoError(t, store.ReconcileAttemptLimit(ctx, "webhook.receiver", 2))
 
 		view, err = store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, "retrying", view.DeliveryHistory[0].Status)
+		assert.Equal(t, deliverystate.StatusRetrying, view.DeliveryHistory[0].Status)
 		assert.Len(t, view.DeliveryHistory[0].Attempts, 1)
 		assert.NotNil(t, view.DeliveryHistory[0].NextAttemptAt)
 	})
@@ -99,8 +102,8 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 2)
-		assert.Equal(t, "pending", view.DeliveryHistory[0].Status)
-		assert.Equal(t, "superseded", view.DeliveryHistory[1].Status)
+		assert.Equal(t, deliverystate.StatusPending, view.DeliveryHistory[0].Status)
+		assert.Equal(t, deliverystate.StatusSuperseded, view.DeliveryHistory[1].Status)
 	})
 
 	t.Run("reconciles only the named destination", func(t *testing.T) {
@@ -131,9 +134,9 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 2)
 		assert.Equal(t, "webhook.receiver", view.DeliveryHistory[0].Destination)
-		assert.Equal(t, "retrying", view.DeliveryHistory[0].Status)
+		assert.Equal(t, deliverystate.StatusRetrying, view.DeliveryHistory[0].Status)
 		assert.Equal(t, "webhook.teams", view.DeliveryHistory[1].Destination)
-		assert.Equal(t, "exhausted", view.DeliveryHistory[1].Status)
+		assert.Equal(t, deliverystate.StatusExhausted, view.DeliveryHistory[1].Status)
 	})
 
 	t.Run("rejects invalid limit without changing the database", func(t *testing.T) {
@@ -171,4 +174,28 @@ func TestReconcileAttemptLimit(t *testing.T) {
 
 		require.NoError(t, err)
 	})
+}
+
+// TestDeliveryStatusConstraint ensures the database never persists an unknown
+// delivery status, independently of the Go enum's validity method.
+func TestDeliveryStatusConstraint(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "state.db")
+	store, _ := openStore(t, path, "edge")
+	t.Cleanup(func() { require.NoError(t, store.Close()) })
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	created, err := bans.ApplyManualBan(t.Context(), store, "203.0.113.88", now.Add(time.Hour), "incident", now, []string{"edge"})
+	require.NoError(t, err)
+
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, db.Close()) })
+	_, err = db.ExecContext(t.Context(), "UPDATE delivery_history SET status = ? WHERE ip = ?", "unknown", created.Decision.IP)
+	require.Error(t, err)
+
+	record, err := store.GetDecision(t.Context(), created.Decision.ID, now)
+	require.NoError(t, err)
+	require.Len(t, record.DeliveryHistory, 1)
+	assert.Equal(t, deliverystate.StatusPending, record.DeliveryHistory[0].Status)
 }

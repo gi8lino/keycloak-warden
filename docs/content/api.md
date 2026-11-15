@@ -35,7 +35,7 @@ For a manual ban, send a JSON object such as:
 }
 ```
 
-The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return `deliveryHistory` with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
 
 For example, an active manual ban that has been acknowledged by a webhook might look like:
 
@@ -64,7 +64,7 @@ For example, an active manual ban that has been acknowledged by a webhook might 
 }
 ```
 
-`GET /bans` returns an array of records; `GET /bans/{id}` returns one record. The acknowledgement describes the last successfully accepted revision, which may be lower than the desired revision while delivery is pending or retrying. Only currently active sources are returned, and `sources` is empty for a released decision. Failed-login observation counts remain internal to detection, not part of the decision or webhook payload.
+`GET /bans` returns an array of records; `GET /bans/{id}` returns one record. History uses numbered pages ordered by revision descending and destination ascending (up to 16 entries per request, with the latest 16 attempts per entry). The first page is returned by default. Request any one-based page directly with `GET /bans/{id}?history-page=100` (SQL `LIMIT/OFFSET`). The response includes `historyPage` and, when more entries exist, `historyNextPage`. Attempts omitted from an entry are indicated by `attemptsTruncated`. All completed attempts remain stored in SQLite; paging does not prune them. The acknowledgement describes the last successfully accepted revision, which may be lower than the desired revision while delivery is pending or retrying. Only currently active sources are returned, and `sources` is empty for a released decision. Failed-login observation counts remain internal to detection, not part of the decision or webhook payload.
 
 ## Webhook delivery
 

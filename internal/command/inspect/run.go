@@ -3,19 +3,31 @@ package inspect
 
 import (
 	"context"
+	"errors"
 
 	"github.com/gi8lino/keycloak-warden/internal/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
-// Run prepares an authenticated client and encodes decisions only after all reads succeed.
+// Run prepares an authenticated client and encodes the first history page.
 func Run(ctx context.Context, applicationURL, token string, ids []string, encode output.Encoder) error {
-	client, err := client.New(applicationURL, token)
+	return RunPage(ctx, applicationURL, token, ids, 1, false, encode)
+}
+
+// RunPage retrieves a numbered history page or combines every available page.
+func RunPage(ctx context.Context, applicationURL, token string, ids []string, page int, all bool, encode output.Encoder) error {
+	if page < 1 {
+		return errors.New("history-page must be a positive integer")
+	}
+	if all && page != 1 {
+		return errors.New("history-page and history-all cannot be combined")
+	}
+
+	api, err := client.New(applicationURL, token)
 	if err != nil {
 		return err
 	}
-
-	records, err := execute(ctx, client, ids)
+	records, err := execute(ctx, api, ids, page, all)
 	if err != nil {
 		return err
 	}

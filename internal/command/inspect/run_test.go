@@ -12,6 +12,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 func TestRun(t *testing.T) {
@@ -143,5 +145,83 @@ func TestRunClientValidation(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.True(t, called)
+	})
+}
+
+func TestRunPage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects nonpositive pages", func(t *testing.T) {
+		t.Parallel()
+		err := RunPage(t.Context(), "http://127.0.0.1:8080", "secret", []string{"one"}, 0, false, func(any) error { return nil })
+		require.ErrorContains(t, err, "positive")
+	})
+
+	t.Run("rejects page selection with all history", func(t *testing.T) {
+		t.Parallel()
+		err := RunPage(t.Context(), "http://127.0.0.1:8080", "secret", []string{"one"}, 2, true, func(any) error { return nil })
+		require.ErrorContains(t, err, "cannot be combined")
+	})
+
+	t.Run("fetches page 100 directly", func(t *testing.T) {
+		t.Parallel()
+		requests := make(chan string, 1)
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests <- r.URL.Query().Get("history-page")
+			_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":100,"deliveryHistory":[]}`))
+		}))
+		defer server.Close()
+
+		var result []inspection
+		err := RunPage(t.Context(), server.URL, "secret", []string{"one"}, 100, false, func(value any) error {
+			result = value.([]inspection)
+			return nil
+		})
+		require.NoError(t, err)
+		assert.Equal(t, "100", <-requests)
+		require.Len(t, result, 1)
+		assert.Equal(t, 100, result[0].HistoryPage)
+		assert.Equal(t, "one", result[0].Decision.ID)
+		assert.Empty(t, result[0].Deliveries)
+	})
+
+	t.Run("fetches and combines every page", func(t *testing.T) {
+		t.Parallel()
+		var mu sync.Mutex
+		var pages []string
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			page := r.URL.Query().Get("history-page")
+			mu.Lock()
+			pages = append(pages, page)
+			mu.Unlock()
+			switch page {
+			case "":
+				_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":1,"historyNextPage":2,"deliveryHistory":[{"revision":3,"destination":"edge"}]}`))
+			case "2":
+				_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":2,"historyNextPage":3,"deliveryHistory":[{"revision":2,"destination":"edge"}]}`))
+			case "3":
+				_, _ = w.Write([]byte(`{"decision":{"id":"one"},"historyPage":3,"deliveryHistory":[{"revision":1,"destination":"edge"}]}`))
+			default:
+				w.WriteHeader(http.StatusBadRequest)
+			}
+		}))
+		defer server.Close()
+
+		var result []inspection
+		err := RunPage(t.Context(), server.URL, "secret", []string{"one"}, 1, true, func(value any) error {
+			result = value.([]inspection)
+			return nil
+		})
+		require.NoError(t, err)
+		mu.Lock()
+		assert.Equal(t, []string{"", "2", "3"}, pages)
+		mu.Unlock()
+		require.Len(t, result, 1)
+		history, ok := result[0].Deliveries.([]client.Delivery)
+		require.True(t, ok)
+		require.Len(t, history, 3)
+		assert.EqualValues(t, 3, history[0].Revision)
+		assert.EqualValues(t, 1, history[2].Revision)
+		assert.Zero(t, result[0].HistoryNextPage)
 	})
 }

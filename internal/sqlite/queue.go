@@ -68,16 +68,19 @@ func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, 
 		return err
 	}
 
-	if deliveryErr != nil {
-		// A newer decision may have been committed while the provider was called.
-		// Never delay that revision because delivery of an older one failed.
-		var revision int64
-		if err := tx.QueryRowContext(ctx, "SELECT revision FROM decisions WHERE ip = ?", job.Decision.IP).Scan(&revision); err != nil {
-			return err
-		}
-		if revision != job.Decision.Revision {
-			return tx.Commit()
-		}
+	// A newer decision may have been committed while the provider was called.
+	// Record the completed attempt, but never let a stale result change current
+	// acknowledgements, retry scheduling, backoff, or superseded history status.
+	var revision int64
+	if err := tx.QueryRowContext(ctx, "SELECT revision FROM decisions WHERE ip = ?", job.Decision.IP).Scan(&revision); err != nil {
+		return err
+	}
+	if revision != job.Decision.Revision {
+		return tx.Commit()
+	}
+
+	if err := finishAttemptStatus(ctx, tx, job, deliveryErr, now); err != nil {
+		return err
 	}
 
 	if deliveryErr == nil {

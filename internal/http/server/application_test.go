@@ -56,7 +56,7 @@ func (noOpBanAdministration) ListActive(context.Context, time.Time) ([]bans.Reco
 }
 
 // GetDecision returns an empty decision for authentication tests.
-func (noOpBanAdministration) GetDecision(context.Context, string, time.Time) (bans.Record, error) {
+func (noOpBanAdministration) GetDecisionPage(context.Context, string, time.Time, int) (bans.Record, error) {
 	return bans.Record{}, nil
 }
 

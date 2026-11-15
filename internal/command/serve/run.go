@@ -19,16 +19,39 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
-// Run starts Warden with YAML configuration and separate operational settings.
-func Run(
-	parent context.Context,
-	cfg config.Config,
-	routePrefix, listen, managementListen, database, secret, adminToken string,
-	logger *slog.Logger,
-	accessLog, metricsEnabled bool,
-	schedule maintenance.Schedule,
-	version string,
-) error {
+// Options describes the resolved operational settings for one Warden server instance.
+type Options struct {
+	// Config contains the detection rule and destination configuration.
+	Config config.Config
+	// RoutePrefix is prepended to application endpoints, but not management endpoints.
+	RoutePrefix string
+	// ListenAddress selects the application HTTP listener.
+	ListenAddress string
+	// ManagementListenAddress selects the management HTTP listener.
+	ManagementListenAddress string
+	// Database is the SQLite database path.
+	Database string
+	// SnitchSecret authenticates incoming Keycloak Snitch events.
+	SnitchSecret string
+	// AdminToken enables and authenticates administrative endpoints when set.
+	AdminToken string
+	// Logger handles Warden operational diagnostics.
+	Logger *slog.Logger
+	// AccessLog enables application HTTP access logging.
+	AccessLog bool
+	// MetricsEnabled enables management metrics and instrumentation.
+	MetricsEnabled bool
+	// Maintenance configures observation pruning and SQLite optimization.
+	Maintenance maintenance.Schedule
+	// Version labels the running build in metrics.
+	Version string
+}
+
+// Run starts Warden using resolved configuration and separate operational options.
+func Run(parent context.Context, options Options) error {
+	cfg := options.Config
+	schedule := options.Maintenance
+	logger := options.Logger
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
@@ -40,13 +63,13 @@ func Run(
 		return err
 	}
 
-	store, err := sqlite.Open(database)
+	store, err := sqlite.Open(options.Database)
 	if err != nil {
 		return err
 	}
 	defer store.Close() //nolint:errcheck
 
-	if err := store.ValidateTargets(parent, names); err != nil {
+	if err := actions.ValidateTargets(parent, store, names); err != nil {
 		return err
 	}
 	if err := actions.ReconcileTargets(parent, store, destinations); err != nil {
@@ -66,7 +89,7 @@ func Run(
 		return err
 	}
 
-	registry := metrics.NewRegistry(metricsEnabled, version)
+	registry := metrics.NewRegistry(options.MetricsEnabled, options.Version)
 	for name, target := range destinations {
 		target.Provider = registry.InstrumentProvider(name, target.Provider)
 		destinations[name] = target
@@ -78,12 +101,12 @@ func Run(
 	maintenanceRunner := maintenance.Start(ctx, store, schedule, max(maintenance.MinObservationRetention, cfg.Rule.Window), logger)
 	runner := actions.Start(ctx, store, expirer, destinations, logger)
 	handlers := server.New(server.Config{
-		AccessLog:      accessLog,
-		MetricsEnabled: metricsEnabled,
+		AccessLog:      options.AccessLog,
+		MetricsEnabled: options.MetricsEnabled,
 		Metrics:        registry,
-		RoutePrefix:    routePrefix,
-		Secret:         secret,
-		AdminToken:     adminToken,
+		RoutePrefix:    options.RoutePrefix,
+		Secret:         options.SnitchSecret,
+		AdminToken:     options.AdminToken,
 		BanAdmin:       banAdmin,
 		Maintenance:    maintenanceRunner,
 		Logger:         logger,
@@ -95,8 +118,8 @@ func Run(
 	// The server owns the blocking lifecycle; stop the worker before closing SQLite.
 	err = httpserver.Run(
 		ctx,
-		listen,
-		managementListen,
+		options.ListenAddress,
+		options.ManagementListenAddress,
 		handlers,
 		logger.With("server", "application"),
 		logger.With("server", "management"),

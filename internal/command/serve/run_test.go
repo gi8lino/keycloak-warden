@@ -19,14 +19,16 @@ func TestRun(t *testing.T) {
 	t.Run("rejects invalid YAML rule before opening a database", func(t *testing.T) {
 		t.Parallel()
 
-		err := Run(
-			t.Context(),
-			config.Config{},
-			"", "127.0.0.1:8081", "127.0.0.1:8082",
-			"warden.db", "shared", "",
-			slog.New(slog.NewJSONHandler(io.Discard, nil)),
-			false, false, maintenance.Schedule{PruneInterval: time.Hour, OptimizeInterval: 24 * time.Hour}, "test",
-		)
+		err := Run(t.Context(), Options{
+			Config:                  config.Config{},
+			ListenAddress:           "127.0.0.1:8081",
+			ManagementListenAddress: "127.0.0.1:8082",
+			Database:                "warden.db",
+			SnitchSecret:            "shared",
+			Logger:                  slog.New(slog.NewJSONHandler(io.Discard, nil)),
+			Maintenance:             maintenance.Schedule{PruneInterval: time.Hour, OptimizeInterval: 24 * time.Hour},
+			Version:                 "test",
+		})
 
 		require.ErrorContains(t, err, "threshold")
 	})
@@ -45,13 +47,15 @@ func TestRunRejectsInvalidMaintenanceSchedule(t *testing.T) {
 			"local": {URL: "http://127.0.0.1:8090/hook"},
 		}},
 	}
-	err := Run(
-		t.Context(),
-		cfg,
-		"", "127.0.0.1:8081", "127.0.0.1:8082",
-		"missing-file.db", "shared", "",
-		slog.New(slog.NewJSONHandler(io.Discard, nil)),
-		false, false, maintenance.Schedule{PruneInterval: 0, OptimizeInterval: time.Hour}, "test",
-	)
+	err := Run(t.Context(), Options{
+		Config:                  cfg,
+		ListenAddress:           "127.0.0.1:8081",
+		ManagementListenAddress: "127.0.0.1:8082",
+		Database:                "missing-file.db",
+		SnitchSecret:            "shared",
+		Logger:                  slog.New(slog.NewJSONHandler(io.Discard, nil)),
+		Maintenance:             maintenance.Schedule{PruneInterval: 0, OptimizeInterval: time.Hour},
+		Version:                 "test",
+	})
 	require.ErrorContains(t, err, "prune-interval")
 }
