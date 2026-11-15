@@ -14,7 +14,6 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/gi8lino/keycloak-warden/internal/output"
-	clioutput "github.com/gi8lino/keycloak-warden/internal/output"
 )
 
 func TestRun(t *testing.T) {
@@ -44,13 +43,13 @@ func TestRun(t *testing.T) {
 			}
 		}))
 		defer server.Close()
-		var output bytes.Buffer
+		var buf bytes.Buffer
 		err := Run(
 			t.Context(),
 			server.URL,
 			"admin-secret",
 			[]string{"203.0.113.10", "203.0.113.20"},
-			clioutput.New(yamlFormat(), &output),
+			output.New(yamlFormat(), &buf),
 		)
 
 		require.NoError(t, err)
@@ -59,9 +58,9 @@ func TestRun(t *testing.T) {
 		deletedMu.Unlock()
 
 		assert.EqualValues(t, 1, gets.Load())
-		var result clioutput.Batch
-		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, clioutput.OperationUnban, result.Operation)
+		var result output.Batch
+		require.NoError(t, yaml.Load(buf.Bytes(), &result))
+		assert.Equal(t, output.OperationUnban, result.Operation)
 		assert.Equal(t, 2, result.Succeeded)
 		assert.Zero(t, result.Failed)
 		require.Len(t, result.Results, 2)
@@ -95,13 +94,13 @@ func TestRun(t *testing.T) {
 			}
 		}))
 		defer server.Close()
-		var output bytes.Buffer
+		var buf bytes.Buffer
 		err := Run(
 			t.Context(),
 			server.URL,
 			"admin-secret",
 			[]string{"203.0.113.10", "203.0.113.20"},
-			clioutput.New(yamlFormat(), &output),
+			output.New(yamlFormat(), &buf),
 		)
 
 		require.ErrorContains(t, err, "failed 203.0.113.10")
@@ -111,9 +110,9 @@ func TestRun(t *testing.T) {
 		deletedMu.Unlock()
 
 		assert.EqualValues(t, 1, gets.Load())
-		var result clioutput.Batch
-		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, clioutput.OperationUnban, result.Operation)
+		var result output.Batch
+		require.NoError(t, yaml.Load(buf.Bytes(), &result))
+		assert.Equal(t, output.OperationUnban, result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		assert.Equal(t, 1, result.Failed)
 		require.Len(t, result.Results, 2)
@@ -137,32 +136,31 @@ func TestRun(t *testing.T) {
 			}
 		}))
 		defer server.Close()
-		var output bytes.Buffer
+		var buf bytes.Buffer
 		err := Run(
 			t.Context(),
 			server.URL,
 			"admin-secret",
 			[]string{"203.0.113.10", "203.0.113.20"},
-			clioutput.New(yamlFormat(), &output),
+			output.New(yamlFormat(), &buf),
 		)
 
 		require.ErrorContains(t, err, "failed 203.0.113.10: active ban not found")
 		assert.EqualValues(t, 1, deletes.Load())
-		var result clioutput.Batch
-		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, clioutput.OperationUnban, result.Operation)
+		var result output.Batch
+		require.NoError(t, yaml.Load(buf.Bytes(), &result))
+		assert.Equal(t, output.OperationUnban, result.Operation)
 		assert.Equal(t, 1, result.Succeeded)
 		assert.Equal(t, 1, result.Failed)
 		require.Len(t, result.Results, 2)
 		assert.False(t, result.Results[0].Success)
 		assert.True(t, result.Results[1].Success)
 	})
-
 }
 
 // yamlFormat provides an output format pointer for command tests.
 func yamlFormat() *string {
-	format := clioutput.FormatYAML
+	format := output.FormatYAML
 	return &format
 }
 
