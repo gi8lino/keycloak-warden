@@ -98,33 +98,44 @@ WHERE d.active = 1 OR q.acknowledged < d.revision
 	return rows.Err()
 }
 
+// transaction implements both application transaction interfaces over one SQL transaction.
+// The changed flag requests a worker notification after a successful commit.
+type transaction struct {
+	// tx contains all observation, source, and decision changes until commit.
+	tx *sql.Tx
+	// changed records whether the transaction modified source or decision state.
+	changed bool
+}
+
+// Keep the application-facing capabilities narrow even though SQLite uses one type.
+var (
+	_ ingestion.Transaction    = (*transaction)(nil)
+	_ bans.MutationTransaction = (*transaction)(nil)
+)
+
 // Transact runs the application observation workflow in one SQLite transaction.
 func (s *Store) Transact(ctx context.Context, apply func(ingestion.Transaction) error) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	observation := &observationTx{banTx: banTx{tx: tx}}
-	if err := apply(observation); err != nil {
-		return err
-	}
-	if observation.changed {
-		return s.commitDecision(tx)
-	}
-	return tx.Commit()
+	return s.transact(ctx, func(tx *transaction) error {
+		return apply(tx)
+	})
 }
 
 // TransactBan runs the application's ban workflow in one SQLite transaction.
 func (s *Store) TransactBan(ctx context.Context, apply func(bans.MutationTransaction) error) error {
+	return s.transact(ctx, func(tx *transaction) error {
+		return apply(tx)
+	})
+}
+
+// transact shares the commit, rollback, and worker-notification lifecycle.
+func (s *Store) transact(ctx context.Context, apply func(*transaction) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	state := &banTx{tx: tx}
+	state := &transaction{tx: tx}
 	if err := apply(state); err != nil {
 		return err
 	}
