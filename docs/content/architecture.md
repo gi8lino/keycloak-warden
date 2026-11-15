@@ -33,6 +33,8 @@ Detection policy stays in the ingestion service. Runtime targets own their provi
 
 A decision's `state` is either `banned` or `unbanned`. Both the internal application and public Go client use `pkg/decisionstate.State` for this desired state; JSON and YAML still encode it as the same string. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
 
+SQLite persists the same `banned` and `unbanned` values in the constrained `decisions.state` column. It does not maintain a separate boolean representation of desired state.
+
 Automatic expiry or a manual unban changes the desired state to `unbanned`. A manual ban and an automatic ban are independent sources; releasing an IP removes the active reasons for blocking it.
 
 Maintenance computes the observation retention cutoff from the detection window (at least 24 hours) and supplies that cutoff directly to SQLite. Only delivery state and destination identifiers needed to resume delivery are persisted.

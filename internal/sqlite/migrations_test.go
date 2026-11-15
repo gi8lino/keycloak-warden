@@ -112,6 +112,79 @@ SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'failures'
 		assert.Equal(t, 1, count)
 	})
 
+	t.Run("defines the desired state as constrained text", func(t *testing.T) {
+		t.Parallel()
+
+		db := openMigratedDatabase(t)
+		var columnType, defaultValue string
+		err := db.QueryRowContext(t.Context(), `
+SELECT type, dflt_value FROM pragma_table_info('decisions') WHERE name = 'state'
+`).Scan(&columnType, &defaultValue)
+
+		require.NoError(t, err)
+		assert.Equal(t, "TEXT", columnType)
+		assert.Equal(t, "'unbanned'", defaultValue)
+
+		var oldColumnCount int
+		err = db.QueryRowContext(t.Context(), `
+SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'active'
+`).Scan(&oldColumnCount)
+
+		require.NoError(t, err)
+		assert.Zero(t, oldColumnCount)
+	})
+
+	t.Run("rejects unsupported decision state values", func(t *testing.T) {
+		t.Parallel()
+
+		db := openMigratedDatabase(t)
+		_, err := db.ExecContext(t.Context(), `
+INSERT INTO decisions (ip, id, revision, state, expires)
+VALUES ('192.0.2.80', 'invalid-state', 0, 'invalid', 0)
+`)
+
+		require.ErrorContains(t, err, "CHECK constraint failed")
+	})
+
+	t.Run("defaults new decisions to unbanned", func(t *testing.T) {
+		t.Parallel()
+
+		db := openMigratedDatabase(t)
+		_, err := db.ExecContext(t.Context(), `
+INSERT INTO decisions (ip, id, revision, expires)
+VALUES ('192.0.2.81', 'default-state', 0, 0)
+`)
+		require.NoError(t, err)
+
+		var state string
+		err = db.QueryRowContext(t.Context(), `
+SELECT state FROM decisions WHERE ip = '192.0.2.81'
+`).Scan(&state)
+
+		require.NoError(t, err)
+		assert.Equal(t, "unbanned", state)
+	})
+
+	t.Run("indexes decision state and expiry", func(t *testing.T) {
+		t.Parallel()
+
+		db := openMigratedDatabase(t)
+		rows, err := db.QueryContext(t.Context(), `
+SELECT name FROM pragma_index_info('expiry') ORDER BY seqno
+`)
+		require.NoError(t, err)
+		defer rows.Close() //nolint:errcheck
+
+		var columns []string
+		for rows.Next() {
+			var name string
+			require.NoError(t, rows.Scan(&name))
+			columns = append(columns, name)
+		}
+		require.NoError(t, rows.Err())
+		assert.Equal(t, []string{"state", "expires"}, columns)
+	})
+
 	t.Run("creates ban sources table", func(t *testing.T) {
 		t.Parallel()
 

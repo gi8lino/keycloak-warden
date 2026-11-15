@@ -17,7 +17,6 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/gi8lino/keycloak-warden/internal/output"
-	clioutput "github.com/gi8lino/keycloak-warden/internal/output"
 )
 
 func TestRun(t *testing.T) {
@@ -53,7 +52,7 @@ func TestRun(t *testing.T) {
 			_, _ = w.Write([]byte(`{"decision":{"id":"stable-id"},"sources":[],"deliveries":[]}`))
 		}))
 		defer server.Close()
-		var output bytes.Buffer
+		var buf bytes.Buffer
 		err := Run(
 			t.Context(),
 			server.URL,
@@ -61,7 +60,7 @@ func TestRun(t *testing.T) {
 			[]string{"203.0.113.10", "203.0.113.20"},
 			time.Hour,
 			"incident response",
-			clioutput.New(yamlFormat(), &output),
+			output.New(yamlFormat(), &buf),
 		)
 
 		require.NoError(t, err)
@@ -69,9 +68,9 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, []string{"203.0.113.10", "203.0.113.20"}, received)
 		receivedMu.Unlock()
 
-		var result clioutput.Batch
-		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, clioutput.OperationBan, result.Operation)
+		var result output.Batch
+		require.NoError(t, yaml.Load(buf.Bytes(), &result))
+		assert.Equal(t, output.OperationBan, result.Operation)
 		assert.Equal(t, 2, result.Succeeded)
 		assert.Zero(t, result.Failed)
 		require.Len(t, result.Results, 2)
@@ -106,7 +105,7 @@ func TestRun(t *testing.T) {
 			_, _ = w.Write([]byte(`{"decision":{"id":"stable-id"},"sources":[],"deliveries":[]}`))
 		}))
 		defer server.Close()
-		var output bytes.Buffer
+		var buf bytes.Buffer
 		err := Run(
 			t.Context(),
 			server.URL,
@@ -114,7 +113,7 @@ func TestRun(t *testing.T) {
 			[]string{"203.0.113.10", "203.0.113.20", "203.0.113.30"},
 			time.Hour,
 			"incident response",
-			clioutput.New(yamlFormat(), &output),
+			output.New(yamlFormat(), &buf),
 		)
 
 		require.ErrorContains(t, err, "failed 203.0.113.20")
@@ -123,9 +122,9 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, []string{"203.0.113.10", "203.0.113.20", "203.0.113.30"}, received)
 		receivedMu.Unlock()
 
-		var result clioutput.Batch
-		require.NoError(t, yaml.Load(output.Bytes(), &result))
-		assert.Equal(t, clioutput.OperationBan, result.Operation)
+		var result output.Batch
+		require.NoError(t, yaml.Load(buf.Bytes(), &result))
+		assert.Equal(t, output.OperationBan, result.Operation)
 		assert.Equal(t, 2, result.Succeeded)
 		assert.Equal(t, 1, result.Failed)
 		require.Len(t, result.Results, 3)
@@ -138,7 +137,7 @@ func TestRun(t *testing.T) {
 
 // yamlFormat provides an output format pointer for command tests.
 func yamlFormat() *string {
-	format := clioutput.FormatYAML
+	format := output.FormatYAML
 	return &format
 }
 

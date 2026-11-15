@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"slices"
+
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // ValidateTargets refuses to abandon pending ownership of external bans.
@@ -13,8 +15,8 @@ func (s *Store) ValidateTargets(ctx context.Context, targets []string) error {
 SELECT DISTINCT q.destination
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
-WHERE d.active = 1 OR q.acknowledged < d.revision
-`)
+WHERE d.state = ? OR q.acknowledged < d.revision
+`, decisionstate.StateBanned)
 	if err != nil {
 		return err
 	}

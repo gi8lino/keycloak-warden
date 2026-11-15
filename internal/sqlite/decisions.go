@@ -15,10 +15,10 @@ import (
 // EnsureDecision creates a stable UUIDv7 identity before attaching ban sources.
 func (t *transaction) EnsureDecision(ctx context.Context, ip string) error {
 	_, err := t.tx.ExecContext(ctx, `
-INSERT INTO decisions (ip, id, revision, active, expires)
-VALUES (?, ?, 0, 0, 0)
+INSERT INTO decisions (ip, id, revision, state, expires)
+VALUES (?, ?, 0, ?, 0)
 ON CONFLICT (ip) DO NOTHING
-`, ip, uuid.NewV7().String())
+`, ip, uuid.NewV7().String(), decisionstate.StateUnbanned)
 	return err
 }
 
@@ -37,9 +37,9 @@ func (t *transaction) SaveDecision(ctx context.Context, previous, decision decis
 		t.changed = true
 		if _, err := t.tx.ExecContext(ctx, `
 UPDATE decisions
-SET revision = ?, active = ?, expires = ?
+SET revision = ?, state = ?, expires = ?
 WHERE ip = ?
-`, decision.Revision, decision.State == decisionstate.StateBanned,
+`, decision.Revision, decision.State,
 			decision.ExpiresAt.UnixMilli(), decision.IP); err != nil {
 			return err
 		}
@@ -69,16 +69,14 @@ ON CONFLICT (ip, destination) DO NOTHING
 // readDecisionByIP loads the current materialized decision within the transaction.
 func readDecisionByIP(ctx context.Context, tx *sql.Tx, ip string) (decisions.Decision, error) {
 	var result decisions.Decision
-	var active bool
 	var expires int64
 	err := tx.QueryRowContext(ctx, `
-SELECT id, revision, active, expires FROM decisions WHERE ip = ?
-`, ip).Scan(&result.ID, &result.Revision, &active, &expires)
+SELECT id, revision, state, expires FROM decisions WHERE ip = ?
+`, ip).Scan(&result.ID, &result.Revision, &result.State, &expires)
 	if err != nil {
 		return decisions.Decision{}, err
 	}
 	result.IP = ip
-	result.State = stateFromActive(active)
 	result.ExpiresAt = time.UnixMilli(expires).UTC()
 	return result, nil
 }

@@ -7,17 +7,17 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // Next loads the oldest pending target using its latest desired decision revision.
 func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
 	var job actions.Job
 	var expires int64
-	var active bool
 	var previousDelayMillis int64
 	decision := &job.Decision
 	err := s.db.QueryRowContext(ctx, `
-SELECT d.id, d.revision, d.ip, d.active, d.expires, q.destination, COALESCE(b.delay_ms, 0)
+SELECT d.id, d.revision, d.ip, d.state, d.expires, q.destination, COALESCE(b.delay_ms, 0)
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
 JOIN delivery_history AS h ON h.ip = q.ip AND h.destination = q.destination AND h.revision = d.revision
@@ -26,14 +26,14 @@ WHERE q.acknowledged < d.revision
     AND h.status IN ('pending', 'retrying')
     AND COALESCE(b.retry_at, 0) <= ?
     AND q.retry_at <= ?
-    AND (d.active = 0 OR d.expires > ?)
+    AND (d.state = ? OR d.expires > ?)
 ORDER BY q.retry_at, d.expires, q.destination
 LIMIT 1
-`, now.UnixMilli(), now.UnixMilli(), now.UnixMilli()).Scan(
+`, now.UnixMilli(), now.UnixMilli(), decisionstate.StateUnbanned, now.UnixMilli()).Scan(
 		&decision.ID,
 		&decision.Revision,
 		&decision.IP,
-		&active,
+		&decision.State,
 		&expires,
 		&job.Destination,
 		&previousDelayMillis,
@@ -45,7 +45,6 @@ LIMIT 1
 		return nil, err
 	}
 	job.PreviousDelay = time.Duration(previousDelayMillis) * time.Millisecond
-	decision.State = stateFromActive(active)
 	decision.ExpiresAt = time.UnixMilli(expires).UTC()
 
 	return &job, nil

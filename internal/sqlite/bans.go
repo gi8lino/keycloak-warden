@@ -8,6 +8,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // Store fulfills the application's atomic ban administration contract.
@@ -51,11 +52,11 @@ func readActiveBans(
 	now time.Time,
 ) (list []bans.Record, byIP map[string]int, err error) {
 	rows, err := tx.QueryContext(ctx, `
-SELECT id, revision, ip, active, expires
+SELECT id, revision, ip, state, expires
 FROM decisions
-WHERE active = 1 AND expires > ?
+WHERE state = ? AND expires > ?
 ORDER BY ip
-`, now.UnixMilli())
+`, decisionstate.StateBanned, now.UnixMilli())
 	if err != nil {
 		return nil, nil, err
 	}
@@ -68,15 +69,13 @@ ORDER BY ip
 			Deliveries: []decisions.Acknowledgement{},
 		}
 		var expires int64
-		var active bool
 		if err := rows.Scan(
 			&record.Decision.ID, &record.Decision.Revision, &record.Decision.IP,
-			&active, &expires,
+			&record.Decision.State, &expires,
 		); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
 		}
-		record.Decision.State = stateFromActive(active)
 		record.Decision.ExpiresAt = time.UnixMilli(expires).UTC()
 		byIP[record.Decision.IP] = len(list)
 		list = append(list, record)
@@ -103,9 +102,9 @@ func appendActiveSources(
 SELECT s.ip, s.kind, s.expires, s.reason
 FROM ban_sources AS s
 JOIN decisions AS d ON d.ip = s.ip
-WHERE d.active = 1 AND d.expires > ? AND s.expires > ?
+WHERE d.state = ? AND d.expires > ? AND s.expires > ?
 ORDER BY s.ip, s.kind
-`, now.UnixMilli(), now.UnixMilli())
+`, decisionstate.StateBanned, now.UnixMilli(), now.UnixMilli())
 	if err != nil {
 		return err
 	}
@@ -140,9 +139,9 @@ func appendActiveDeliveries(
 SELECT q.ip, q.destination, q.acknowledged
 FROM deliveries AS q
 JOIN decisions AS d ON d.ip = q.ip
-WHERE d.active = 1 AND d.expires > ?
+WHERE d.state = ? AND d.expires > ?
 ORDER BY q.ip, q.destination
-`, now.UnixMilli())
+`, decisionstate.StateBanned, now.UnixMilli())
 	if err != nil {
 		return err
 	}

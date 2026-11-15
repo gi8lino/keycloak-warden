@@ -12,7 +12,7 @@ CREATE TABLE decisions (
     ip TEXT PRIMARY KEY,
     id TEXT NOT NULL UNIQUE,
     revision INTEGER NOT NULL,
-    active INTEGER NOT NULL,
+    state TEXT NOT NULL DEFAULT 'unbanned' CHECK (state IN ('banned', 'unbanned')),
     expires INTEGER NOT NULL,
     failure_generation INTEGER NOT NULL DEFAULT 0
 );
@@ -59,5 +59,5 @@ CREATE TABLE failures (
 );
 CREATE INDEX failures_by_ip ON failures (ip, received);
 CREATE INDEX failures_by_time ON failures (received);
-CREATE INDEX expiry ON decisions (active, expires);
+CREATE INDEX expiry ON decisions (state, expires);
 CREATE INDEX ban_sources_by_expiry ON ban_sources (expires);
