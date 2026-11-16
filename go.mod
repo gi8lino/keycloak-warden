@@ -3,7 +3,7 @@ module github.com/gi8lino/keycloak-warden
 go 1.27.3
 
 require (
-	github.com/containeroo/appkit v0.7.0
+	github.com/containeroo/appkit v0.8.0
 	github.com/containeroo/httpkit v0.2.0
 	github.com/containeroo/notifykit v0.11.0
 	github.com/containeroo/resolver v0.5.0
