@@ -11,6 +11,24 @@ import (
 	"github.com/containeroo/httpkit/prefix"
 )
 
+// Option configures the administration API client URL policy.
+type Option func(*clientOptions)
+
+// clientOptions holds optional transport allowances for administrative connections.
+type clientOptions struct {
+	// allowInsecureHTTP permits plain HTTP for non-loopback application URLs.
+	allowInsecureHTTP bool
+}
+
+// WithAllowInsecureHTTP allows unencrypted HTTP connections to non-loopback hosts.
+// Use this only for trusted network paths, such as a restricted Kubernetes Service.
+// It does not change HTTPS certificate verification or redirect handling.
+func WithAllowInsecureHTTP() Option {
+	return func(options *clientOptions) {
+		options.allowInsecureHTTP = true
+	}
+}
+
 // Client authenticates administrative requests against the running Warden server.
 type Client struct {
 	// url is the validated administrative API base URL, including its optional route prefix.
@@ -22,11 +40,12 @@ type Client struct {
 }
 
 // New validates the application URL and bearer token before making any request.
-func New(address, token string) (*Client, error) {
+// Non-loopback HTTP requires WithAllowInsecureHTTP; existing callers remain HTTPS-only.
+func New(address, token string, opts ...Option) (*Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("admin-token is required")
 	}
-	parsed, err := parseApplicationURL(address)
+	parsed, err := parseApplicationURL(address, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -40,13 +59,21 @@ func New(address, token string) (*Client, error) {
 }
 
 // ValidateURL checks an application API base URL, optionally with a route prefix.
-func ValidateURL(address string) error {
-	_, err := parseApplicationURL(address)
+// Pass WithAllowInsecureHTTP to permit non-loopback HTTP URLs.
+func ValidateURL(address string, opts ...Option) error {
+	_, err := parseApplicationURL(address, opts...)
 	return err
 }
 
 // parseApplicationURL validates a URL and its optional application route prefix.
-func parseApplicationURL(address string) (parsed *url.URL, err error) {
+func parseApplicationURL(address string, opts ...Option) (parsed *url.URL, err error) {
+	options := clientOptions{}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&options)
+		}
+	}
+
 	parsed, err = url.Parse(address)
 	if err != nil {
 		return nil, fmt.Errorf("invalid application-url: %w", err)
@@ -56,7 +83,7 @@ func parseApplicationURL(address string) (parsed *url.URL, err error) {
 		return nil, errors.New("application-url must have a host and no credentials, query, fragment, or encoded path")
 	}
 
-	if !allowedTransport(parsed) {
+	if !allowedTransport(parsed, options.allowInsecureHTTP) {
 		return nil, errors.New("application-url requires HTTPS unless connecting to loopback")
 	}
 
@@ -79,13 +106,16 @@ func isValidBaseURL(u *url.URL) bool {
 		u.EscapedPath() == u.Path
 }
 
-// allowedTransport requires HTTPS, except for explicit loopback HTTP endpoints.
-func allowedTransport(u *url.URL) bool {
+// allowedTransport requires HTTPS unless the URL is loopback HTTP or HTTP is explicitly allowed.
+func allowedTransport(u *url.URL, allowInsecureHTTP bool) bool {
 	if u.Scheme == "https" {
 		return true
 	}
 	if u.Scheme != "http" {
 		return false
+	}
+	if allowInsecureHTTP {
+		return true
 	}
 	switch u.Hostname() {
 	case "localhost", "127.0.0.1", "::1":

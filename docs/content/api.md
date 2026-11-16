@@ -66,6 +66,24 @@ For example, an active manual ban that has been acknowledged by a webhook might 
 
 `GET /bans` returns an array of records; `GET /bans/{id}` returns one record. History uses numbered pages ordered by revision descending and destination ascending (up to 16 entries per request, with the latest 16 attempts per entry). The first page is returned by default. Request any one-based page directly with `GET /bans/{id}?history-page=100` (SQL `LIMIT/OFFSET`). To keep newer revisions from shifting page boundaries, pass the first response’s `decision.revision` as `history-through-revision` on subsequent requests. This bounds group membership; attempts and statuses can still update. The response includes `historyPage` and, when more entries exist, `historyNextPage`. Attempts omitted from an entry are indicated by `attemptsTruncated`. All completed attempts remain stored in SQLite; paging does not prune them. The acknowledgement describes the last successfully accepted revision, which may be lower than the desired revision while delivery is pending or retrying. Only currently active sources are returned, and `sources` is empty for a released decision. Failed-login observation counts remain internal to detection, not part of the decision or webhook payload.
 
+## Go administration client
+
+The public [`pkg/client`](https://github.com/gi8lino/keycloak-warden/tree/main/pkg/client) package validates its administrative API URL before sending requests. By default, it requires HTTPS for non-loopback hosts; plain HTTP is accepted for `localhost`, `127.0.0.1`, and `::1`.
+
+For a restricted Kubernetes ClusterIP Service, callers can explicitly opt in to plain HTTP:
+
+```go
+api, err := client.New(
+    "http://keycloak-warden.keycloak.svc.cluster.local:8080",
+    adminToken,
+    client.WithAllowInsecureHTTP(),
+)
+```
+
+The same option is accepted by URL validation: `client.ValidateURL(address, client.WithAllowInsecureHTTP())`. Calls without the option retain the existing HTTPS requirement. Unsupported schemes, URL credentials, query strings, fragments, and malformed application prefixes are always rejected.
+
+**Security:** HTTP does not encrypt the administrator bearer token in transit. Restrict access to Warden's application Service using Kubernetes network policies or equivalent controls. The opt-in affects **only the Go client**, not the Warden server, administrative CLI commands, outgoing webhook targets, TLS certificate verification, or redirect handling.
+
 ## Webhook delivery
 
 Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry. When a target defines `body-template`, Warden renders a custom JSON body using those same fields; the default payload remains unchanged for other targets.
