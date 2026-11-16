@@ -67,7 +67,7 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 
 	resp, err := p.Client.Do(req)
 	if err != nil {
-		return fmt.Errorf("webhook transport failed")
+		return webhookTransportError(err)
 	}
 	defer resp.Body.Close() // nolint:errcheck
 

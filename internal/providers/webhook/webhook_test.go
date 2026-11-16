@@ -1,12 +1,19 @@
 package webhook
 
 import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 
@@ -85,6 +92,243 @@ func TestProviderApply(t *testing.T) {
 		defer server.Close()
 		p := Provider{URL: server.URL, Client: server.Client()}
 		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned}), "503")
+	})
+}
+
+// failingRoundTripper returns a selected transport error without using the network.
+type failingRoundTripper struct {
+	// err models the underlying HTTP transport failure, including unsafe details.
+	err error
+}
+
+// RoundTrip fails before a response is received.
+func (f failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, f.err
+}
+
+// privateTimeoutError simulates a network timeout with unsafe diagnostic text.
+type privateTimeoutError struct{}
+
+func (privateTimeoutError) Error() string {
+	return "timeout contacting private.example with secret-token"
+}
+func (privateTimeoutError) Timeout() bool   { return true }
+func (privateTimeoutError) Temporary() bool { return true }
+
+// failingWebhookProvider models credentials in both the URL and headers so
+// transport error tests can verify they never appear in returned diagnostics.
+func failingWebhookProvider(err error) Provider {
+	return Provider{
+		URL: "http://user:password@private.example/notify?token=query-secret",
+		Headers: http.Header{
+			"Authorization": {"Bearer header-secret"},
+			"X-Secret":      {"private-header"},
+		},
+		Client: &http.Client{Transport: failingRoundTripper{err: err}},
+	}
+}
+
+func TestProviderTransportErrors(t *testing.T) {
+	t.Parallel()
+
+	decision := decisions.Decision{State: decisionstate.StateBanned}
+
+	t.Run("reports DNS name not found without leaking the hostname", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.DNSError{
+			Err:        "lookup private.example with secret details",
+			Name:       "private.example",
+			IsNotFound: true,
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: DNS name not found")
+		assert.NotContains(t, err.Error(), "private.example")
+		var unsafeDNS *net.DNSError
+		assert.NotErrorAs(t, err, &unsafeDNS)
+	})
+
+	t.Run("reports DNS lookup timeout", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.DNSError{
+			Name:      "private.example",
+			Err:       "secret DNS error text",
+			IsTimeout: true,
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: DNS lookup timed out")
+	})
+
+	t.Run("reports other DNS lookup failures", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.DNSError{
+			Name: "private.example",
+			Err:  "secret DNS diagnostic",
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: DNS lookup failed")
+	})
+
+	t.Run("reports request deadline without exposing transport details", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(context.DeadlineExceeded)
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: request timed out: context deadline exceeded")
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+	})
+
+	t.Run("reports connection timeout without leaking underlying details", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.OpError{
+			Op:  "dial",
+			Err: privateTimeoutError{},
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: connection timed out")
+		assert.NotContains(t, err.Error(), "secret-token")
+	})
+
+	t.Run("reports canceled request", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(context.Canceled)
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: context canceled")
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
+	t.Run("reports certificate trust failures without certificate details", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(x509.UnknownAuthorityError{Cert: &x509.Certificate{}})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: TLS certificate authority not trusted")
+	})
+
+	t.Run("reports TLS hostname mismatch without leaking the host", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(x509.HostnameError{
+			Certificate: &x509.Certificate{},
+			Host:        "sensitive.internal",
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: TLS certificate hostname mismatch")
+		assert.NotContains(t, err.Error(), "sensitive.internal")
+	})
+
+	t.Run("reports other certificate validation failures", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(x509.CertificateInvalidError{
+			Cert:   &x509.Certificate{},
+			Reason: x509.Expired,
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: TLS certificate invalid")
+	})
+
+	t.Run("reports TLS handshake failure without raw protocol data", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(tls.RecordHeaderError{Msg: "secret response bytes"})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: TLS handshake failed")
+	})
+
+	t.Run("reports connection refused without leaking remote address", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.OpError{
+			Op:   "dial",
+			Net:  "tcp",
+			Addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.45"), Port: 9000},
+			Err:  syscall.ECONNREFUSED,
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: connection refused")
+		assert.ErrorIs(t, err, syscall.ECONNREFUSED)
+		assert.NotContains(t, err.Error(), "10.0.0.45")
+		var unsafeURL *url.Error
+		assert.NotErrorAs(t, err, &unsafeURL)
+	})
+
+	t.Run("reports network unreachable", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.OpError{
+			Op:  "dial",
+			Err: syscall.ENETUNREACH,
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: "+syscall.ENETUNREACH.Error())
+		assert.ErrorIs(t, err, syscall.ENETUNREACH)
+	})
+
+	t.Run("reports connection reset", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.OpError{
+			Op:  "read",
+			Err: syscall.ECONNRESET,
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: "+syscall.ECONNRESET.Error())
+		assert.ErrorIs(t, err, syscall.ECONNRESET)
+	})
+
+	t.Run("reports an unexpected connection close", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(io.ErrUnexpectedEOF)
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: connection closed unexpectedly: unexpected EOF")
+		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
+	})
+
+	t.Run("reports unknown connection errors without printing their text", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(&net.OpError{
+			Op:  "dial",
+			Err: errors.New("internal address and credentials secret-token"),
+		})
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: connection error")
+		assert.NotContains(t, err.Error(), "secret-token")
+	})
+
+	t.Run("never returns arbitrary error text or credential-bearing URL", func(t *testing.T) {
+		t.Parallel()
+
+		p := failingWebhookProvider(errors.New("failed to dial private.example: secret header-secret private-header"))
+		err := p.Apply(t.Context(), decision)
+
+		require.EqualError(t, err, "webhook transport failed: network error")
+		assert.NotContains(t, err.Error(), "user:password")
+		assert.NotContains(t, err.Error(), "query-secret")
+		assert.NotContains(t, err.Error(), "header-secret")
+		assert.NotContains(t, err.Error(), "private-header")
+		assert.NotContains(t, err.Error(), "private.example")
 	})
 }
 
