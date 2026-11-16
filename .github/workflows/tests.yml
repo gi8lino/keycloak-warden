@@ -3,6 +3,7 @@ name: Tests
 
 on:
   workflow_call:
+  workflow_dispatch:
   pull_request:
     branches:
       - main
@@ -10,17 +11,14 @@ on:
       - "cmd/**"
       - "internal/**"
       - "test/**"
-      - "examples/**"
       - "go.mod"
       - "go.sum"
       - "Makefile"
-      - "bin/dev-tools.mk"
       - "Dockerfile"
       - "Dockerfile.goreleaser"
       - ".dockerignore"
       - ".goreleaser.yaml"
       - ".github/workflows/**"
-  workflow_dispatch:
 
 permissions:
   contents: read
