@@ -78,6 +78,7 @@ func (c *Client) doWithTimeout(
 	if res.StatusCode < http.StatusOK || res.StatusCode >= http.StatusMultipleChoices {
 		message, _ := io.ReadAll(io.LimitReader(res.Body, 4096))
 		var problem struct {
+			// Error contains the safe error message returned by the API.
 			Error string `json:"error"`
 		}
 		text := strings.TrimSpace(string(message))

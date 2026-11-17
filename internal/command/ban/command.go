@@ -13,6 +13,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/output"
 )
 
+// sectionBan groups manual ban arguments in command help.
 const sectionBan = "Manual ban"
 
 // Register adds the authenticated manual-ban command and its flags.

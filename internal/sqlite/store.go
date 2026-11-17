@@ -63,19 +63,18 @@ func Open(path string) (*Store, error) {
 // openDatabase initializes SQLite after the caller has acquired exclusive Warden ownership.
 func openDatabase(path string) (*sql.DB, error) {
 	location := url.URL{Scheme: "file", Path: path}
+	// Configure every connection, including replacements opened by database/sql.
+	location.RawQuery = url.Values{
+		"_pragma": {"busy_timeout(5000)", "foreign_keys(1)"},
+	}.Encode()
 	db, err := sql.Open("sqlite", location.String())
 	if err != nil {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
 
-	// Wait up to five seconds for SQLite locks, use WAL so readers can run
-	// during a write, and enforce foreign key constraints on this connection.
-	if _, err := db.Exec(`
-PRAGMA busy_timeout = 5000;
-PRAGMA journal_mode = WAL;
-PRAGMA foreign_keys = ON;
-`); err != nil {
+	// WAL persists in the database and allows readers alongside a writer.
+	if _, err := db.Exec("PRAGMA journal_mode = WAL"); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

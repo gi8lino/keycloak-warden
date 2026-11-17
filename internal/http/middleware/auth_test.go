@@ -19,8 +19,11 @@ import (
 // failingBody exercises a read failure unrelated to the request size limit.
 type failingBody struct{}
 
+// Read simulates a request body read failure.
 func (failingBody) Read([]byte) (int, error) { return 0, errors.New("body unavailable") }
-func (failingBody) Close() error             { return nil }
+
+// Close releases the fake request body without an error.
+func (failingBody) Close() error { return nil }
 
 // assertSnitchAuthentication exercises the request validator and its original-body contract.
 func assertSnitchAuthentication(t *testing.T, secret, content, timestamp, signature, body string, want int) {

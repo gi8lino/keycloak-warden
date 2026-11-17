@@ -33,7 +33,9 @@ func TestProblem(t *testing.T) {
 
 	assert.Equal(t, http.StatusForbidden, w.Code)
 	var body struct {
-		Error    string            `json:"error"`
+		// Error contains the safe error message returned by the API.
+		Error string `json:"error"`
+		// Problems contains the per-field validation diagnostics.
 		Problems map[string]string `json:"problems"`
 	}
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))

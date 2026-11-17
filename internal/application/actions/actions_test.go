@@ -141,6 +141,7 @@ func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
 
 // scriptedExpirer provides released decisions to the worker without persistence.
 type scriptedExpirer struct {
+	// expired contains the single batch of released decisions returned by the fake.
 	expired []decisions.Decision
 }
 

@@ -14,8 +14,10 @@ import (
 )
 
 const (
+	// sectionMaintenance groups scheduled database maintenance flags.
 	sectionMaintenance = "Maintenance"
-	sectionConfig      = "Configuration"
+	// sectionConfig groups server configuration flags in command help.
+	sectionConfig = "Configuration"
 )
 
 // Register adds the serve command and its operational flags to the command tree.

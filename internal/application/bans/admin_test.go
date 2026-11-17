@@ -15,14 +15,20 @@ import (
 
 // fakeStore implements an in-memory transaction for administration service tests.
 type fakeStore struct {
-	// historyCursor records the page selected for a decision read.
+	// historyPage records the page selected for a decision read.
 	historyPage int
-	ip          string
-	until       time.Time
-	reason      string
-	id          string
-	targets     []string
-	released    bool
+	// ip identifies the address selected by the operation.
+	ip string
+	// until records the requested ban expiry.
+	until time.Time
+	// reason records the manual ban explanation.
+	reason string
+	// id identifies the persisted decision or observation.
+	id string
+	// targets records the destinations selected for delivery.
+	targets []string
+	// released indicates that the fake decision sources were cleared.
+	released bool
 }
 
 // TransactDecision executes one application workflow on the fake transaction.

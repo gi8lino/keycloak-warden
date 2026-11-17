@@ -25,10 +25,13 @@ func TestReadyWithoutDatabase(t *testing.T) {
 
 // healthProbe reports configured readiness failures without requiring a database.
 type healthProbe struct {
+	// pingErr controls the readiness probe result.
 	pingErr error
-	called  int
+	// called records whether the readiness dependency was consulted.
+	called int
 }
 
+// Ping records the readiness probe and returns the configured error.
 func (p *healthProbe) Ping(context.Context) error {
 	p.called++
 	return p.pingErr

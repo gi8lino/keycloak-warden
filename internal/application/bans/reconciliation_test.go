@@ -15,7 +15,8 @@ import (
 // policyTx captures storage primitives requested by the domain reconciliation.
 type policyTx struct {
 	// prior is the materialized state before reconciliation.
-	prior          decisions.Decision
+	prior decisions.Decision
+	// currentSources contains the sources returned to reconciliation policy.
 	currentSources []Source
 	// oldSource is the previous source when one exists.
 	oldSource Source
@@ -33,29 +34,35 @@ type policyTx struct {
 	savedTargets []string
 }
 
+// EnsureDecision records that reconciliation requested a stable decision identity.
 func (p *policyTx) EnsureDecision(context.Context, string) error {
 	p.ensured = true
 	return nil
 }
 
+// Source returns the existing source and whether it exists.
 func (p *policyTx) Source(context.Context, string, SourceKind) (Source, bool, error) {
 	return p.oldSource, p.oldSourceExists, nil
 }
 
+// PutSource captures the source chosen by application policy.
 func (p *policyTx) PutSource(_ context.Context, _ string, source Source) error {
 	p.written = source
 	p.currentSources = []Source{source}
 	return nil
 }
 
+// Decision returns the previously persisted state.
 func (p *policyTx) Decision(context.Context, string) (decisions.Decision, error) {
 	return p.prior, nil
 }
 
+// Sources returns the currently active fake sources.
 func (p *policyTx) Sources(context.Context, string, time.Time) ([]Source, error) {
 	return p.currentSources, nil
 }
 
+// SaveDecision captures the reconciled state and its delivery destinations.
 func (p *policyTx) SaveDecision(_ context.Context, _, next decisions.Decision, changed bool, targets []string) error {
 	p.saved = next
 	p.savedChanged = changed

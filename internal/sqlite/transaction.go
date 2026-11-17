@@ -19,7 +19,9 @@ type transaction struct {
 
 // Keep the application-facing capabilities narrow even though SQLite uses one type.
 var (
-	_ ingestion.Transaction    = (*transaction)(nil)
+	// Verify that transaction implements the ingestion transaction contract.
+	_ ingestion.Transaction = (*transaction)(nil)
+	// Verify that transaction implements the ban mutation transaction contract.
 	_ bans.MutationTransaction = (*transaction)(nil)
 )
 

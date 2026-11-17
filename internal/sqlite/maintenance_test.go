@@ -22,7 +22,9 @@ func TestPrune(t *testing.T) {
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		for _, observation := range []struct {
+			// id identifies the persisted decision or observation.
 			id string
+			// at places the observation relative to the pruning cutoff.
 			at time.Time
 		}{
 			{id: "stale", at: now.Add(-25 * time.Hour)},
@@ -51,7 +53,9 @@ func TestPrune(t *testing.T) {
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		for _, observation := range []struct {
+			// id identifies the persisted decision or observation.
 			id string
+			// at places the observation relative to the pruning cutoff.
 			at time.Time
 		}{
 			{id: "stale", at: now.Add(-49 * time.Hour)},

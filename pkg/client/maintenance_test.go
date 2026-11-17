@@ -70,6 +70,7 @@ func TestMaintenance(t *testing.T) {
 // maintenanceTransport inspects the client-side request context without a network round trip.
 type maintenanceTransport func(*http.Request) (*http.Response, error)
 
+// RoundTrip delegates the HTTP exchange to the supplied test function.
 func (f maintenanceTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return f(r)
 }

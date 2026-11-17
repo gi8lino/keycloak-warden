@@ -11,9 +11,12 @@ import (
 
 // attemptStatusUpdate is a calculated status update for a persisted delivery.
 type attemptStatusUpdate struct {
-	ip       string
+	// ip identifies the address selected by the operation.
+	ip string
+	// revision identifies the delivery version whose status will change.
 	revision int64
-	status   deliverystate.Status
+	// status is the outcome computed by the application attempt policy.
+	status deliverystate.Status
 }
 
 // ReconcileAttemptLimit re-evaluates unfinished current revisions during startup.

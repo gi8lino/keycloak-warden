@@ -27,31 +27,37 @@ type workflowTx struct {
 	deletedExpired bool
 }
 
+// DecisionByID returns the decision selected for the workflow.
 func (w *workflowTx) DecisionByID(context.Context, string) (decisions.Decision, error) {
 	return w.prior, nil
 }
 
+// DeleteSources records the release and clears all fake sources.
 func (w *workflowTx) DeleteSources(context.Context, string) error {
 	w.deletedSources = true
 	w.currentSources = nil
 	return nil
 }
 
+// ResetFailures records that the observation generation was advanced.
 func (w *workflowTx) ResetFailures(context.Context, string) error {
 	w.resetFailures = true
 	return nil
 }
 
+// ExpiredSourceIPs returns the addresses selected for expiry.
 func (w *workflowTx) ExpiredSourceIPs(context.Context, time.Time) ([]string, error) {
 	return w.expiredIPs, nil
 }
 
+// DeleteExpiredSources records expiry cleanup and clears the fake sources.
 func (w *workflowTx) DeleteExpiredSources(context.Context, time.Time) error {
 	w.deletedExpired = true
 	w.currentSources = nil
 	return nil
 }
 
+// Record returns the decision saved by the workflow.
 func (w *workflowTx) Record(context.Context, string, time.Time) (Record, error) {
 	return Record{Decision: w.saved}, nil
 }
@@ -64,6 +70,7 @@ type workflowWriter struct {
 	commitErr error
 }
 
+// TransactDecision applies the workflow before returning the simulated commit error.
 func (w workflowWriter) TransactDecision(_ context.Context, fn func(MutationTransaction) error) error {
 	if err := fn(w.tx); err != nil {
 		return err

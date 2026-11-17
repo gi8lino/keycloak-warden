@@ -129,7 +129,7 @@ func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 			return
 		}
 		for key, values := range query {
-			if (key != "history-page" && key != "history-through-revision") || len(values) != 1 {
+			if !validHistoryParameter(key, values) {
 				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")
 				return
 			}
@@ -193,4 +193,9 @@ func writeBanError(w http.ResponseWriter, logger *slog.Logger, err error) bool {
 		httpresponse.Problem(w, http.StatusServiceUnavailable, "Administrative operation unavailable.")
 	}
 	return true
+}
+
+// validHistoryParameter accepts one value for each supported history selector.
+func validHistoryParameter(key string, values []string) bool {
+	return (key == "history-page" || key == "history-through-revision") && len(values) == 1
 }

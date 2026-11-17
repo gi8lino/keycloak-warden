@@ -11,10 +11,13 @@ import (
 
 // fixedTargetReader supplies the persisted destination ownership facts.
 type fixedTargetReader struct {
+	// names lists destinations currently owned by the fake store.
 	names []string
-	err   error
+	// err is the simulated storage failure.
+	err error
 }
 
+// ManagedTargets returns the configured ownership names and simulated lookup error.
 func (f fixedTargetReader) ManagedTargets(context.Context) ([]string, error) {
 	return f.names, f.err
 }

@@ -85,23 +85,27 @@ type scriptedAdministration struct {
 	calls int
 }
 
+// BanManual captures the request and returns the scripted outcome.
 func (s *scriptedAdministration) BanManual(_ context.Context, request bans.ManualBanRequest, _ time.Time) (bans.Record, error) {
 	s.calls++
 	s.requested = request
 	return s.record, s.err
 }
 
+// Release captures the selected decision and returns the scripted outcome.
 func (s *scriptedAdministration) Release(_ context.Context, id string, _ time.Time) (bans.Record, error) {
 	s.calls++
 	s.id = id
 	return s.record, s.err
 }
 
+// ListActive records the read and returns the scripted active decisions.
 func (s *scriptedAdministration) ListActive(context.Context, time.Time) ([]bans.Record, error) {
 	s.calls++
 	return s.records, s.err
 }
 
+// GetDecisionPage captures the history selection and returns the scripted record.
 func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _ time.Time, page int, throughRevision int64) (bans.Record, error) {
 	s.calls++
 	s.id = id

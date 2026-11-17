@@ -13,6 +13,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
+// sectionAdminAPI groups administrative connection flags in command help.
 const sectionAdminAPI = "Administration API"
 
 // ServerFlags holds the global application listener settings parsed by tinyflags.

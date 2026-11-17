@@ -64,22 +64,18 @@ func finishAttemptStatus(
 	deliveryErr error,
 	now time.Time,
 ) error {
-	status := deliverystate.StatusDelivered
-	if deliveryErr != nil {
-		status = deliverystate.StatusRetrying
-	}
 	if deliveryErr != nil {
 		_, err := tx.ExecContext(ctx, `
 UPDATE delivery_history SET status = ?
 WHERE ip = ? AND revision = ? AND destination = ? AND status IN ('pending', 'retrying')
-`, status, job.Decision.IP, job.Decision.Revision, job.Destination)
+`, deliverystate.StatusRetrying, job.Decision.IP, job.Decision.Revision, job.Destination)
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
 UPDATE delivery_history
 SET status = ?, acknowledged_at = ?, superseded_by = NULL
 WHERE ip = ? AND revision = ? AND destination = ?
-`, status, now.UnixMilli(), job.Decision.IP, job.Decision.Revision, job.Destination)
+`, deliverystate.StatusDelivered, now.UnixMilli(), job.Decision.IP, job.Decision.Revision, job.Destination)
 	return err
 }
 

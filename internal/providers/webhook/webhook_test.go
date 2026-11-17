@@ -109,10 +109,15 @@ func (f failingRoundTripper) RoundTrip(*http.Request) (*http.Response, error) {
 // privateTimeoutError simulates a network timeout with unsafe diagnostic text.
 type privateTimeoutError struct{}
 
+// Error returns the transport diagnostic used by the test.
 func (privateTimeoutError) Error() string {
 	return "timeout contacting private.example with secret-token"
 }
-func (privateTimeoutError) Timeout() bool   { return true }
+
+// Timeout identifies this fake transport error as a timeout.
+func (privateTimeoutError) Timeout() bool { return true }
+
+// Temporary reports the fake network error as transient.
 func (privateTimeoutError) Temporary() bool { return true }
 
 // failingWebhookProvider models credentials in both the URL and headers so
