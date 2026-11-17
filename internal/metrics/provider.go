@@ -39,7 +39,9 @@ func (p *instrumentedProvider) Apply(ctx context.Context, decision decisions.Dec
 	if err != nil {
 		outcome = "error"
 	}
+
 	p.registry.deliveryAttempts.WithLabelValues(p.name, outcome).Inc()
 	p.registry.deliveryDuration.WithLabelValues(p.name).Observe(time.Since(started).Seconds())
+
 	return err
 }

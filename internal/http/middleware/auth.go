@@ -38,8 +38,7 @@ func AuthenticateSnitch(secret string) func(http.Handler) http.Handler {
 
 			body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxEventBodyBytes))
 			if err != nil {
-				var limit *http.MaxBytesError
-				if errors.As(err, &limit) {
+				if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 					httpresponse.Problem(w, http.StatusRequestEntityTooLarge, "Event body is too large.")
 					return
 				}

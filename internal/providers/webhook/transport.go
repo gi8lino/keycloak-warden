@@ -1,6 +1,7 @@
 package webhook
 
 import (
+	"cmp"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -20,30 +21,17 @@ const transportErrorPrefix = "webhook transport failed"
 // nested errors can also carry credentials, private hostnames, or request data.
 // Only safe standard sentinel errors are retained in the returned error chain.
 func webhookTransportError(err error) error {
-	if result := webhookContextError(err); result != nil {
-		return result
-	}
-	if result := webhookDNSError(err); result != nil {
-		return result
-	}
-	if result := webhookTLSError(err); result != nil {
-		return result
-	}
-	if result := webhookTimeoutError(err); result != nil {
-		return result
-	}
-	if result := webhookSocketError(err); result != nil {
-		return result
-	}
-	if result := webhookEOFError(err); result != nil {
-		return result
-	}
-	if result := webhookNetworkError(err); result != nil {
-		return result
-	}
-
-	// Unknown errors may contain arbitrary request details; do not unwrap them.
-	return errors.New(transportErrorPrefix + ": network error")
+	return cmp.Or(
+		webhookContextError(err),
+		webhookDNSError(err),
+		webhookTLSError(err),
+		webhookTimeoutError(err),
+		webhookSocketError(err),
+		webhookEOFError(err),
+		webhookNetworkError(err),
+		// Unknown errors may contain arbitrary request details; do not unwrap them.
+		errors.New(transportErrorPrefix+": network error"),
+	)
 }
 
 // webhookContextError preserves only safe cancellation and deadline sentinels.
@@ -60,8 +48,8 @@ func webhookContextError(err error) error {
 
 // webhookDNSError keeps DNS failure categories but omits query names and messages.
 func webhookDNSError(err error) error {
-	var dnsErr *net.DNSError
-	if !errors.As(err, &dnsErr) {
+	dnsErr, ok := errors.AsType[*net.DNSError](err)
+	if !ok {
 		return nil
 	}
 
@@ -78,29 +66,22 @@ func webhookDNSError(err error) error {
 // webhookTLSError identifies certificate and handshake failures without exposing
 // certificate details, hostnames, or server-supplied protocol text.
 func webhookTLSError(err error) error {
-	var unknownAuthority x509.UnknownAuthorityError
-	if errors.As(err, &unknownAuthority) {
+	if _, ok := errors.AsType[x509.UnknownAuthorityError](err); ok {
 		return errors.New(transportErrorPrefix + ": TLS certificate authority not trusted")
 	}
-
-	var hostnameError x509.HostnameError
-	if errors.As(err, &hostnameError) {
+	if _, ok := errors.AsType[x509.HostnameError](err); ok {
 		return errors.New(transportErrorPrefix + ": TLS certificate hostname mismatch")
 	}
-
-	var invalidCertificate x509.CertificateInvalidError
-	if errors.As(err, &invalidCertificate) {
+	if _, ok := errors.AsType[x509.CertificateInvalidError](err); ok {
 		return errors.New(transportErrorPrefix + ": TLS certificate invalid")
 	}
-
-	var certificateVerification *tls.CertificateVerificationError
-	if errors.As(err, &certificateVerification) {
+	if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
 		return errors.New(transportErrorPrefix + ": TLS certificate verification failed")
 	}
-
-	var recordHeader tls.RecordHeaderError
-	var tlsAlert tls.AlertError
-	if errors.As(err, &recordHeader) || errors.As(err, &tlsAlert) {
+	if _, ok := errors.AsType[tls.RecordHeaderError](err); ok {
+		return errors.New(transportErrorPrefix + ": TLS handshake failed")
+	}
+	if _, ok := errors.AsType[tls.AlertError](err); ok {
 		return errors.New(transportErrorPrefix + ": TLS handshake failed")
 	}
 	if errors.Is(err, http.ErrSchemeMismatch) {
@@ -117,8 +98,7 @@ func webhookTimeoutError(err error) error {
 		return fmt.Errorf("%s: %w", transportErrorPrefix, syscall.ETIMEDOUT)
 	}
 
-	var netErr net.Error
-	if errors.As(err, &netErr) && netErr.Timeout() {
+	if netErr, ok := errors.AsType[net.Error](err); ok && netErr.Timeout() {
 		return errors.New(transportErrorPrefix + ": connection timed out")
 	}
 
@@ -163,8 +143,7 @@ func webhookEOFError(err error) error {
 // webhookNetworkError recognizes opaque net.OpError failures without preserving
 // potentially sensitive operation and address information.
 func webhookNetworkError(err error) error {
-	var opErr *net.OpError
-	if errors.As(err, &opErr) {
+	if _, ok := errors.AsType[*net.OpError](err); ok {
 		return errors.New(transportErrorPrefix + ": connection error")
 	}
 	return nil

@@ -101,8 +101,7 @@ func decodeBanPayload(w http.ResponseWriter, r *http.Request) (createBanPayload,
 
 // writeBanDecodeError distinguishes oversized bodies from malformed JSON without leaking input.
 func writeBanDecodeError(w http.ResponseWriter, err error, invalidMessage string) {
-	var tooLarge *http.MaxBytesError
-	if errors.As(err, &tooLarge) {
+	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 		httpresponse.Problem(w, http.StatusRequestEntityTooLarge, "Ban request is too large.")
 		return
 	}
