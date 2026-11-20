@@ -58,7 +58,7 @@ jobs:
       - name: Set up GoReleaser
         uses: goreleaser/goreleaser-action@v7
         with:
-          version: v2.20.2
+          version: v2.20.3
           install-only: true
 
       - name: Check GoReleaser configuration
