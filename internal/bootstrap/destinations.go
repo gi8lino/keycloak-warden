@@ -44,8 +44,6 @@ func Destinations(targets config.Targets) (destinations map[string]actions.Targe
 		resolver.WithEmptyValuePolicy(resolver.RejectBlank),
 		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
 	)
-	// Kubernetes Secret volumes commonly end in a newline. Keep meaningful spaces.
-	values.Register("file:", &resolver.KeyValueFileResolver{Whitespace: resolver.FileTrimNewlines})
 
 	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
 		provider, err := buildWebhook(targets.Webhook[name], client, values)

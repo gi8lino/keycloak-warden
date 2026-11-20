@@ -236,20 +236,20 @@ func TestDestinationsValueResolution(t *testing.T) {
 	secretFile := filepath.Join(t.TempDir(), "token")
 	headerFile := filepath.Join(t.TempDir(), "header")
 	require.NoError(t, os.WriteFile(zoneFile, []byte(strings.Repeat("b", 32)+"\n"), 0o600))
-	require.NoError(t, os.WriteFile(secretFile, []byte(" secondary-token \n"), 0o600))
+	require.NoError(t, os.WriteFile(secretFile, []byte(" secondary-token \r\n"), 0o600))
 	require.NoError(t, os.WriteFile(headerFile, []byte("file-header-value\n"), 0o600))
 
 	providers, names, err := Destinations(config.Targets{
 		Cloudflare: map[string]config.CloudflareTarget{
 			"primary":   {ZoneID: "env:WARDEN_TEST_CF_PRIMARY_ZONE", APIToken: "env:WARDEN_TEST_CF_PRIMARY_TOKEN"},
-			"secondary": {ZoneID: "file:" + zoneFile, APIToken: "file:" + secretFile},
+			"secondary": {ZoneID: "secret:" + zoneFile, APIToken: "secret:" + secretFile},
 		},
 		Webhook: map[string]config.WebhookTarget{
 			"notification": {
 				URL: "env:WARDEN_TEST_WEBHOOK_URL",
 				Headers: map[string]string{
 					"Authorization": "env:WARDEN_TEST_WEBHOOK_HEADER",
-					"X-API-Key":     "file:" + headerFile,
+					"X-API-Key":     "secret:" + headerFile,
 					"X-Source":      "literal:custom:source",
 				},
 			},

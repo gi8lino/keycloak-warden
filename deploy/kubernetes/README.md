@@ -131,9 +131,10 @@ Webhook `url`, `body-template`, and `headers` values, along with Cloudflare `zon
 - Literal strings
 - `env:VARIABLE`
 - `file:/path/to/value`
+- `secret:/var/run/secrets/warden/token` for mounted secret files
 - Other supported [Resolver](https://github.com/containeroo/resolver) sources
 
-Use `literal:` to preserve values that would otherwise be interpreted as resolver references.
+Use `literal:` to preserve values that would otherwise be interpreted as resolver references. `secret:` removes trailing line endings but preserves spaces and tabs; `file:` trims surrounding whitespace. Secrets are read at startup, so restart Warden after changing them.
 
 Every configured target is active. Required values must resolve to nonblank strings, and invalid references fail startup.
 

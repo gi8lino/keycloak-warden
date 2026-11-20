@@ -130,7 +130,9 @@ Rules follow these conditions:
 
 ## Secrets and value resolution
 
-Warden resolves destination values once on startup using [Resolver](https://github.com/containeroo/resolver). Use `env:NAME`, `file:/path/to/secret`, or a literal value. `literal:` escapes a value that would otherwise look like a resolver reference.
+Warden resolves destination values once on startup using [Resolver](https://github.com/containeroo/resolver). Use `env:NAME`, `secret:/path/to/mounted-secret`, `file:/path/to/value`, or a literal value. `literal:` escapes a value that would otherwise look like a resolver reference.
+
+Use `secret:` for mounted Kubernetes or Docker secret files. It removes trailing CR/LF while preserving spaces and tabs; no Kubernetes API access is needed. `file:` uses Resolver’s default behavior, trimming surrounding whitespace. Replace existing `file:` secret references with `secret:` if their surrounding spaces must be preserved. Restart Warden after changing a mounted secret.
 
 For webhook targets, **HTTPS is required** except when explicitly addressing loopback hosts such as `localhost` or `127.0.0.1`. Redirects are not followed. The `Content-Type` header is reserved; Warden sends JSON with `application/json`. Webhooks have no built-in outbound signing, so supply an authentication header if needed. Templates should be treated as trusted configuration, not user-supplied content.
 
