@@ -12,7 +12,7 @@ require (
 	github.com/prometheus/client_golang v1.25.0
 	github.com/stretchr/testify v1.12.1
 	go.yaml.in/yaml/v4 v4.0.0
-	modernc.org/sqlite v1.62.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
