@@ -87,24 +87,24 @@ func noRedirect(_ *http.Request, _ []*http.Request) error {
 func buildWebhook(
 	target config.WebhookTarget,
 	client *http.Client,
-	values *resolver.Registry,
+	registry *resolver.Registry,
 ) (actions.Provider, error) {
-	endpoint, err := resolveWebhookURL(values, target.URL)
+	endpoint, err := resolveWebhookURL(registry, target.URL)
 	if err != nil {
 		return nil, err
 	}
 
-	headers, err := resolveWebhookHeaders(values, target.Headers)
+	headers, err := resolveWebhookHeaders(registry, target.Headers)
 	if err != nil {
 		return nil, err
 	}
 
-	bodyTemplate, err := parseWebhookBodyTemplate(values, target.BodyTemplate)
+	bodyTemplate, err := parseWebhookBodyTemplate(registry, target.BodyTemplate)
 	if err != nil {
 		return nil, err
 	}
 
-	vars, err := resolveTemplateVars(values, target.TemplateVars)
+	vars, err := resolveTemplateVars(registry, target.TemplateVars)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +135,13 @@ func buildWebhook(
 }
 
 // resolveTemplateVars resolves only the variables explicitly configured for this destination.
-func resolveTemplateVars(values *resolver.Registry, configured map[string]string) (map[string]string, error) {
+func resolveTemplateVars(registry *resolver.Registry, configured map[string]string) (map[string]string, error) {
 	vars := make(map[string]string, len(configured))
 	for _, name := range slices.Sorted(maps.Keys(configured)) {
 		if strings.TrimSpace(name) == "" {
 			return nil, errors.New("template-vars: variable name must not be blank")
 		}
-		value, err := values.ResolveVariable(configured[name])
+		value, err := registry.ResolveVariable(configured[name])
 		if err != nil {
 			return nil, fmt.Errorf("template-vars %q: %w", name, err)
 		}
@@ -154,7 +154,7 @@ func resolveTemplateVars(values *resolver.Registry, configured map[string]string
 // resolveWebhookURL resolves and validates a webhook endpoint.
 // Literal HTTP(S) URLs are supported alongside resolver references.
 func resolveWebhookURL(
-	values *resolver.Registry,
+	registry *resolver.Registry,
 	reference string,
 ) (string, error) {
 	if strings.HasPrefix(reference, "https://") || strings.HasPrefix(reference, "http://") {
@@ -162,7 +162,7 @@ func resolveWebhookURL(
 		reference = "literal:" + reference
 	}
 
-	endpoint, err := values.ResolveVariable(reference)
+	endpoint, err := registry.ResolveVariable(reference)
 	if err != nil {
 		return "", fmt.Errorf("url: %w", err)
 	}
@@ -186,13 +186,13 @@ func allowedWebhook(u *url.URL) bool {
 
 // resolveWebhookHeaders resolves and validates configured HTTP headers.
 func resolveWebhookHeaders(
-	values *resolver.Registry,
-	configured map[string]string,
+	registry *resolver.Registry,
+	configuredHeaders map[string]string,
 ) (http.Header, error) {
-	headers := make(http.Header, len(configured))
+	headers := make(http.Header, len(configuredHeaders))
 
-	for _, name := range slices.Sorted(maps.Keys(configured)) {
-		value, err := values.ResolveVariable(configured[name])
+	for _, name := range slices.Sorted(maps.Keys(configuredHeaders)) {
+		value, err := registry.ResolveVariable(configuredHeaders[name])
 		if err != nil {
 			return nil, fmt.Errorf("headers %s: %w", name, err)
 		}
@@ -224,14 +224,14 @@ func isForbiddenHeaderControl(c byte) bool {
 
 // parseWebhookBodyTemplate resolves and parses the configured body template.
 func parseWebhookBodyTemplate(
-	values *resolver.Registry,
+	registry *resolver.Registry,
 	reference string,
 ) (*templates.Template, error) {
 	if reference == "" {
 		return nil, nil
 	}
 
-	source, err := values.ResolveVariable(reference)
+	source, err := registry.ResolveVariable(reference)
 	if err != nil {
 		return nil, fmt.Errorf("body-template: %w", err)
 	}
@@ -252,9 +252,9 @@ func parseWebhookBodyTemplate(
 func buildCloudflare(
 	target config.CloudflareTarget,
 	client *http.Client,
-	values *resolver.Registry,
+	registry *resolver.Registry,
 ) (actions.Provider, error) {
-	zoneID, err := values.ResolveVariable(target.ZoneID)
+	zoneID, err := registry.ResolveVariable(target.ZoneID)
 	if err != nil {
 		return nil, fmt.Errorf("zone-id: %w", err)
 	}
@@ -263,7 +263,7 @@ func buildCloudflare(
 		return nil, errors.New("zone-id: expected a 32-character hexadecimal Cloudflare zone ID")
 	}
 
-	token, err := values.ResolveVariable(target.APIToken)
+	token, err := registry.ResolveVariable(target.APIToken)
 	if err != nil {
 		return nil, fmt.Errorf("api-token: %w", err)
 	}
