@@ -89,7 +89,13 @@ func (o clientOptions) validate() error {
 	if o.maintenanceClientTimeout <= 0 {
 		return errors.New("maintenance timeout must be positive")
 	}
-	return adminclient.ValidateMaxResponseBytes(o.maxAdminResponseBytes)
+	return ValidateMaxResponseBytes(o.maxAdminResponseBytes)
+}
+
+// ValidateMaxResponseBytes checks the maximum successful administrative response size.
+// The value must be positive and leave room for the one-byte overflow sentinel.
+func ValidateMaxResponseBytes(limit int) error {
+	return adminclient.ValidateMaxResponseBytes(limit)
 }
 
 // Client authenticates administrative requests against the running Warden server.
