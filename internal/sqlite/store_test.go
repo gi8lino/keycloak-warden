@@ -50,8 +50,8 @@ func processDecision(processor *ingestion.Service, ctx context.Context, event ev
 func failed(id string) events.Envelope {
 	return events.Envelope{
 		ID:        id,
-		Source:    "keycloak",
-		Kind:      "LOGIN_ERROR",
+		Source:    events.SourceKeycloak,
+		Kind:      events.KindLoginError,
 		Version:   1,
 		Timestamp: time.Date(2026, time.November, 5, 15, 0, 0, 0, time.UTC),
 		IP:        "203.0.113.1",

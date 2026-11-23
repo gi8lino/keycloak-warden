@@ -143,7 +143,7 @@ func (s *Service) processFailure(
 
 // normalize validates the producer contract without trusting HTTP headers.
 func normalize(p events.Envelope) (event events.Event, err error) {
-	if p.Version != 1 || p.Source != "keycloak" {
+	if p.Version != 1 || p.Source != events.SourceKeycloak {
 		return events.Event{}, ErrInvalidEvent
 	}
 

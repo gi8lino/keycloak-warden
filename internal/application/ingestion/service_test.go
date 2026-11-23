@@ -134,8 +134,8 @@ func validEvent() events.Envelope {
 	return events.Envelope{
 		Version:   1,
 		ID:        "a",
-		Source:    "keycloak",
-		Kind:      "LOGIN_ERROR",
+		Source:    events.SourceKeycloak,
+		Kind:      events.KindLoginError,
 		IP:        "203.0.113.5",
 		Timestamp: time.Now(),
 	}
@@ -295,31 +295,31 @@ func TestProcessingOutcomes(t *testing.T) {
 	t.Run("missing address", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, "LOGIN_ERROR", "", false, 0, false, ingestion.OutcomeIgnored, "missing_ip")
+		assertProcessingOutcome(t, events.KindLoginError, "", false, 0, false, ingestion.OutcomeIgnored, "missing_ip")
 	})
 
 	t.Run("duplicate", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", false, 0, false, ingestion.OutcomeDuplicate, "")
+		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", false, 0, false, ingestion.OutcomeDuplicate, "")
 	})
 
 	t.Run("below threshold", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", true, 4, false, ingestion.OutcomeBelowThreshold, "")
+		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", true, 4, false, ingestion.OutcomeBelowThreshold, "")
 	})
 
 	t.Run("threshold met", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", true, 5, false, ingestion.OutcomeUpdated, "")
+		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", true, 5, false, ingestion.OutcomeUpdated, "")
 	})
 
 	t.Run("unchanged decision", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, "LOGIN_ERROR", "203.0.113.5", true, 5, true, ingestion.OutcomeUnchanged, "")
+		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", true, 5, true, ingestion.OutcomeUnchanged, "")
 	})
 }
 

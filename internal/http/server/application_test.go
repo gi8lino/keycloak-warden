@@ -215,8 +215,8 @@ func TestNewApplication(t *testing.T) {
 			return events.Envelope{
 				ID:        id,
 				Version:   1,
-				Source:    "keycloak",
-				Kind:      "LOGIN_ERROR",
+				Source:    events.SourceKeycloak,
+				Kind:      events.KindLoginError,
 				IP:        "203.0.113.22",
 				Timestamp: now,
 			}

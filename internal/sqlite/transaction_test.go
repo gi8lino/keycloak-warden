@@ -91,7 +91,7 @@ func TestTransactionLifecycle(t *testing.T) {
 		ip := "203.0.113.92"
 		event := events.Event{
 			ID:     "observation-1",
-			Source: "keycloak",
+			Source: events.SourceKeycloak,
 			IP:     netip.MustParseAddr(ip),
 		}
 

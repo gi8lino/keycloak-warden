@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/events"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -44,9 +46,9 @@ func TestRecordProcessedEvent(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(true, "test")
-		registry.RecordProcessedEvent("hq", "LOGIN_ERROR", false)
-		registry.RecordProcessedEvent("hq", "LOGIN_ERROR", true)
-		registry.RecordProcessedEvent("personal", "LOGIN_ERROR", false)
+		registry.RecordProcessedEvent("hq", events.KindLoginError, false)
+		registry.RecordProcessedEvent("hq", events.KindLoginError, true)
+		registry.RecordProcessedEvent("personal", events.KindLoginError, false)
 		registry.RecordProcessedEvent("personal", "LOGIN", false)
 
 		output := scrape(t, registry)
@@ -61,8 +63,8 @@ func TestRecordProcessedEvent(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(true, "test")
-		registry.RecordProcessedEvent("", "LOGIN_ERROR", true)
-		registry.RecordProcessedEvent("  ", "LOGIN_ERROR", false)
+		registry.RecordProcessedEvent("", events.KindLoginError, true)
+		registry.RecordProcessedEvent("  ", events.KindLoginError, false)
 
 		output := scrape(t, registry)
 		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="unknown"} 2`)
@@ -73,7 +75,7 @@ func TestRecordProcessedEvent(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(false, "test")
-		registry.RecordProcessedEvent("hq", "LOGIN_ERROR", true)
+		registry.RecordProcessedEvent("hq", events.KindLoginError, true)
 
 		assert.Nil(t, registry.snitchEvents)
 		assert.Nil(t, registry.automaticBanDecisions)

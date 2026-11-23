@@ -121,8 +121,8 @@ func TestRuleMatches(t *testing.T) {
 	t.Parallel()
 
 	valid := events.Event{
-		Source: "keycloak",
-		Kind:   "LOGIN_ERROR",
+		Source: events.SourceKeycloak,
+		Kind:   events.KindLoginError,
 		IP:     netip.MustParseAddr("203.0.113.1"),
 	}
 

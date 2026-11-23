@@ -44,8 +44,8 @@ func (r Rule) hasValidDurations() bool {
 
 // Matches selects Keycloak login errors that can be attributed to an address.
 func (r Rule) Matches(e events.Event) bool {
-	return e.Source == "keycloak" &&
-		e.Kind == "LOGIN_ERROR" &&
+	return e.Source == events.SourceKeycloak &&
+		e.Kind == events.KindLoginError &&
 		e.IP.IsValid()
 }
 
