@@ -10,6 +10,12 @@ import (
 func TestEventConstants(t *testing.T) {
 	t.Parallel()
 
+	t.Run("schema version", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, 1, SchemaVersion)
+	})
+
 	t.Run("Keycloak source", func(t *testing.T) {
 		t.Parallel()
 

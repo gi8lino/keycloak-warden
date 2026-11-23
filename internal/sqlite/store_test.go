@@ -41,7 +41,12 @@ func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *in
 }
 
 // processDecision extracts a changed decision from an ingestion outcome for storage tests.
-func processDecision(processor *ingestion.Service, ctx context.Context, event events.Envelope, now time.Time) (*decisions.Decision, error) {
+func processDecision(
+	processor *ingestion.Service,
+	ctx context.Context,
+	event events.Envelope,
+	now time.Time,
+) (*decisions.Decision, error) {
 	result, err := processor.Process(ctx, event, now)
 	return result.Decision, err
 }
@@ -52,7 +57,7 @@ func failed(id string) events.Envelope {
 		ID:        id,
 		Source:    events.SourceKeycloak,
 		Kind:      events.KindLoginError,
-		Version:   1,
+		Version:   events.SchemaVersion,
 		Timestamp: time.Date(2026, time.November, 5, 15, 0, 0, 0, time.UTC),
 		IP:        "203.0.113.1",
 	}

@@ -2,6 +2,9 @@ package events
 
 import "time"
 
+// SchemaVersion identifies the supported Snitch event schema.
+const SchemaVersion = 1
+
 // Envelope represents the complete, versioned Snitch event contract.
 type Envelope struct {
 	// Version identifies the Snitch event schema.

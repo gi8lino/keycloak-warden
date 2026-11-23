@@ -214,7 +214,7 @@ func TestNewApplication(t *testing.T) {
 		input := func(id string) events.Envelope {
 			return events.Envelope{
 				ID:        id,
-				Version:   1,
+				Version:   events.SchemaVersion,
 				Source:    events.SourceKeycloak,
 				Kind:      events.KindLoginError,
 				IP:        "203.0.113.22",

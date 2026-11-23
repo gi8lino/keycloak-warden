@@ -132,7 +132,7 @@ func TestNew(t *testing.T) {
 // validEvent returns a representative, timestamped Snitch event.
 func validEvent() events.Envelope {
 	return events.Envelope{
-		Version:   1,
+		Version:   events.SchemaVersion,
 		ID:        "a",
 		Source:    events.SourceKeycloak,
 		Kind:      events.KindLoginError,
@@ -210,7 +210,7 @@ func TestServiceProcess(t *testing.T) {
 		t.Parallel()
 
 		event := validEvent()
-		event.Version = 2
+		event.Version = events.SchemaVersion + 1
 		decision, repo, tx, err := processEvent(t, event, 0, true)
 
 		require.ErrorIs(t, err, ingestion.ErrInvalidEvent)
