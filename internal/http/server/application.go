@@ -26,14 +26,28 @@ func newApplication(config Config) http.Handler {
 	// An absent administrator credential disables every administrative route.
 	if config.AdminToken != "" && config.BanAdmin != nil {
 		guard := middleware.AuthenticateAdmin(config.AdminToken)
-		mux.Handle("POST /bans", httpkitmiddleware.Chain(endpoint.CreateBan(config.BanAdmin, config.Logger), guard))
-		mux.Handle("GET /bans", httpkitmiddleware.Chain(endpoint.ListBans(config.BanAdmin, config.Logger), guard))
-		mux.Handle("GET /bans/{id}", httpkitmiddleware.Chain(endpoint.GetBan(config.BanAdmin, config.Logger), guard))
-		mux.Handle("DELETE /bans/{id}", httpkitmiddleware.Chain(endpoint.DeleteBan(config.BanAdmin, config.Logger), guard))
+
+		mux.Handle("POST /bans", httpkitmiddleware.Chain(
+			endpoint.CreateBan(config.BanAdmin, config.Logger),
+			guard,
+		))
+		mux.Handle("GET /bans", httpkitmiddleware.Chain(
+			endpoint.ListBans(config.BanAdmin, config.Logger),
+			guard,
+		))
+		mux.Handle("GET /bans/{id}", httpkitmiddleware.Chain(
+			endpoint.GetBan(config.BanAdmin, config.Logger),
+			guard,
+		))
+		mux.Handle("DELETE /bans/{id}", httpkitmiddleware.Chain(
+			endpoint.DeleteBan(config.BanAdmin, config.Logger),
+			guard,
+		))
 	}
 
 	if config.AdminToken != "" && config.Maintenance != nil {
 		guard := middleware.AuthenticateAdmin(config.AdminToken)
+
 		mux.Handle("GET /maintenance", httpkitmiddleware.Chain(
 			endpoint.MaintenanceStatus(config.Maintenance),
 			guard,
