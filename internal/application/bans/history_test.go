@@ -16,6 +16,9 @@ func TestNewHistoryPage(t *testing.T) {
 		page, err := NewHistoryPage(1, 0)
 		require.NoError(t, err)
 		assert.Zero(t, page.Offset)
+		assert.Equal(t, HistoryPageSize, page.Groups)
+		assert.Equal(t, HistoryAttemptLimit, page.Attempts)
+		assert.Equal(t, HistoryErrorCharLimit, page.ErrorCharacters)
 	})
 
 	t.Run("hundredth page", func(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
 	"github.com/gi8lino/keycloak-warden/internal/http/middleware"
+	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
 
 // newApplication registers ingestion and authenticated administrative routes.
@@ -38,11 +39,11 @@ func newApplication(config Config) http.Handler {
 			guard,
 		))
 		mux.Handle("POST /maintenance/prune", httpkitmiddleware.Chain(
-			endpoint.RunMaintenance(config.Maintenance, config.Logger, "prune"),
+			endpoint.RunMaintenance(config.Maintenance, config.Logger, maintenance.OperationPrune),
 			guard,
 		))
 		mux.Handle("POST /maintenance/optimize", httpkitmiddleware.Chain(
-			endpoint.RunMaintenance(config.Maintenance, config.Logger, "optimize"),
+			endpoint.RunMaintenance(config.Maintenance, config.Logger, maintenance.OperationOptimize),
 			guard,
 		))
 	}

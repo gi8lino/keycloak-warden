@@ -88,15 +88,27 @@ func TestFresh(t *testing.T) {
 		assert.False(t, fresh("not-a-timestamp", now))
 	})
 
+	t.Run("accepts oldest allowed timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, fresh(strconv.FormatInt(now.Add(-maxClockSkew).Unix(), 10), now))
+	})
+
+	t.Run("accepts newest allowed timestamp", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, fresh(strconv.FormatInt(now.Add(maxClockSkew).Unix(), 10), now))
+	})
+
 	t.Run("rejects too old", func(t *testing.T) {
 		t.Parallel()
 
-		assert.False(t, fresh(strconv.FormatInt(now.Unix()-301, 10), now))
+		assert.False(t, fresh(strconv.FormatInt(now.Unix()-int64(maxClockSkew/time.Second)-1, 10), now))
 	})
 
 	t.Run("rejects too far in future", func(t *testing.T) {
 		t.Parallel()
 
-		assert.False(t, fresh(strconv.FormatInt(now.Unix()+301, 10), now))
+		assert.False(t, fresh(strconv.FormatInt(now.Unix()+int64(maxClockSkew/time.Second)+1, 10), now))
 	})
 }

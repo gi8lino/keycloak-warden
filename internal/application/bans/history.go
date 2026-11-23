@@ -5,8 +5,14 @@ import (
 	"math"
 )
 
-// HistoryPageSize limits destination/revision groups returned by an inspection.
-const HistoryPageSize = 16
+const (
+	// HistoryPageSize limits destination/revision groups returned by an inspection.
+	HistoryPageSize = 16
+	// HistoryAttemptLimit bounds completed attempts returned per destination/revision group.
+	HistoryAttemptLimit = 16
+	// HistoryErrorCharLimit bounds the error excerpt returned per completed attempt.
+	HistoryErrorCharLimit = 512
+)
 
 // HistoryPage contains validated read bounds for one decision history request.
 type HistoryPage struct {
@@ -36,8 +42,8 @@ func NewHistoryPage(page int, throughRevision int64) (HistoryPage, error) {
 		Number:          page,
 		Offset:          int64(page-1) * HistoryPageSize,
 		Groups:          HistoryPageSize,
-		Attempts:        16,
-		ErrorCharacters: 512,
+		Attempts:        HistoryAttemptLimit,
+		ErrorCharacters: HistoryErrorCharLimit,
 		ThroughRevision: throughRevision,
 	}, nil
 }

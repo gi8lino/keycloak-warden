@@ -17,6 +17,10 @@ import (
 )
 
 const (
+	// ruleModeBlock instructs Cloudflare to deny traffic from a matching address.
+	ruleModeBlock = "block"
+	// ruleOwnerPrefix marks access rules created from Warden decisions.
+	ruleOwnerPrefix = "warden:"
 	// maxRulePages bounds the number of Cloudflare list requests in one reconciliation.
 	maxRulePages = 100
 	// maxResponseBytes bounds each Cloudflare response before JSON decoding.
@@ -94,8 +98,8 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 	}
 
 	want := rule{
-		Mode:  "block",
-		Notes: "warden:" + d.ID,
+		Mode:  ruleModeBlock,
+		Notes: ruleOwnerPrefix + d.ID,
 		Configuration: filter{
 			Target: target,
 			Value:  addr.String(),
