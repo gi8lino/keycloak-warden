@@ -3,21 +3,36 @@ package client
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
-	"github.com/containeroo/httpkit/prefix"
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 )
 
-// Option configures the administration API client URL policy.
+// Option configures the administration API client.
 type Option func(*clientOptions)
 
-// clientOptions holds optional transport allowances for administrative connections.
+const (
+	// DefaultMaxResponseBytes limits successful administrative API response bodies to one MiB.
+	DefaultMaxResponseBytes = adminclient.DefaultMaxResponseBytes
+	// DefaultRequestTimeout bounds the total duration of an ordinary administrative HTTP request.
+	DefaultRequestTimeout = adminclient.DefaultRequestTimeout
+	// DefaultMaintenanceTimeout exceeds the server's 30-second maintenance deadline.
+	DefaultMaintenanceTimeout = adminclient.DefaultMaintenanceTimeout
+)
+
+// clientOptions holds transport policy and request limits for administrative connections.
 type clientOptions struct {
 	// allowInsecureHTTP permits plain HTTP for non-loopback application URLs.
 	allowInsecureHTTP bool
+	// maxAdminResponseBytes bounds successful response bodies in bytes.
+	maxAdminResponseBytes int
+	// clientTimeout bounds the total duration of an ordinary administrative HTTP request.
+	clientTimeout time.Duration
+	// maintenanceClientTimeout bounds maintenance requests independently of ordinary requests.
+	maintenanceClientTimeout time.Duration
 }
 
 // WithAllowInsecureHTTP allows unencrypted HTTP connections to non-loopback hosts.
@@ -29,8 +44,58 @@ func WithAllowInsecureHTTP() Option {
 	}
 }
 
+// WithRequestTimeout sets a positive timeout for ordinary administrative requests (default 10 seconds).
+func WithRequestTimeout(timeout time.Duration) Option {
+	return func(options *clientOptions) {
+		options.clientTimeout = timeout
+	}
+}
+
+// WithMaintenanceTimeout sets a positive timeout for maintenance requests (default 35 seconds).
+// Allow enough time for the server's maintenance deadline (currently 30 seconds).
+func WithMaintenanceTimeout(timeout time.Duration) Option {
+	return func(options *clientOptions) {
+		options.maintenanceClientTimeout = timeout
+	}
+}
+
+// WithMaxResponseBytes sets a positive maximum size for successful response bodies (default one MiB).
+func WithMaxResponseBytes(limit int) Option {
+	return func(options *clientOptions) {
+		options.maxAdminResponseBytes = limit
+	}
+}
+
+// resolveOptions applies caller overrides once on top of the default request limits.
+func resolveOptions(opts []Option) clientOptions {
+	options := clientOptions{
+		maxAdminResponseBytes:    DefaultMaxResponseBytes,
+		clientTimeout:            DefaultRequestTimeout,
+		maintenanceClientTimeout: DefaultMaintenanceTimeout,
+	}
+	for _, opt := range opts {
+		if opt != nil {
+			opt(&options)
+		}
+	}
+	return options
+}
+
+// validate rejects disabled deadlines and response limits that cannot include an overflow sentinel.
+func (o clientOptions) validate() error {
+	if o.clientTimeout <= 0 {
+		return errors.New("request timeout must be positive")
+	}
+	if o.maintenanceClientTimeout <= 0 {
+		return errors.New("maintenance timeout must be positive")
+	}
+	return adminclient.ValidateMaxResponseBytes(o.maxAdminResponseBytes)
+}
+
 // Client authenticates administrative requests against the running Warden server.
 type Client struct {
+	// options contains the validated immutable request limits and transport policy.
+	options clientOptions
 	// url is the validated administrative API base URL, including its optional route prefix.
 	url *url.URL
 	// token authenticates requests to the administrative API.
@@ -39,19 +104,24 @@ type Client struct {
 	http *http.Client
 }
 
-// New validates the application URL and bearer token before making any request.
+// New validates the application URL, bearer token, and request limits before making any request.
 // Non-loopback HTTP requires WithAllowInsecureHTTP; existing callers remain HTTPS-only.
 func New(address, token string, opts ...Option) (*Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("admin-token is required")
 	}
-	parsed, err := parseApplicationURL(address, opts...)
+	options := resolveOptions(opts)
+	if err := options.validate(); err != nil {
+		return nil, err
+	}
+	parsed, err := adminclient.ParseApplicationURL(address, options.allowInsecureHTTP)
 	if err != nil {
 		return nil, err
 	}
 	return &Client{
-		url:   parsed,
-		token: token,
+		options: options,
+		url:     parsed,
+		token:   token,
 		http: &http.Client{
 			CheckRedirect: func(_ *http.Request, _ []*http.Request) error { return http.ErrUseLastResponse },
 		},
@@ -61,66 +131,5 @@ func New(address, token string, opts ...Option) (*Client, error) {
 // ValidateURL checks an application API base URL, optionally with a route prefix.
 // Pass WithAllowInsecureHTTP to permit non-loopback HTTP URLs.
 func ValidateURL(address string, opts ...Option) error {
-	_, err := parseApplicationURL(address, opts...)
-	return err
-}
-
-// parseApplicationURL validates a URL and its optional application route prefix.
-func parseApplicationURL(address string, opts ...Option) (parsed *url.URL, err error) {
-	options := clientOptions{}
-	for _, opt := range opts {
-		if opt != nil {
-			opt(&options)
-		}
-	}
-
-	parsed, err = url.Parse(address)
-	if err != nil {
-		return nil, fmt.Errorf("invalid application-url: %w", err)
-	}
-
-	if !isValidBaseURL(parsed) {
-		return nil, errors.New("application-url must have a host and no credentials, query, fragment, or encoded path")
-	}
-
-	if !allowedTransport(parsed, options.allowInsecureHTTP) {
-		return nil, errors.New("application-url requires HTTPS unless connecting to loopback")
-	}
-
-	if err := prefix.ValidateRoutePrefix(parsed.Path); err != nil {
-		return nil, fmt.Errorf("invalid application-url route prefix: %w", err)
-	}
-	parsed.Path = prefix.NormalizeRoutePrefix(parsed.Path)
-	return parsed, nil
-}
-
-// isValidBaseURL rejects URL components unrelated to the API base path.
-func isValidBaseURL(u *url.URL) bool {
-	return u.Hostname() != "" &&
-		u.User == nil &&
-		u.Opaque == "" &&
-		u.Fragment == "" &&
-		u.RawQuery == "" &&
-		!u.ForceQuery &&
-		u.RawPath == "" &&
-		u.EscapedPath() == u.Path
-}
-
-// allowedTransport requires HTTPS unless the URL is loopback HTTP or HTTP is explicitly allowed.
-func allowedTransport(u *url.URL, allowInsecureHTTP bool) bool {
-	if u.Scheme == "https" {
-		return true
-	}
-	if u.Scheme != "http" {
-		return false
-	}
-	if allowInsecureHTTP {
-		return true
-	}
-	switch u.Hostname() {
-	case "localhost", "127.0.0.1", "::1":
-		return true
-	default:
-		return false
-	}
+	return adminclient.ValidateURL(address, resolveOptions(opts).allowInsecureHTTP)
 }

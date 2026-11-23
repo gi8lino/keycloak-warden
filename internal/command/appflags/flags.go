@@ -5,12 +5,13 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"time"
 
 	appkitconfig "github.com/containeroo/appkit/config"
 	"github.com/containeroo/httpkit/prefix"
 	"github.com/containeroo/tinyflags"
 
-	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 )
 
 // sectionAdminAPI groups administrative connection flags in command help.
@@ -30,6 +31,12 @@ type AdminFlags struct {
 	ApplicationURL *string
 	// AdminToken authenticates requests to the administrative API.
 	AdminToken *string
+	// RequestTimeout bounds ordinary administrative HTTP requests.
+	RequestTimeout *time.Duration
+	// MaintenanceTimeout bounds database maintenance HTTP requests.
+	MaintenanceTimeout *time.Duration
+	// MaxResponseBytes limits successful administrative response bodies.
+	MaxResponseBytes *int
 }
 
 // RegisterServer registers application listener settings on the root command.
@@ -60,6 +67,21 @@ func RegisterAdmin(cmd *tinyflags.Command, server ServerFlags) AdminFlags {
 			Placeholder("SECRET").
 			OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 			Value(),
+		RequestTimeout: cmd.Duration("request-timeout", adminclient.DefaultRequestTimeout, "Timeout for ordinary administrative HTTP requests").
+			Section(sectionAdminAPI).
+			Placeholder("DURATION").
+			Validate(tinyflags.Positive[time.Duration]()).
+			Value(),
+		MaintenanceTimeout: cmd.Duration("maintenance-timeout", adminclient.DefaultMaintenanceTimeout, "Timeout for administrative maintenance HTTP requests").
+			Section(sectionAdminAPI).
+			Placeholder("DURATION").
+			Validate(tinyflags.Positive[time.Duration]()).
+			Value(),
+		MaxResponseBytes: cmd.Int("max-response-bytes", adminclient.DefaultMaxResponseBytes, "Maximum successful administrative response size in bytes").
+			Section(sectionAdminAPI).
+			Placeholder("BYTES").
+			Validate(adminclient.ValidateMaxResponseBytes).
+			Value(),
 	}
 
 	cmd.Validate(func() error { return validateAdminURL(flags.ApplicationURL, server) })
@@ -80,7 +102,7 @@ func validateAdminURL(applicationURL *string, server ServerFlags) error {
 		}
 		*applicationURL = base.String()
 	}
-	return client.ValidateURL(*applicationURL)
+	return adminclient.ValidateURL(*applicationURL, false)
 }
 
 // connectHost substitutes a reachable loopback address for a wildcard bind.

@@ -37,7 +37,7 @@ warden unban 203.0.113.10 \
   --admin-token="$WARDEN_ADMIN_TOKEN"
 ```
 
-Both commands accept multiple addresses. All administrative commands accept `--application-url` and `--admin-token`. When the server is not local, set `--application-url=https://your-warden.example/warden` (with the actual base path) to reach the application API. The server must be running.
+Both commands accept multiple addresses. All administrative commands accept `--application-url` and `--admin-token`. They also accept `--request-timeout` (default `10s`), `--maintenance-timeout` (default `35s`), and `--max-response-bytes` (default `1048576`) to bound the administrative HTTP client. Both timeouts must be positive; the response limit must also be less than `MaxInt64`. When the server is not local, set `--application-url=https://your-warden.example/warden` (with the actual base path) to reach the application API. The server must be running.
 
 ## Inspect persisted state
 

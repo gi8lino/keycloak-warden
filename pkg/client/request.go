@@ -11,15 +11,6 @@ import (
 	"time"
 )
 
-const (
-	// maxAdminResponseBytes limits successful administrative API response bodies to one MiB.
-	maxAdminResponseBytes = 1 << 20
-	// clientTimeout bounds the total duration of an ordinary administrative HTTP request.
-	clientTimeout = 10 * time.Second
-	// maintenanceClientTimeout exceeds the server's 30-second maintenance deadline.
-	maintenanceClientTimeout = 35 * time.Second
-)
-
 // do performs an authenticated administrative request with bounded JSON response decoding.
 func (c *Client) do(
 	ctx context.Context,
@@ -27,7 +18,7 @@ func (c *Client) do(
 	payload any,
 	target any,
 ) error {
-	return c.doWithTimeout(ctx, method, path, payload, target, clientTimeout)
+	return c.doWithTimeout(ctx, method, path, payload, target, c.options.clientTimeout)
 }
 
 // doWithTimeout bounds each administrative request independently of the shared HTTP client.
@@ -92,12 +83,12 @@ func (c *Client) doWithTimeout(
 	}
 
 	// Read one byte beyond the limit so an oversized response is never accepted.
-	data, err := io.ReadAll(io.LimitReader(res.Body, maxAdminResponseBytes+1))
+	data, err := io.ReadAll(io.LimitReader(res.Body, int64(c.options.maxAdminResponseBytes)+1))
 	if err != nil {
 		return fmt.Errorf("read application response: %w", err)
 	}
-	if len(data) > maxAdminResponseBytes {
-		return fmt.Errorf("application response exceeds %d bytes", maxAdminResponseBytes)
+	if len(data) > c.options.maxAdminResponseBytes {
+		return fmt.Errorf("application response exceeds %d bytes", c.options.maxAdminResponseBytes)
 	}
 
 	// Unmarshal rejects trailing JSON documents and any non-whitespace suffix.

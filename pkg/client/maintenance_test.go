@@ -91,7 +91,7 @@ func maintenanceTimeoutClient(t *testing.T, method, path string) *Client {
 
 		remaining := time.Until(deadline)
 		assert.Greater(t, remaining, 30*time.Second)
-		assert.LessOrEqual(t, remaining, maintenanceClientTimeout)
+		assert.LessOrEqual(t, remaining, DefaultMaintenanceTimeout)
 
 		return &http.Response{
 			StatusCode: http.StatusOK,

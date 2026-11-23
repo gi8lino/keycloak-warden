@@ -2,7 +2,9 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +14,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/output"
@@ -775,5 +778,199 @@ func TestMaintenanceCommand(t *testing.T) {
 
 		require.ErrorContains(t, err, "accepts no positional arguments")
 		assert.Contains(t, stderr.String(), "accepts no positional arguments")
+	})
+}
+
+// TestAdminClientFlags verifies that parsed CLI settings reach the administrative client.
+func TestAdminClientFlags(t *testing.T) {
+	t.Parallel()
+
+	t.Run("help exposes limits on ordinary administration commands", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+		require.NoError(t, Run(t.Context(), []string{"list-active", "--help"}, "test", &stdout, io.Discard))
+
+		assert.Contains(t, stdout.String(), "--request-timeout")
+		assert.Contains(t, stdout.String(), "--maintenance-timeout")
+		assert.Contains(t, stdout.String(), "--max-response-bytes")
+	})
+
+	t.Run("help exposes limits on maintenance operations", func(t *testing.T) {
+		t.Parallel()
+
+		var stdout bytes.Buffer
+		require.NoError(t, Run(t.Context(), []string{"maintenance", "prune", "--help"}, "test", &stdout, io.Discard))
+
+		assert.Contains(t, stdout.String(), "--request-timeout")
+		assert.Contains(t, stdout.String(), "--maintenance-timeout")
+		assert.Contains(t, stdout.String(), "--max-response-bytes")
+	})
+
+	t.Run("ordinary requests enforce configured response size", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "[] ")
+		}))
+		t.Cleanup(server.Close)
+
+		var stderr bytes.Buffer
+		err := Run(t.Context(), []string{
+			"list-active",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--max-response-bytes=2",
+		}, "test", io.Discard, &stderr)
+
+		require.ErrorContains(t, err, "application response exceeds 2 bytes")
+		assert.Contains(t, stderr.String(), "application response exceeds 2 bytes")
+	})
+
+	t.Run("ordinary requests accept a sufficiently large limit", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			_, _ = io.WriteString(w, "[] ")
+		}))
+		t.Cleanup(server.Close)
+
+		var stdout bytes.Buffer
+		err := Run(t.Context(), []string{
+			"list-active",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--max-response-bytes=3",
+			"--output=json",
+		}, "test", &stdout, io.Discard)
+
+		require.NoError(t, err)
+		assert.Contains(t, stdout.String(), "[]")
+	})
+
+	t.Run("maintenance requests enforce configured response size", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "/maintenance", r.URL.Path)
+			_, _ = io.WriteString(w, `{"prune":{},"optimize":{}}`)
+		}))
+		t.Cleanup(server.Close)
+
+		var stderr bytes.Buffer
+		err := Run(t.Context(), []string{
+			"maintenance", "status",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--max-response-bytes=8",
+		}, "test", io.Discard, &stderr)
+
+		require.ErrorContains(t, err, "application response exceeds 8 bytes")
+		assert.Contains(t, stderr.String(), "application response exceeds 8 bytes")
+	})
+
+	t.Run("manual ban uses the configured response size", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodPost, r.Method)
+			_, _ = io.WriteString(w, `{"decision":{"id":"one"},"sources":[],"deliveries":[]}`)
+		}))
+		t.Cleanup(server.Close)
+
+		err := Run(t.Context(), []string{
+			"ban", "203.0.113.10",
+			"--duration=1h",
+			"--reason=investigation",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--max-response-bytes=2",
+		}, "test", io.Discard, io.Discard)
+
+		require.ErrorContains(t, err, "application response exceeds 2 bytes")
+	})
+
+	t.Run("manual unban uses the configured response size", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, http.MethodGet, r.Method)
+			_, _ = io.WriteString(w, "[]")
+		}))
+		t.Cleanup(server.Close)
+
+		err := Run(t.Context(), []string{
+			"unban", "203.0.113.10",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--max-response-bytes=1",
+		}, "test", io.Discard, io.Discard)
+
+		require.ErrorContains(t, err, "application response exceeds 1 bytes")
+	})
+
+	t.Run("decision inspection uses the configured response size", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			assert.Equal(t, "/bans/one", r.URL.Path)
+			_, _ = io.WriteString(w, `{"decision":{"id":"one"},"sources":[],"deliveries":[]}`)
+		}))
+		t.Cleanup(server.Close)
+
+		err := Run(t.Context(), []string{
+			"inspect", "one",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--max-response-bytes=2",
+		}, "test", io.Discard, io.Discard)
+
+		require.ErrorContains(t, err, "application response exceeds 2 bytes")
+	})
+
+	t.Run("ordinary requests use the configured timeout", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+		}))
+		t.Cleanup(server.Close)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+
+		start := time.Now()
+		err := Run(ctx, []string{
+			"list-active",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--request-timeout=20ms",
+		}, "test", io.Discard, io.Discard)
+
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Less(t, time.Since(start), 750*time.Millisecond)
+	})
+
+	t.Run("maintenance requests use their independent timeout", func(t *testing.T) {
+		t.Parallel()
+
+		server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+		}))
+		t.Cleanup(server.Close)
+
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+
+		start := time.Now()
+		err := Run(ctx, []string{
+			"maintenance", "status",
+			"--application-url=" + server.URL,
+			"--admin-token=secret",
+			"--maintenance-timeout=20ms",
+		}, "test", io.Discard, io.Discard)
+
+		require.True(t, errors.Is(err, context.DeadlineExceeded), "expected a maintenance timeout, got: %v", err)
+		assert.Less(t, time.Since(start), 750*time.Millisecond)
 	})
 }

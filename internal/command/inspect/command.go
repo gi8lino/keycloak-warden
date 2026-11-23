@@ -5,12 +5,17 @@ import (
 
 	"github.com/containeroo/tinyflags"
 
+	"github.com/gi8lino/keycloak-warden/internal/command/adminopts"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/internal/output"
 )
 
 // Register adds authenticated remote decision inspection and its flags.
-func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode output.Encoder) {
+func Register(
+	root *tinyflags.Command,
+	serverFlags appflags.ServerFlags,
+	encode output.Encoder,
+) {
 	command := root.Command("inspect", "Inspect security decisions by ID via the authenticated application API")
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
@@ -27,6 +32,6 @@ func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode 
 		Value()
 
 	command.Run(func(ctx context.Context) error {
-		return RunPage(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, command.Args(), *page, *allFlag, encode)
+		return RunPage(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, command.Args(), *page, *allFlag, encode, adminopts.FromFlags(adminFlags)...)
 	})
 }

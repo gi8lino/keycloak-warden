@@ -23,7 +23,7 @@ func (c *Client) OptimizeDatabase(ctx context.Context) (Maintenance, error) {
 // doMaintenanceRequest executes an operation and decodes the resulting scheduler state.
 func (c *Client) doMaintenanceRequest(ctx context.Context, method, path string) (Maintenance, error) {
 	var result Maintenance
-	if err := c.doWithTimeout(ctx, method, path, nil, &result, maintenanceClientTimeout); err != nil {
+	if err := c.doWithTimeout(ctx, method, path, nil, &result, c.options.maintenanceClientTimeout); err != nil {
 		return Maintenance{}, err
 	}
 	return result, nil

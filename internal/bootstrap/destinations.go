@@ -40,13 +40,13 @@ func Destinations(targets config.Targets) (destinations map[string]actions.Targe
 		CheckRedirect: noRedirect,
 	}
 
-	values := resolver.NewDefaultRegistry(
+	registry := resolver.NewDefaultRegistry(
 		resolver.WithEmptyValuePolicy(resolver.RejectBlank),
 		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
 	)
 
 	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
-		provider, err := buildWebhook(targets.Webhook[name], client, values)
+		provider, err := buildWebhook(targets.Webhook[name], client, registry)
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", "webhook."+name, err)
 		}
@@ -57,7 +57,7 @@ func Destinations(targets config.Targets) (destinations map[string]actions.Targe
 	}
 
 	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
-		provider, err := buildCloudflare(targets.Cloudflare[name], client, values)
+		provider, err := buildCloudflare(targets.Cloudflare[name], client, registry)
 		if err != nil {
 			return nil, nil, fmt.Errorf("target %q: %w", "cloudflare."+name, err)
 		}

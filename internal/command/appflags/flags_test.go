@@ -1,12 +1,16 @@
 package appflags_test
 
 import (
+	"fmt"
+	"math"
 	"testing"
+	"time"
 
 	"github.com/containeroo/tinyflags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 )
 
@@ -77,5 +81,92 @@ func TestRegisterAdmin(t *testing.T) {
 		root, admin := adminCommand()
 		require.NoError(t, root.Parse([]string{"ban", "--admin-token=flag-secret"}))
 		assert.Equal(t, "flag-secret", *admin.AdminToken)
+	})
+}
+
+// TestAdminClientSettings checks the HTTP client limits exposed as CLI values.
+func TestAdminClientSettings(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses the administration client defaults", func(t *testing.T) {
+		t.Parallel()
+
+		root, flags := adminCommand()
+		require.NoError(t, root.Parse([]string{"ban"}))
+
+		assert.Equal(t, adminclient.DefaultRequestTimeout, *flags.RequestTimeout)
+		assert.Equal(t, adminclient.DefaultMaintenanceTimeout, *flags.MaintenanceTimeout)
+		assert.Equal(t, adminclient.DefaultMaxResponseBytes, *flags.MaxResponseBytes)
+	})
+
+	t.Run("parses all three positive overrides", func(t *testing.T) {
+		t.Parallel()
+
+		root, flags := adminCommand()
+		require.NoError(t, root.Parse([]string{
+			"ban",
+			"--request-timeout=2s",
+			"--maintenance-timeout=1m",
+			"--max-response-bytes=2048",
+		}))
+
+		assert.Equal(t, 2*time.Second, *flags.RequestTimeout)
+		assert.Equal(t, time.Minute, *flags.MaintenanceTimeout)
+		assert.Equal(t, 2048, *flags.MaxResponseBytes)
+	})
+
+	t.Run("rejects zero ordinary request timeout", func(t *testing.T) {
+		t.Parallel()
+
+		root, _ := adminCommand()
+		require.Error(t, root.Parse([]string{"ban", "--request-timeout=0s"}))
+	})
+
+	t.Run("rejects negative ordinary request timeout", func(t *testing.T) {
+		t.Parallel()
+
+		root, _ := adminCommand()
+		require.Error(t, root.Parse([]string{"ban", "--request-timeout=-1s"}))
+	})
+
+	t.Run("rejects zero maintenance timeout", func(t *testing.T) {
+		t.Parallel()
+
+		root, _ := adminCommand()
+		require.Error(t, root.Parse([]string{"ban", "--maintenance-timeout=0s"}))
+	})
+
+	t.Run("rejects negative maintenance timeout", func(t *testing.T) {
+		t.Parallel()
+
+		root, _ := adminCommand()
+		require.Error(t, root.Parse([]string{"ban", "--maintenance-timeout=-1s"}))
+	})
+
+	t.Run("rejects zero response limit", func(t *testing.T) {
+		t.Parallel()
+
+		root, _ := adminCommand()
+		require.Error(t, root.Parse([]string{"ban", "--max-response-bytes=0"}))
+	})
+
+	t.Run("rejects negative response limit", func(t *testing.T) {
+		t.Parallel()
+
+		root, _ := adminCommand()
+		require.Error(t, root.Parse([]string{"ban", "--max-response-bytes=-1"}))
+	})
+
+	t.Run("rejects a response limit that would overflow the read sentinel", func(t *testing.T) {
+		t.Parallel()
+
+		if int64(math.MaxInt) != math.MaxInt64 {
+			t.Skip("int cannot represent MaxInt64")
+		}
+
+		root, _ := adminCommand()
+		err := root.Parse([]string{"ban", fmt.Sprintf("--max-response-bytes=%d", math.MaxInt)})
+
+		require.ErrorContains(t, err, "less than MaxInt64")
 	})
 }

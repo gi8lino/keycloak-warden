@@ -19,13 +19,14 @@ func Run(
 	duration time.Duration,
 	reason string,
 	encode output.Encoder,
+	opts ...client.Option,
 ) error {
 	addresses, err := ipargs.Unique(inputs)
 	if err != nil {
 		return err
 	}
 
-	client, err := client.New(applicationURL, token)
+	client, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err
 	}

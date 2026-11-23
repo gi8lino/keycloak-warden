@@ -12,13 +12,13 @@ import (
 )
 
 // Run resolves requested addresses to active decision IDs and reports batch results.
-func Run(ctx context.Context, applicationURL, token string, inputs []string, encode output.Encoder) error {
+func Run(ctx context.Context, applicationURL, token string, inputs []string, encode output.Encoder, opts ...client.Option) error {
 	addresses, err := ipargs.Unique(inputs)
 	if err != nil {
 		return err
 	}
 
-	client, err := client.New(applicationURL, token)
+	client, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err
 	}

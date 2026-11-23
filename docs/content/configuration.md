@@ -177,4 +177,6 @@ Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables
 
 The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
 
+Administrative CLI commands (`ban`, `unban`, `list-active`, `inspect`, and `maintenance` subcommands) also accept `--request-timeout` (default `10s`), `--maintenance-timeout` (default `35s`), and `--max-response-bytes` (default `1048576`). These flags configure only the outgoing administrative HTTP client, not Warden's server request limits or outbound webhook destinations. Their corresponding environment variables are `WARDEN__REQUEST_TIMEOUT`, `WARDEN__MAINTENANCE_TIMEOUT`, and `WARDEN__MAX_RESPONSE_BYTES`. Both timeouts must be positive; the response limit must also be less than `MaxInt64`.
+
 Consult `warden serve --help` for the definitive list of supported flags for your installed release.

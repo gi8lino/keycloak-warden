@@ -22,8 +22,8 @@ const (
 )
 
 // Run calls the authenticated application API and encodes the returned status.
-func Run(ctx context.Context, applicationURL, token string, action Action, encode output.Encoder) error {
-	api, err := client.New(applicationURL, token)
+func Run(ctx context.Context, applicationURL, token string, action Action, encode output.Encoder, opts ...client.Option) error {
+	api, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err
 	}

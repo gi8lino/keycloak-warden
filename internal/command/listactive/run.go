@@ -9,8 +9,8 @@ import (
 )
 
 // Run prepares the authenticated client and encodes the retrieved active decisions.
-func Run(ctx context.Context, applicationURL, token string, encode output.Encoder) error {
-	client, err := client.New(applicationURL, token)
+func Run(ctx context.Context, applicationURL, token string, encode output.Encoder, opts ...client.Option) error {
+	client, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err
 	}
