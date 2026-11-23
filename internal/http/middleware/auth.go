@@ -19,6 +19,12 @@ const (
 
 	// requestReadTimeout bounds how long the server waits to read a signed event body.
 	requestReadTimeout = 5 * time.Second
+
+	// headerSnitchTimestamp carries the timestamp used for signature verification.
+	headerSnitchTimestamp = "X-Snitch-Timestamp"
+
+	// headerSnitchSignature carries the signed request authentication value.
+	headerSnitchSignature = "X-Snitch-Signature"
 )
 
 // AuthenticateSnitch verifies signed event bodies without trusting forwarding headers.
@@ -46,8 +52,8 @@ func AuthenticateSnitch(secret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			ts := r.Header.Get("X-Snitch-Timestamp")
-			sig := r.Header.Get("X-Snitch-Signature")
+			ts := r.Header.Get(headerSnitchTimestamp)
+			sig := r.Header.Get(headerSnitchSignature)
 			if !signing.Valid(secret, ts, sig, body, time.Now()) {
 				httpresponse.Problem(w, http.StatusUnauthorized, "Invalid webhook authentication.")
 				return
