@@ -81,6 +81,8 @@ type scriptedAdministration struct {
 	id string
 	// page records the requested history page.
 	page int
+	// throughRevision records the requested history revision cutoff.
+	throughRevision int64
 	// calls counts application operations invoked after input validation.
 	calls int
 }
@@ -110,6 +112,7 @@ func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _
 	s.calls++
 	s.id = id
 	s.page = page
+	s.throughRevision = throughRevision
 	return s.record, s.err
 }
 
@@ -378,6 +381,49 @@ func TestGetBanHistoryPageValidation(t *testing.T) {
 		assert.Zero(t, service.calls)
 	})
 
+	t.Run("rejects unknown history parameter", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?unknown=1", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("rejects duplicate history revision parameters", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-through-revision=10&history-through-revision=11", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.calls)
+	})
+
+	t.Run("passes history revision cutoff to application", func(t *testing.T) {
+		t.Parallel()
+
+		service := &scriptedAdministration{}
+		request := httptest.NewRequest(http.MethodGet, "/bans/one?history-through-revision=42", nil)
+		request.SetPathValue("id", "one")
+		response := httptest.NewRecorder()
+
+		endpoint.GetBan(service, slog.Default())(response, request)
+
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, 1, service.page)
+		assert.Equal(t, int64(42), service.throughRevision)
+	})
+
 	t.Run("rejects malformed URL encoding", func(t *testing.T) {
 		t.Parallel()
 		service := &scriptedAdministration{}
@@ -454,5 +500,6 @@ func TestGetBanHistoryPageValidation(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, response.Code)
 		assert.Equal(t, 1, service.page)
+		assert.Zero(t, service.throughRevision)
 	})
 }

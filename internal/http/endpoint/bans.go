@@ -128,32 +128,48 @@ func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")
 			return
 		}
-		for key, values := range query {
-			if !validHistoryParameter(key, values) {
-				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")
+
+		page := 1
+		knownParameters := 0
+		if values, ok := query["history-page"]; ok {
+			knownParameters++
+			if len(values) != 1 {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
 				return
 			}
-		}
-		page := 1
-		if query.Has("history-page") {
-			page, err = strconv.Atoi(query.Get("history-page"))
+
+			page, err = strconv.Atoi(values[0])
 			if err != nil {
 				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history page.")
 				return
 			}
 		}
+
 		var throughRevision int64
-		if query.Has("history-through-revision") {
-			throughRevision, err = strconv.ParseInt(query.Get("history-through-revision"), 10, 64)
+		if values, ok := query["history-through-revision"]; ok {
+			knownParameters++
+			if len(values) != 1 {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history revision.")
+				return
+			}
+
+			throughRevision, err = strconv.ParseInt(values[0], 10, 64)
 			if err != nil || throughRevision < 1 {
 				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history revision.")
 				return
 			}
 		}
+
+		if len(query) != knownParameters {
+			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")
+			return
+		}
+
 		record, err := service.GetDecisionPage(r.Context(), r.PathValue("id"), time.Now(), page, throughRevision)
 		if writeBanError(w, logger, err) {
 			return
 		}
+
 		httpresponse.Respond(w, http.StatusOK, record)
 	}
 }
@@ -193,9 +209,4 @@ func writeBanError(w http.ResponseWriter, logger *slog.Logger, err error) bool {
 		httpresponse.Problem(w, http.StatusServiceUnavailable, "Administrative operation unavailable.")
 	}
 	return true
-}
-
-// validHistoryParameter accepts one value for each supported history selector.
-func validHistoryParameter(key string, values []string) bool {
-	return (key == "history-page" || key == "history-through-revision") && len(values) == 1
 }
