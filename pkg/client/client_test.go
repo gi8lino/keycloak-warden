@@ -1,8 +1,10 @@
 package client_test
 
 import (
+	"math"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -280,5 +282,49 @@ func TestInsecureHTTPOptionRequests(t *testing.T) {
 			t.Fatal("administrative client followed a redirect")
 		default:
 		}
+	})
+}
+
+func TestValidateMaxResponseBytes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("accepts the client default", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, client.ValidateMaxResponseBytes(client.DefaultMaxResponseBytes))
+	})
+
+	t.Run("accepts the minimum positive value", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, client.ValidateMaxResponseBytes(1))
+	})
+
+	t.Run("rejects zero", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, client.ValidateMaxResponseBytes(0), "must be positive")
+	})
+
+	t.Run("rejects negative values", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, client.ValidateMaxResponseBytes(-1), "must be positive")
+	})
+
+	t.Run("rejects a limit that overflows the sentinel", func(t *testing.T) {
+		t.Parallel()
+
+		if strconv.IntSize != 64 {
+			t.Skip("MaxInt does not overflow int64 on 32-bit systems")
+		}
+
+		require.ErrorContains(t, client.ValidateMaxResponseBytes(math.MaxInt), "less than MaxInt64")
+	})
+
+	t.Run("accepts the largest sentinel-safe limit", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, client.ValidateMaxResponseBytes(math.MaxInt-1))
 	})
 }

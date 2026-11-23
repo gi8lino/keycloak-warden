@@ -86,9 +86,11 @@ func (o clientOptions) validate() error {
 	if o.clientTimeout <= 0 {
 		return errors.New("request timeout must be positive")
 	}
+
 	if o.maintenanceClientTimeout <= 0 {
 		return errors.New("maintenance timeout must be positive")
 	}
+
 	return ValidateMaxResponseBytes(o.maxAdminResponseBytes)
 }
 
@@ -116,14 +118,17 @@ func New(address, token string, opts ...Option) (*Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("admin-token is required")
 	}
+
 	options := resolveOptions(opts)
 	if err := options.validate(); err != nil {
 		return nil, err
 	}
+
 	parsed, err := adminclient.ParseApplicationURL(address, options.allowInsecureHTTP)
 	if err != nil {
 		return nil, err
 	}
+
 	return &Client{
 		options: options,
 		url:     parsed,

@@ -48,19 +48,23 @@ func execute(ctx context.Context, api *client.Client, ids []string, page int, al
 		if err != nil {
 			return nil, fmt.Errorf("inspect decision %q: %w", id, err)
 		}
+
 		if all {
 			for record.HistoryNextPage != 0 {
 				next := record.HistoryNextPage
 				if next <= record.HistoryPage || len(record.DeliveryHistory) == 0 {
 					return nil, fmt.Errorf("inspect decision %q: invalid history page sequence", id)
 				}
+
 				older, err := api.GetPageThroughRevision(ctx, id, next, record.Decision.Revision)
 				if err != nil {
 					return nil, fmt.Errorf("inspect decision %q history page %d: %w", id, next, err)
 				}
+
 				if older.HistoryPage != next {
 					return nil, fmt.Errorf("inspect decision %q: invalid history page response", id)
 				}
+
 				record.DeliveryHistory = append(record.DeliveryHistory, older.DeliveryHistory...)
 				record.HistoryPage = next
 				record.HistoryNextPage = older.HistoryNextPage
@@ -69,5 +73,6 @@ func execute(ctx context.Context, api *client.Client, ids []string, page int, al
 		}
 		records = append(records, inspectRecord(record))
 	}
+
 	return records, nil
 }

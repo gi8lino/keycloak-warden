@@ -32,6 +32,15 @@ func Register(
 		Value()
 
 	command.Run(func(ctx context.Context) error {
-		return RunPage(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, command.Args(), *page, *allFlag, encode, adminopts.FromFlags(adminFlags)...)
+		return RunPage(
+			ctx,
+			*adminFlags.ApplicationURL,
+			*adminFlags.AdminToken,
+			command.Args(),
+			*page,
+			*allFlag,
+			encode,
+			adminopts.FromFlags(adminFlags)...,
+		)
 	})
 }

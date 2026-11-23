@@ -114,7 +114,11 @@ func deadlineClient(t *testing.T, minimum, maximum time.Duration, options ...Opt
 		if r.URL.Path == "/bans" {
 			body = "[]"
 		}
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
 	})
 	return c
 }
@@ -125,7 +129,11 @@ func responseLimitClient(t *testing.T, body string) *Client {
 	c, err := New("http://localhost", "secret", WithMaxResponseBytes(2))
 	require.NoError(t, err)
 	c.http.Transport = maintenanceTransport(func(*http.Request) (*http.Response, error) {
-		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(strings.NewReader(body)),
+			Header:     make(http.Header),
+		}, nil
 	})
 	return c
 }

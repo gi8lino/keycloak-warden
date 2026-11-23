@@ -27,9 +27,11 @@ func RunPage(ctx context.Context, applicationURL, token string, ids []string, pa
 	if err != nil {
 		return err
 	}
+
 	records, err := execute(ctx, api, ids, page, all)
 	if err != nil {
 		return err
 	}
+
 	return encode(records)
 }

@@ -2,8 +2,6 @@ package ban
 
 import (
 	"context"
-	"fmt"
-	"strings"
 
 	"github.com/containeroo/tinyflags"
 
@@ -39,7 +37,7 @@ func Register(
 	reason := command.String("reason", "", "Operator explanation").
 		Section(sectionBan).
 		Required().
-		Validate(validateReason).
+		Validate(tinyflags.LengthBetween(1, bans.MaxReasonLength)).
 		Value()
 
 	command.Run(func(ctx context.Context) error {
@@ -54,12 +52,4 @@ func Register(
 			adminopts.FromFlags(adminFlags)...,
 		)
 	})
-}
-
-// validateReason rejects blank or oversized manual ban explanations during flag parsing.
-func validateReason(value string) error {
-	if strings.TrimSpace(value) == "" || len(value) > bans.MaxReasonLength {
-		return fmt.Errorf("reason must contain 1–%d bytes of nonblank text", bans.MaxReasonLength)
-	}
-	return nil
 }

@@ -15,9 +15,10 @@ func Run(ctx context.Context, applicationURL, token string, encode output.Encode
 		return err
 	}
 
-	records, err := execute(ctx, client)
+	records, err := client.List(ctx)
 	if err != nil {
 		return err
 	}
+
 	return encode(records)
 }

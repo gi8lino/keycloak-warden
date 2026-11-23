@@ -12,6 +12,4 @@ const (
 )
 
 // Valid reports whether the state represents a supported desired blocking state.
-func (s State) Valid() bool {
-	return s == StateBanned || s == StateUnbanned
-}
+func (s State) Valid() bool { return s == StateBanned || s == StateUnbanned }

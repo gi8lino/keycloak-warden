@@ -54,23 +54,29 @@ func (c *Client) GetPageThroughRevision(ctx context.Context, decisionID string, 
 	if strings.TrimSpace(decisionID) == "" {
 		return Record{}, errors.New("decision ID is required")
 	}
+
 	if throughRevision < 0 {
 		return Record{}, errors.New("history revision must be nonnegative")
 	}
+
 	if page < 1 {
 		return Record{}, errors.New("history-page must be positive")
 	}
+
 	path := "/bans/" + url.PathEscape(decisionID)
 	query := url.Values{}
 	if page != 1 {
 		query.Set("history-page", strconv.Itoa(page))
 	}
+
 	if throughRevision != 0 {
 		query.Set("history-through-revision", strconv.FormatInt(throughRevision, 10))
 	}
+
 	if len(query) > 0 {
 		path += "?" + query.Encode()
 	}
+
 	return c.doBanRequest(ctx, http.MethodGet, path, nil)
 }
 
