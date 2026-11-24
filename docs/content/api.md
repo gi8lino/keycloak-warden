@@ -35,7 +35,7 @@ For a manual ban, send a JSON object such as:
 }
 ```
 
-The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return up to 50 newest `sourceChanges` (source additions, edits, and removals persisted since the source journal migration) and a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
 
 For example, an active manual ban that has been acknowledged by a webhook might look like:
 
@@ -67,6 +67,8 @@ For example, an active manual ban that has been acknowledged by a webhook might 
 `GET /bans` returns an array of records; `GET /bans/{id}` returns one record. History uses numbered pages ordered by revision descending and destination ascending (up to 16 entries per request, with the latest 16 attempts per entry). The first page is returned by default. Request any one-based page directly with `GET /bans/{id}?history-page=100` (SQL `LIMIT/OFFSET`). To keep newer revisions from shifting page boundaries, pass the first response’s `decision.revision` as `history-through-revision` on subsequent requests. This bounds group membership; attempts and statuses can still update. The response includes `historyPage` and, when more entries exist, `historyNextPage`. Attempts omitted from an entry are indicated by `attemptsTruncated`. All completed attempts remain stored in SQLite; paging does not prune them. The acknowledgement describes the last successfully accepted revision, which may be lower than the desired revision while delivery is pending or retrying. Only currently active sources are returned, and `sources` is empty for a released decision. Failed-login observation counts remain internal to detection, not part of the decision or webhook payload.
 
 ## Decision revision journal and current deliveries
+
+The effective decision revision journal records only revisions that change the desired decision. Source edits that leave the effective state and expiry unchanged are audited separately in `sourceChanges` on `GET /bans/{id}` without creating a delivery revision. Older source changes from before the journal migration cannot be reconstructed. The journal records source type and values, not a per-human actor identity (Warden uses a shared admin token).
 
 Warden also exposes two authenticated, read-only cross-decision endpoints, using the same bearer token and application route prefix as `/bans`:
 

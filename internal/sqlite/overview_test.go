@@ -198,3 +198,71 @@ func TestRevisionJournalPagination(t *testing.T) {
 		assert.Zero(t, second.NextPage)
 	})
 }
+
+func TestSourceChangeJournal(t *testing.T) {
+	t.Parallel()
+
+	t.Run("records edits without revising the effective decision", func(t *testing.T) {
+		t.Parallel()
+
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "source-audit.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+
+		service, err := bans.NewAdminService(store, []string{"webhook.receiver"})
+		require.NoError(t, err)
+		now := time.Now().UTC().Truncate(time.Millisecond)
+
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP: "203.0.113.119", Duration: time.Hour, Reason: "first",
+		}, now)
+		require.NoError(t, err)
+		updated, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP: "203.0.113.119", Duration: time.Minute, Reason: "second",
+		}, now)
+		require.NoError(t, err)
+
+		assert.Equal(t, created.Decision.Revision, updated.Decision.Revision)
+		require.Len(t, updated.SourceChanges, 2)
+		assert.Equal(t, "updated", updated.SourceChanges[0].Action)
+		assert.Equal(t, "second", updated.SourceChanges[0].Reason)
+		assert.Equal(t, "added", updated.SourceChanges[1].Action)
+		assert.Equal(t, "first", updated.SourceChanges[1].Reason)
+		assert.Greater(t, updated.SourceChanges[0].ID, updated.SourceChanges[1].ID)
+
+		released, err := service.Release(t.Context(), created.Decision.ID, now.Add(time.Minute))
+		require.NoError(t, err)
+		require.Len(t, released.SourceChanges, 3)
+		assert.Equal(t, "removed", released.SourceChanges[0].Action)
+		assert.Equal(t, "second", released.SourceChanges[0].Reason)
+	})
+
+	t.Run("rolls back source events when the decision transaction fails", func(t *testing.T) {
+		t.Parallel()
+
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "source-rollback.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"edge"})
+		require.NoError(t, err)
+		now := time.Now().UTC()
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP: "203.0.113.120", Duration: time.Hour, Reason: "original",
+		}, now)
+		require.NoError(t, err)
+
+		err = store.TransactDecision(t.Context(), func(tx bans.MutationTransaction) error {
+			if err := tx.PutSource(t.Context(), "203.0.113.120", bans.Source{
+				Kind: bans.SourceManual, ExpiresAt: now.Add(time.Hour), Reason: "rolled back",
+			}); err != nil {
+				return err
+			}
+			return errors.New("abort before commit")
+		})
+		require.Error(t, err)
+		after, err := service.GetDecision(t.Context(), created.Decision.ID, now)
+		require.NoError(t, err)
+		require.Len(t, after.SourceChanges, 1)
+		assert.Equal(t, "added", after.SourceChanges[0].Action)
+	})
+}

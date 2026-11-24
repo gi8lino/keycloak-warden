@@ -39,12 +39,30 @@ type Acknowledgement struct {
 	Revision int64 `json:"acknowledgedRevision" yaml:"acknowledgedRevision"`
 }
 
+// SourceChange is an immutable source mutation, separate from the decision revision journal.
+type SourceChange struct {
+	// ID is the monotonically increasing source journal entry.
+	ID int64 `json:"id" yaml:"id"`
+	// Kind is the source affected by the change.
+	Kind string `json:"kind" yaml:"kind"`
+	// Action is added, updated, or removed.
+	Action string `json:"action" yaml:"action"`
+	// ExpiresAt records the source expiry at the time of the change.
+	ExpiresAt time.Time `json:"expiresAt" yaml:"expiresAt"`
+	// Reason records the source explanation at the time of the change.
+	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	// ChangedAt records when Warden persisted the mutation.
+	ChangedAt time.Time `json:"changedAt" yaml:"changedAt"`
+}
+
 // Record holds a decision with its active sources and delivery acknowledgements.
 type Record struct {
 	// Decision is Warden's desired state.
 	Decision Decision `json:"decision" yaml:"decision"`
 	// Sources are the currently active reasons to block the address.
 	Sources []Source `json:"sources" yaml:"sources"`
+	// SourceChanges contains the latest source additions, edits, and removals on individual reads.
+	SourceChanges []SourceChange `json:"sourceChanges,omitempty" yaml:"sourceChanges,omitempty"`
 	// DeliveryHistory contains per-revision history on individual decision reads.
 	DeliveryHistory []Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
 	// HistoryPage identifies the one-based page included in an individual inspection.

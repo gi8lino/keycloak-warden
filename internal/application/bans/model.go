@@ -26,12 +26,30 @@ type Source struct {
 	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
 }
 
+// SourceChange is a persisted source mutation, independent of effective decision revisions.
+type SourceChange struct {
+	// ID is the append-only sequence within Warden's source journal.
+	ID int64 `json:"id" yaml:"id"`
+	// Kind identifies the source that was added, edited, or removed.
+	Kind SourceKind `json:"kind" yaml:"kind"`
+	// Action describes the persisted mutation.
+	Action string `json:"action" yaml:"action"`
+	// ExpiresAt is the source expiry at the time of this mutation.
+	ExpiresAt time.Time `json:"expiresAt" yaml:"expiresAt"`
+	// Reason is the source explanation as it existed for the mutation.
+	Reason string `json:"reason,omitempty" yaml:"reason,omitempty"`
+	// ChangedAt is the timestamp at which SQLite recorded the change.
+	ChangedAt time.Time `json:"changedAt" yaml:"changedAt"`
+}
+
 // Record describes a persisted decision, its active sources, and delivery acknowledgements.
 type Record struct {
 	// Decision contains the effective desired state for the address.
 	Decision decisions.Decision `json:"decision" yaml:"decision"`
 	// Sources contains the independent active reasons for the block.
 	Sources []Source `json:"sources" yaml:"sources"`
+	// SourceChanges contains the most recent persisted source edits for individual reads.
+	SourceChanges []SourceChange `json:"sourceChanges,omitempty" yaml:"sourceChanges,omitempty"`
 	// DeliveryHistory contains per-revision history on individual decision reads.
 	DeliveryHistory []decisions.Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
 	// HistoryPage identifies the one-based page included in an individual inspection.

@@ -31,6 +31,8 @@ Detection policy stays in the ingestion service. Runtime targets own their provi
 
 ## Desired versus delivered state
 
+An append-only source mutation journal records persisted additions, changes and removals independently of decision revisions; source-only edits do not trigger outbound reconciliation. These records start with the source journal migration and are bounded on individual inspection.
+
 A decision's `state` is either `banned` or `unbanned`. Both the internal application and public Go client use `pkg/decisionstate.State` for this desired state; JSON and YAML still encode it as the same string. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
 
 SQLite persists the same `banned` and `unbanned` values in the constrained `decisions.state` column. It does not maintain a separate boolean representation of desired state.
