@@ -33,6 +33,8 @@ type Query struct {
 	Offset int64
 	// Limit is the maximum number of entries in the response.
 	Limit int
+	// ThroughSequence pins the newest journal entry visible across all pages.
+	ThroughSequence int64
 }
 
 // NewQuery validates offset calculations before database access.
@@ -71,6 +73,8 @@ type RevisionPage struct {
 	Page int `json:"page"`
 	// NextPage is the next older page, or zero when the page is final.
 	NextPage int `json:"nextPage,omitempty"`
+	// ThroughSequence anchors future pages to the same journal membership.
+	ThroughSequence int64 `json:"throughSequence,omitempty"`
 }
 
 // Delivery is the current revision's progress for one destination and decision.
@@ -135,13 +139,30 @@ func NewService(store Store) (*Service, error) {
 
 // Revisions returns immutable decision transitions, including releases and extensions.
 func (s *Service) Revisions(ctx context.Context, page int, ip string, state decisionstate.State) (RevisionPage, error) {
+	return s.RevisionsThrough(ctx, page, ip, state, 0)
+}
+
+// RevisionsThrough pins numbered pages to the original journal insertion boundary.
+func (s *Service) RevisionsThrough(
+	ctx context.Context,
+	page int,
+	ip string,
+	state decisionstate.State,
+	through int64,
+) (RevisionPage, error) {
+	if through < 0 {
+		return RevisionPage{}, fmt.Errorf("%w: invalid history sequence", ErrInvalid)
+	}
+
 	bounds, err := NewQuery(page)
 	if err != nil {
 		return RevisionPage{}, err
 	}
+
 	if state != "" && !state.Valid() {
 		return RevisionPage{}, fmt.Errorf("%w: unsupported decision state", ErrInvalid)
 	}
+
 	if ip != "" {
 		address, err := ipaddress.ParseUnicast(strings.TrimSpace(ip))
 		if err != nil {
@@ -149,6 +170,8 @@ func (s *Service) Revisions(ctx context.Context, page int, ip string, state deci
 		}
 		ip = address.Unmap().String()
 	}
+
+	bounds.ThroughSequence = through
 	return s.store.ListRevisions(ctx, bounds, ip, state)
 }
 
@@ -158,11 +181,16 @@ func (s *Service) Deliveries(ctx context.Context, page int, status deliverystate
 	if err != nil {
 		return DeliveryPage{}, err
 	}
+
 	if status != "" && !status.Current() {
 		return DeliveryPage{}, fmt.Errorf("%w: unsupported delivery status", ErrInvalid)
 	}
-	if len(destination) > MaxDestinationLength || strings.TrimSpace(destination) != destination || strings.ContainsAny(destination, "\x00\r\n\t") {
+
+	if len(destination) > MaxDestinationLength ||
+		strings.TrimSpace(destination) != destination ||
+		strings.ContainsAny(destination, "\x00\r\n\t") {
 		return DeliveryPage{}, fmt.Errorf("%w: invalid destination", ErrInvalid)
 	}
+
 	return s.store.ListDeliveries(ctx, bounds, status, destination)
 }

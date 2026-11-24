@@ -298,3 +298,48 @@ func TestCurrentDeliveriesNotLimitedByHistoryPage(t *testing.T) {
 		assert.Equal(t, deliverystate.StatusPending, page.CurrentDeliveries[19].Status)
 	})
 }
+
+func TestRevisionJournalStablePagination(t *testing.T) {
+	t.Parallel()
+
+	t.Run("does not shift older pages after a new revision is committed", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "pinned-revisions.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"edge"})
+		require.NoError(t, err)
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+		now := time.Now().UTC()
+
+		for i := 0; i < 21; i++ {
+			_, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+				IP: "203.0.113.66", Duration: time.Duration(i+1) * time.Hour, Reason: "extension",
+			}, now)
+			require.NoError(t, err)
+		}
+
+		first, err := viewer.Revisions(t.Context(), 1, "203.0.113.66", "")
+		require.NoError(t, err)
+		require.Len(t, first.Items, 20)
+		assert.Positive(t, first.ThroughSequence)
+
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP: "203.0.113.66", Duration: 22 * time.Hour, Reason: "new revision",
+		}, now)
+		require.NoError(t, err)
+
+		older, err := viewer.RevisionsThrough(t.Context(), 2, "203.0.113.66", "", first.ThroughSequence)
+		require.NoError(t, err)
+		require.Len(t, older.Items, 1)
+		assert.Equal(t, int64(1), older.Items[0].Revision)
+		assert.Zero(t, older.NextPage)
+		assert.Equal(t, first.ThroughSequence, older.ThroughSequence)
+
+		fresh, err := viewer.Revisions(t.Context(), 1, "203.0.113.66", "")
+		require.NoError(t, err)
+		assert.Greater(t, fresh.ThroughSequence, first.ThroughSequence)
+		assert.Equal(t, int64(22), fresh.Items[0].Revision)
+	})
+}

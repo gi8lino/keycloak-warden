@@ -23,14 +23,21 @@ func (s *Store) ListRevisions(ctx context.Context, bounds overview.Query, ip str
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	result.ThroughSequence = bounds.ThroughSequence
+	if result.ThroughSequence == 0 {
+		if err := tx.QueryRowContext(ctx, "SELECT COALESCE(MAX(sequence), 0) FROM decision_revisions").Scan(&result.ThroughSequence); err != nil {
+			return result, err
+		}
+	}
+
 	rows, err := tx.QueryContext(ctx, `
 SELECT d.id, r.ip, r.revision, r.state, r.expires, r.changed_at, r.sources_json, r.cause
 FROM decision_revisions AS r
 JOIN decisions AS d ON d.ip = r.ip
-WHERE (? = '' OR r.ip = ?) AND (? = '' OR r.state = ?)
-ORDER BY r.changed_at DESC, r.ip, r.revision DESC
+WHERE r.sequence <= ? AND (? = '' OR r.ip = ?) AND (? = '' OR r.state = ?)
+ORDER BY r.sequence DESC
 LIMIT ? OFFSET ?
-`, ip, ip, state, state, bounds.Limit+1, bounds.Offset)
+`, result.ThroughSequence, ip, ip, state, state, bounds.Limit+1, bounds.Offset)
 	if err != nil {
 		return result, err
 	}

@@ -40,6 +40,14 @@ func TestValidation(t *testing.T) {
 		assert.Equal(t, "203.0.113.12", store.ip)
 		assert.Equal(t, 20, int(store.bounds.Offset))
 	})
+	t.Run("rejects a negative history sequence", func(t *testing.T) {
+		t.Parallel()
+		service, err := NewService(&queryStore{})
+		require.NoError(t, err)
+		_, err = service.RevisionsThrough(t.Context(), 1, "", "", -1)
+		require.ErrorIs(t, err, ErrInvalid)
+	})
+
 	t.Run("rejects invalid decision state", func(t *testing.T) {
 		t.Parallel()
 		service, err := NewService(&queryStore{})

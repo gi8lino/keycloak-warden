@@ -42,6 +42,8 @@ type RevisionPage struct {
 	Page int `json:"page"`
 	// NextPage is the next older page, or zero when the page is final.
 	NextPage int `json:"nextPage,omitempty"`
+	// ThroughSequence pins subsequent requests to this journal snapshot.
+	ThroughSequence int64 `json:"throughSequence,omitempty"`
 }
 
 // DeliveryOverview describes a destination's progress on a decision's current revision.
@@ -90,6 +92,8 @@ type RevisionFilter struct {
 	IP string
 	// State optionally restricts results to banned or unbanned events.
 	State decisionstate.State
+	// ThroughSequence pins this page to the first response's journal boundary.
+	ThroughSequence int64
 }
 
 // DeliveryFilter selects optional current delivery status and destination.
@@ -112,6 +116,10 @@ func (c *Client) ListDecisionHistory(ctx context.Context, filter RevisionFilter)
 		return RevisionPage{}, errors.New("page must be positive")
 	}
 
+	if filter.ThroughSequence < 0 {
+		return RevisionPage{}, errors.New("invalid history sequence")
+	}
+
 	if filter.State != "" && !filter.State.Valid() {
 		return RevisionPage{}, errors.New("invalid state")
 	}
@@ -132,6 +140,9 @@ func (c *Client) ListDecisionHistory(ctx context.Context, filter RevisionFilter)
 
 	if filter.State != "" {
 		query.Set("state", string(filter.State))
+	}
+	if filter.ThroughSequence > 0 {
+		query.Set("through-sequence", strconv.FormatInt(filter.ThroughSequence, 10))
 	}
 
 	var result RevisionPage

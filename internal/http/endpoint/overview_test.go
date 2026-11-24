@@ -24,10 +24,11 @@ type overviewStub struct {
 	state       decisionstate.State
 	status      deliverystate.Status
 	destination string
+	through     int64
 }
 
-func (s *overviewStub) Revisions(_ context.Context, page int, ip string, state decisionstate.State) (overview.RevisionPage, error) {
-	s.page, s.ip, s.state = page, ip, state
+func (s *overviewStub) RevisionsThrough(_ context.Context, page int, ip string, state decisionstate.State, through int64) (overview.RevisionPage, error) {
+	s.page, s.ip, s.state, s.through = page, ip, state, through
 	return overview.RevisionPage{Items: []overview.Revision{}, Page: page}, nil
 }
 
@@ -50,6 +51,26 @@ func TestOverviewEndpoints(t *testing.T) {
 		assert.Equal(t, "203.0.113.42", service.ip)
 		assert.Equal(t, decisionstate.StateUnbanned, service.state)
 		require.Contains(t, response.Body.String(), `"page":2`)
+	})
+
+	t.Run("passes a validated history sequence to the query service", func(t *testing.T) {
+		t.Parallel()
+		service := &overviewStub{}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		response := httptest.NewRecorder()
+		endpoint.DecisionHistory(service, logger)(response, httptest.NewRequest(http.MethodGet, "/decisions/history?page=2&through-sequence=77", nil))
+		assert.Equal(t, http.StatusOK, response.Code)
+		assert.Equal(t, int64(77), service.through)
+	})
+
+	t.Run("rejects invalid history sequences", func(t *testing.T) {
+		t.Parallel()
+		service := &overviewStub{}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		response := httptest.NewRecorder()
+		endpoint.DecisionHistory(service, logger)(response, httptest.NewRequest(http.MethodGet, "/decisions/history?through-sequence=-1", nil))
+		assert.Equal(t, http.StatusBadRequest, response.Code)
+		assert.Zero(t, service.page)
 	})
 
 	t.Run("returns filtered deliveries", func(t *testing.T) {

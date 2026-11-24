@@ -16,28 +16,39 @@ import (
 )
 
 const (
-	pageParam        = "page"
-	ipParam          = "ip"
-	stateParam       = "state"
-	statusParam      = "status"
-	destinationParam = "destination"
+	pageParam            = "page"
+	ipParam              = "ip"
+	stateParam           = "state"
+	statusParam          = "status"
+	destinationParam     = "destination"
+	throughSequenceParam = "through-sequence"
 )
 
 // OverviewQueries exposes cross-decision history and reconciliation status.
 type OverviewQueries interface {
-	Revisions(context.Context, int, string, decisionstate.State) (overview.RevisionPage, error)
+	RevisionsThrough(context.Context, int, string, decisionstate.State, int64) (overview.RevisionPage, error)
 	Deliveries(context.Context, int, deliverystate.Status, string) (overview.DeliveryPage, error)
 }
 
 // DecisionHistory returns a bounded journal of effective ban and release revisions.
 func DecisionHistory(service OverviewQueries, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		values, page, ok := overviewQuery(w, r, ipParam, stateParam)
+		values, page, ok := overviewQuery(w, r, ipParam, stateParam, throughSequenceParam)
 		if !ok {
 			return
 		}
 
-		list, err := service.Revisions(r.Context(), page, values.Get(ipParam), decisionstate.State(values.Get(stateParam)))
+		through := int64(0)
+		if value := values.Get(throughSequenceParam); value != "" {
+			parsed, parseErr := strconv.ParseInt(value, 10, 64)
+			if parseErr != nil || parsed < 1 {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid history sequence.")
+				return
+			}
+			through = parsed
+		}
+
+		list, err := service.RevisionsThrough(r.Context(), page, values.Get(ipParam), decisionstate.State(values.Get(stateParam)), through)
 		if writeOverviewError(w, logger, err) {
 			return
 		}
