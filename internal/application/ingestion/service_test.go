@@ -100,7 +100,7 @@ func (tx *fakeTx) Sources(context.Context, string, time.Time) ([]bans.Source, er
 }
 
 // SaveDecision records destination identifiers from the application.
-func (tx *fakeTx) SaveDecision(_ context.Context, _, _ decisions.Decision, _ bool, targets []string) error {
+func (tx *fakeTx) SaveDecision(_ context.Context, _, _ decisions.Decision, _ []bans.Source, _ bans.ChangeCause, _ bool, targets []string) error {
 	tx.targets = append([]string(nil), targets...)
 	return nil
 }

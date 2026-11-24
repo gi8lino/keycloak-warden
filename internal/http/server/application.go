@@ -45,6 +45,18 @@ func newApplication(config Config) http.Handler {
 		))
 	}
 
+	if config.AdminToken != "" && config.Overview != nil {
+		guard := middleware.AuthenticateAdmin(config.AdminToken)
+		mux.Handle("GET /decisions/history", httpkitmiddleware.Chain(
+			endpoint.DecisionHistory(config.Overview, config.Logger),
+			guard,
+		))
+		mux.Handle("GET /deliveries", httpkitmiddleware.Chain(
+			endpoint.DeliveryOverview(config.Overview, config.Logger),
+			guard,
+		))
+	}
+
 	if config.AdminToken != "" && config.Maintenance != nil {
 		guard := middleware.AuthenticateAdmin(config.AdminToken)
 

@@ -66,3 +66,9 @@ The `actions` package calculates the capped exponential retry delay (10 seconds 
 ## Policy and persistence boundaries
 
 At startup, SQLite reports the destinations that still own bans or unacknowledged revisions; `actions.ValidateTargets` decides whether the configured target set is safe. The application owns the delivery attempt-limit decision (`actions.StatusAfterFailure`), while SQLite counts recorded attempts and applies status updates transactionally. The administrative history API returns bounded, numbered-page snapshots using SQLite LIMIT/OFFSET; all attempts remain durably stored, including successful responses that arrive after a newer revision supersedes an in-flight attempt. Such stale completions never advance current acknowledgements or backoff state.
+
+## Decision revision audit trail
+
+Warden appends an immutable revision snapshot whenever the effective desired decision changes. The journal captures the commit time, workflow cause, requested state, expiry, and active source reasons. This write shares the original decision transaction, so an unsuccessful transaction cannot leave behind a misleading history entry. Historic revisions prior to migration 0008 cannot be reconstructed from the current decision row.
+
+The authenticated `/decisions/history` query reads this journal. `/deliveries` instead reads the current revision from existing delivery tables, including release attempts, without creating a separate delivery store or service process.

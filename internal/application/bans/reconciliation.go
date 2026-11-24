@@ -7,6 +7,17 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 )
 
+// ChangeCause identifies the application workflow that revised a decision.
+type ChangeCause string
+
+const (
+	ChangeAutomatic  ChangeCause = "automatic"
+	ChangeManual     ChangeCause = "manual"
+	ChangeRelease    ChangeCause = "release"
+	ChangeExpiry     ChangeCause = "expiry"
+	ChangeReconciled ChangeCause = "reconciled"
+)
+
 // Transaction exposes the persisted facts needed to evaluate ban policy atomically.
 // Its implementation commits or rolls back together with the originating operation.
 type Transaction interface {
@@ -21,7 +32,7 @@ type Transaction interface {
 	// Sources reads the active reasons for a decision at the supplied time.
 	Sources(context.Context, string, time.Time) ([]Source, error)
 	// SaveDecision atomically persists a calculated state and synchronizes delivery work.
-	SaveDecision(context.Context, decisions.Decision, decisions.Decision, bool, []string) error
+	SaveDecision(context.Context, decisions.Decision, decisions.Decision, []Source, ChangeCause, bool, []string) error
 }
 
 // MutationTransaction adds storage operations used by administrative and expiry workflows.
@@ -66,6 +77,18 @@ func ReconcileDecision(
 	now time.Time,
 	targets []string,
 ) (decisions.Decision, bool, error) {
+	return ReconcileDecisionWithCause(ctx, tx, ip, now, targets, ChangeReconciled)
+}
+
+// ReconcileDecisionWithCause records why this effective revision changed.
+func ReconcileDecisionWithCause(
+	ctx context.Context,
+	tx Transaction,
+	ip string,
+	now time.Time,
+	targets []string,
+	cause ChangeCause,
+) (decisions.Decision, bool, error) {
 	previous, err := tx.Decision(ctx, ip)
 	if err != nil {
 		return decisions.Decision{}, false, err
@@ -76,7 +99,7 @@ func ReconcileDecision(
 	}
 
 	next, changed := Reconcile(previous, sources, now)
-	if err := tx.SaveDecision(ctx, previous, next, changed, targets); err != nil {
+	if err := tx.SaveDecision(ctx, previous, next, sources, cause, changed, targets); err != nil {
 		return decisions.Decision{}, false, err
 	}
 

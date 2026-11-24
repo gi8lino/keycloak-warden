@@ -63,7 +63,7 @@ func (p *policyTx) Sources(context.Context, string, time.Time) ([]Source, error)
 }
 
 // SaveDecision captures the reconciled state and its delivery destinations.
-func (p *policyTx) SaveDecision(_ context.Context, _, next decisions.Decision, changed bool, targets []string) error {
+func (p *policyTx) SaveDecision(_ context.Context, _, next decisions.Decision, _ []Source, _ ChangeCause, changed bool, targets []string) error {
 	p.saved = next
 	p.savedChanged = changed
 	p.savedTargets = append([]string(nil), targets...)

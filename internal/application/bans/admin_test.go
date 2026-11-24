@@ -69,7 +69,7 @@ func (r *fakeStore) Sources(context.Context, string, time.Time) ([]bans.Source, 
 }
 
 // SaveDecision records the target names supplied to the transaction.
-func (r *fakeStore) SaveDecision(_ context.Context, _, _ decisions.Decision, _ bool, targets []string) error {
+func (r *fakeStore) SaveDecision(_ context.Context, _, _ decisions.Decision, _ []bans.Source, _ bans.ChangeCause, _ bool, targets []string) error {
 	r.targets = append([]string(nil), targets...)
 	return nil
 }

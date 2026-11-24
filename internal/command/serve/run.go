@@ -11,6 +11,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/bootstrap"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
@@ -84,6 +85,10 @@ func Run(parent context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
+	overviewService, err := overview.NewService(store)
+	if err != nil {
+		return err
+	}
 	expirer, err := bans.NewExpiryService(store, names)
 	if err != nil {
 		return err
@@ -108,6 +113,7 @@ func Run(parent context.Context, options Options) error {
 		Secret:         options.SnitchSecret,
 		AdminToken:     options.AdminToken,
 		BanAdmin:       banAdmin,
+		Overview:       overviewService,
 		Maintenance:    maintenanceRunner,
 		Logger:         logger,
 		Processor:      processor,

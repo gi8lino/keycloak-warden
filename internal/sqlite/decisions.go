@@ -3,13 +3,14 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
+	"uuid"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"uuid"
 )
 
 // EnsureDecision creates a stable UUIDv7 identity before attaching ban sources.
@@ -32,7 +33,14 @@ func (t *transaction) Decision(ctx context.Context, ip string) (decisions.Decisi
 // A change updates the decision revision and schedules delivery; an unchanged
 // decision can still synchronize configured destination ownership. It neither
 // begins nor commits a transaction.
-func (t *transaction) SaveDecision(ctx context.Context, previous, decision decisions.Decision, changed bool, targets []string) error {
+func (t *transaction) SaveDecision(
+	ctx context.Context,
+	previous, decision decisions.Decision,
+	sources []bans.Source,
+	cause bans.ChangeCause,
+	changed bool,
+	targets []string,
+) error {
 	if changed {
 		t.changed = true
 		if _, err := t.tx.ExecContext(ctx, `
@@ -41,6 +49,21 @@ SET revision = ?, state = ?, expires = ?
 WHERE ip = ?
 `, decision.Revision, decision.State,
 			decision.ExpiresAt.UnixMilli(), decision.IP); err != nil {
+			return err
+		}
+		// Persist the exact source snapshot used by ban reconciliation. This is
+		// an append-only audit event, committed atomically with the decision.
+		if sources == nil {
+			sources = []bans.Source{}
+		}
+		snapshot, err := json.Marshal(sources)
+		if err != nil {
+			return err
+		}
+		if _, err := t.tx.ExecContext(ctx, `
+INSERT INTO decision_revisions (ip, revision, state, expires, changed_at, sources_json, cause)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+`, decision.IP, decision.Revision, decision.State, decision.ExpiresAt.UnixMilli(), time.Now().UTC().UnixMilli(), string(snapshot), cause); err != nil {
 			return err
 		}
 	}

@@ -126,7 +126,7 @@ func (s *Service) processFailure(
 		return Result{}, err
 	}
 
-	decision, changed, err := bans.ReconcileDecision(ctx, tx, result.IP, now, s.targets)
+	decision, changed, err := bans.ReconcileDecisionWithCause(ctx, tx, result.IP, now, s.targets, bans.ChangeAutomatic)
 	if err != nil {
 		return Result{}, err
 	}

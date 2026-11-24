@@ -1,0 +1,200 @@
+package sqlite_test
+
+import (
+	"errors"
+	"path/filepath"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/overview"
+	"github.com/gi8lino/keycloak-warden/internal/sqlite"
+	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+)
+
+func TestRevisionJournal(t *testing.T) {
+	t.Parallel()
+
+	t.Run("captures reasons and release as separate immutable revisions", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "history.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"webhook.receiver"})
+		require.NoError(t, err)
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP: "203.0.113.40", Duration: time.Hour, Reason: "manual investigation",
+		}, now)
+		require.NoError(t, err)
+		released, err := service.Release(t.Context(), ban.Decision.ID, now.Add(time.Minute))
+		require.NoError(t, err)
+		assert.Equal(t, decisionstate.StateUnbanned, released.Decision.State)
+
+		page, err := viewer.Revisions(t.Context(), 1, "203.0.113.40", "")
+		require.NoError(t, err)
+		require.Len(t, page.Items, 2)
+		assert.Equal(t, released.Decision.Revision, page.Items[0].Revision)
+		assert.Equal(t, decisionstate.StateUnbanned, page.Items[0].State)
+		assert.Empty(t, page.Items[0].Sources)
+		assert.Equal(t, ban.Decision.Revision, page.Items[1].Revision)
+		assert.Equal(t, decisionstate.StateBanned, page.Items[1].State)
+		require.Len(t, page.Items[1].Sources, 1)
+		assert.Equal(t, "manual investigation", page.Items[1].Sources[0].Reason)
+		assert.False(t, page.Items[1].ChangedAt.IsZero())
+		assert.Zero(t, page.NextPage)
+	})
+
+	t.Run("does not record a revision for an unchanged extension", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "history.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"edge"})
+		require.NoError(t, err)
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+
+		now := time.Now().UTC()
+		first, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.41", Duration: time.Hour, Reason: "first"}, now)
+		require.NoError(t, err)
+		second, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.41", Duration: time.Minute, Reason: "reason updated"}, now)
+		require.NoError(t, err)
+		assert.Equal(t, first.Decision.Revision, second.Decision.Revision)
+		page, err := viewer.Revisions(t.Context(), 1, "203.0.113.41", "")
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, "first", page.Items[0].Sources[0].Reason)
+	})
+}
+
+func TestDeliveryOverview(t *testing.T) {
+	t.Parallel()
+
+	t.Run("includes an exhausted release and its last provider failure", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "deliveries.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"webhook.receiver"})
+		require.NoError(t, err)
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+
+		now := time.Now().UTC().Truncate(time.Millisecond)
+		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.42", Duration: time.Hour, Reason: "test"}, now)
+		require.NoError(t, err)
+		_, err = service.Release(t.Context(), ban.Decision.ID, now.Add(time.Second))
+		require.NoError(t, err)
+		job, err := store.Next(t.Context(), now.Add(time.Second))
+		require.NoError(t, err)
+		require.NotNil(t, job)
+		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+		require.NoError(t, store.Finish(t.Context(), *job, errors.New("receiver rejected"), 1, now.Add(2*time.Second), actions.NextRetryDelay(0)))
+
+		page, err := viewer.Deliveries(t.Context(), 1, deliverystate.StatusExhausted, "webhook.receiver")
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		entry := page.Items[0]
+		assert.Equal(t, ban.Decision.ID, entry.DecisionID)
+		assert.Equal(t, decisionstate.StateUnbanned, entry.DesiredState)
+		assert.Equal(t, deliverystate.StatusExhausted, entry.Status)
+		assert.Equal(t, int64(1), entry.AttemptCount)
+		assert.Equal(t, "receiver rejected", entry.LastError)
+		assert.Zero(t, entry.AcknowledgedRevision)
+	})
+
+	t.Run("excludes superseded revisions from the current overview", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "deliveries.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"edge"})
+		require.NoError(t, err)
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+		now := time.Now().UTC()
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.43", Duration: time.Hour, Reason: "first"}, now)
+		require.NoError(t, err)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.43", Duration: 2 * time.Hour, Reason: "extended"}, now)
+		require.NoError(t, err)
+		page, err := viewer.Deliveries(t.Context(), 1, "", "edge")
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+		assert.Equal(t, int64(2), page.Items[0].Revision)
+	})
+}
+
+func TestRevisionJournalAtomicity(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rolls back decision and sources when journal insert fails", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "atomic.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+		now := time.Now().UTC()
+
+		err = store.TransactDecision(t.Context(), func(tx bans.MutationTransaction) error {
+			if err := bans.ExtendSource(t.Context(), tx, "203.0.113.50", bans.Source{
+				Kind: bans.SourceManual, Reason: "rolled back", ExpiresAt: now.Add(time.Hour),
+			}); err != nil {
+				return err
+			}
+			_, _, err := bans.ReconcileDecisionWithCause(t.Context(), tx, "203.0.113.50", now, []string{"edge"}, bans.ChangeCause("invalid"))
+			return err
+		})
+		require.Error(t, err)
+
+		revisions, err := viewer.Revisions(t.Context(), 1, "203.0.113.50", "")
+		require.NoError(t, err)
+		assert.Empty(t, revisions.Items)
+		active, err := store.ListActive(t.Context(), now)
+		require.NoError(t, err)
+		assert.Empty(t, active)
+	})
+}
+
+func TestRevisionJournalPagination(t *testing.T) {
+	t.Parallel()
+
+	t.Run("bounds each page to twenty changes", func(t *testing.T) {
+		t.Parallel()
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "pagination.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, []string{"edge"})
+		require.NoError(t, err)
+		viewer, err := overview.NewService(store)
+		require.NoError(t, err)
+		now := time.Now().UTC()
+
+		// Seed one decision with a series of real revisions. These are fixture
+		// operations, not generated test cases; the test remains one explicit subtest.
+		for i := 0; i < 21; i++ {
+			_, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+				IP: "203.0.113.60", Duration: time.Duration(i+1) * time.Hour, Reason: "extension",
+			}, now)
+			require.NoError(t, err)
+		}
+		first, err := viewer.Revisions(t.Context(), 1, "203.0.113.60", "")
+		require.NoError(t, err)
+		assert.Len(t, first.Items, 20)
+		assert.Equal(t, 2, first.NextPage)
+
+		second, err := viewer.Revisions(t.Context(), 2, "203.0.113.60", "")
+		require.NoError(t, err)
+		assert.Len(t, second.Items, 1)
+		assert.Zero(t, second.NextPage)
+	})
+}

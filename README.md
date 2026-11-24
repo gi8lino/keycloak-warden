@@ -8,7 +8,7 @@
 
 Warden monitors failed login attempts reported by [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) and automatically blocks offending IP addresses through Cloudflare or HTTP webhooks.
 
-It uses SQLite to persist decisions, supports manual bans, and reliably retries failed deliveries.
+It uses SQLite to persist decisions, supports manual bans, and reliably retries failed deliveries. An append-only revision journal records new ban, release, and extension events for the authenticated administration API.
 
 ## How it works
 

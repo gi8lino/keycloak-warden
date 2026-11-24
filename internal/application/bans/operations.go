@@ -56,7 +56,7 @@ func applyManualBan(
 		return Record{}, err
 	}
 
-	decision, _, err := ReconcileDecision(ctx, tx, ip, now, targets)
+	decision, _, err := ReconcileDecisionWithCause(ctx, tx, ip, now, targets, ChangeManual)
 	if err != nil {
 		return Record{}, err
 	}
@@ -112,7 +112,7 @@ func releaseAllSources(
 		return Record{}, err
 	}
 
-	next, _, err := ReconcileDecision(ctx, tx, current.IP, now, targets)
+	next, _, err := ReconcileDecisionWithCause(ctx, tx, current.IP, now, targets, ChangeRelease)
 	if err != nil {
 		return Record{}, err
 	}
@@ -161,7 +161,7 @@ func expireSources(
 
 	var released []decisions.Decision
 	for _, ip := range ips {
-		decision, changed, err := ReconcileDecision(ctx, tx, ip, now, targets)
+		decision, changed, err := ReconcileDecisionWithCause(ctx, tx, ip, now, targets, ChangeExpiry)
 		if err != nil {
 			return nil, err
 		}
