@@ -2,6 +2,7 @@ package sqlite_test
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -264,5 +265,36 @@ func TestSourceChangeJournal(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, after.SourceChanges, 1)
 		assert.Equal(t, "added", after.SourceChanges[0].Action)
+	})
+}
+
+func TestCurrentDeliveriesNotLimitedByHistoryPage(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns every destination after the history page is capped", func(t *testing.T) {
+		t.Parallel()
+
+		targets := make([]string, 0, 20)
+		for i := 0; i < 20; i++ {
+			targets = append(targets, fmt.Sprintf("webhook.receiver-%02d", i))
+		}
+		store, err := sqlite.Open(filepath.Join(t.TempDir(), "current-deliveries.db"))
+		require.NoError(t, err)
+		t.Cleanup(func() { require.NoError(t, store.Close()) })
+		service, err := bans.NewAdminService(store, targets)
+		require.NoError(t, err)
+
+		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			IP: "203.0.113.121", Duration: time.Hour, Reason: "current status",
+		}, time.Now().UTC())
+		require.NoError(t, err)
+		require.Len(t, ban.CurrentDeliveries, 20)
+
+		page, err := service.GetDecision(t.Context(), ban.Decision.ID, time.Now())
+		require.NoError(t, err)
+		assert.Len(t, page.DeliveryHistory, 16)
+		assert.Len(t, page.CurrentDeliveries, 20)
+		assert.Equal(t, "webhook.receiver-19", page.CurrentDeliveries[19].Destination)
+		assert.Equal(t, deliverystate.StatusPending, page.CurrentDeliveries[19].Status)
 	})
 }

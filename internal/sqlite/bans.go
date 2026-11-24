@@ -217,6 +217,11 @@ func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Re
 		return bans.Record{}, err
 	}
 
+	current, err := readCurrentDeliveries(ctx, tx, decision.IP, decision.Revision)
+	if err != nil {
+		return bans.Record{}, err
+	}
+
 	changes, err := readSourceChanges(ctx, tx, decision.IP)
 	if err != nil {
 		return bans.Record{}, err
@@ -228,9 +233,10 @@ func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Re
 	}
 
 	return bans.Record{
-		Decision:      decision,
-		Sources:       sources,
-		SourceChanges: changes,
-		Deliveries:    deliveries,
+		Decision:          decision,
+		Sources:           sources,
+		SourceChanges:     changes,
+		CurrentDeliveries: current,
+		Deliveries:        deliveries,
 	}, nil
 }

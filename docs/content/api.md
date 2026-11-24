@@ -35,7 +35,7 @@ For a manual ban, send a JSON object such as:
 }
 ```
 
-The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return up to 50 newest `sourceChanges` (source additions, edits, and removals persisted since the source journal migration) and a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return an unpaged `currentDeliveries` list for all current-revision destinations (distinct from paginated history), up to 50 newest `sourceChanges` (source additions, edits, and removals persisted since the source journal migration) and a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
 
 For example, an active manual ban that has been acknowledged by a webhook might look like:
 

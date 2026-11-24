@@ -50,6 +50,8 @@ type Record struct {
 	Sources []Source `json:"sources" yaml:"sources"`
 	// SourceChanges contains the most recent persisted source edits for individual reads.
 	SourceChanges []SourceChange `json:"sourceChanges,omitempty" yaml:"sourceChanges,omitempty"`
+	// CurrentDeliveries reports every current-revision destination regardless of history pagination.
+	CurrentDeliveries []decisions.Delivery `json:"currentDeliveries,omitempty" yaml:"currentDeliveries,omitempty"`
 	// DeliveryHistory contains per-revision history on individual decision reads.
 	DeliveryHistory []decisions.Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
 	// HistoryPage identifies the one-based page included in an individual inspection.
