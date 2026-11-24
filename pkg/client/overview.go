@@ -150,7 +150,7 @@ func (c *Client) ListDeliveries(ctx context.Context, filter DeliveryFilter) (Del
 		return DeliveryOverviewPage{}, errors.New("page must be positive")
 	}
 
-	if filter.Status != "" && !filter.Status.Valid() {
+	if filter.Status != "" && !filter.Status.Current() {
 		return DeliveryOverviewPage{}, errors.New("invalid status")
 	}
 

@@ -62,3 +62,17 @@ func TestOverviewClient(t *testing.T) {
 		require.ErrorContains(t, err, "page must be positive")
 	})
 }
+
+func TestListDeliveriesRejectsSuperseded(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects historical statuses before contacting Warden", func(t *testing.T) {
+		t.Parallel()
+		api, err := client.New("http://127.0.0.1:8080", "admin-token")
+		require.NoError(t, err)
+
+		_, err = api.ListDeliveries(t.Context(), client.DeliveryFilter{Status: deliverystate.StatusSuperseded})
+
+		require.ErrorContains(t, err, "invalid status")
+	})
+}

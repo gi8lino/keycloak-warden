@@ -158,7 +158,7 @@ func (s *Service) Deliveries(ctx context.Context, page int, status deliverystate
 	if err != nil {
 		return DeliveryPage{}, err
 	}
-	if status != "" && !status.Valid() {
+	if status != "" && !status.Current() {
 		return DeliveryPage{}, fmt.Errorf("%w: unsupported delivery status", ErrInvalid)
 	}
 	if len(destination) > MaxDestinationLength || strings.TrimSpace(destination) != destination || strings.ContainsAny(destination, "\x00\r\n\t") {

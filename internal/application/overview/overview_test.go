@@ -54,6 +54,13 @@ func TestValidation(t *testing.T) {
 		_, err = service.Deliveries(t.Context(), 0, "", "")
 		require.ErrorIs(t, err, ErrInvalid)
 	})
+	t.Run("rejects superseded in a current-delivery query", func(t *testing.T) {
+		t.Parallel()
+		service, err := NewService(&queryStore{})
+		require.NoError(t, err)
+		_, err = service.Deliveries(t.Context(), 1, deliverystate.StatusSuperseded, "")
+		require.ErrorIs(t, err, ErrInvalid)
+	})
 	t.Run("rejects invalid delivery state", func(t *testing.T) {
 		t.Parallel()
 		service, err := NewService(&queryStore{})

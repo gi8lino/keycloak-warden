@@ -39,3 +39,14 @@ const (
 
 // Valid reports whether o represents a known attempt outcome.
 func (o Outcome) Valid() bool { return o == OutcomeSucceeded || o == OutcomeFailed }
+
+// Current reports whether the status can describe a decision's latest revision.
+// Superseded belongs exclusively to older revisions in the historical timeline.
+func (s Status) Current() bool {
+	switch s {
+	case StatusPending, StatusRetrying, StatusDelivered, StatusExhausted:
+		return true
+	default:
+		return false
+	}
+}
