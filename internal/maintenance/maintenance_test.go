@@ -1,6 +1,7 @@
 package maintenance
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -182,6 +183,7 @@ func TestPruneRetention(t *testing.T) {
 
 		store := &fakeStore{}
 		runner := &Runner{
+			logger:    discardLogger(),
 			store:     store,
 			retention: 48 * time.Hour,
 			schedule: Schedule{
@@ -235,7 +237,8 @@ func TestManualMaintenance(t *testing.T) {
 
 		store := &manualStore{}
 		runner := &Runner{
-			store: store,
+			logger: discardLogger(),
+			store:  store,
 			schedule: Schedule{
 				PruneInterval:    time.Hour,
 				OptimizeInterval: time.Hour,
@@ -253,7 +256,7 @@ func TestManualMaintenance(t *testing.T) {
 	t.Run("rejects unsupported operations", func(t *testing.T) {
 		t.Parallel()
 
-		runner := &Runner{}
+		runner := &Runner{logger: discardLogger()}
 
 		require.ErrorIs(t, runner.Trigger(t.Context(), "vacuum"), ErrInvalidOperation)
 	})
@@ -264,7 +267,7 @@ func TestManualMaintenance(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		runner := &Runner{}
+		runner := &Runner{logger: discardLogger()}
 
 		require.ErrorIs(t, runner.Trigger(ctx, OperationPrune), context.Canceled)
 	})
@@ -279,7 +282,8 @@ func TestManualMaintenance(t *testing.T) {
 		close(store.release)
 
 		runner := &Runner{
-			store: store,
+			logger: discardLogger(),
+			store:  store,
 			schedule: Schedule{
 				PruneInterval:    time.Hour,
 				OptimizeInterval: time.Hour,
@@ -314,5 +318,39 @@ func TestManualMaintenance(t *testing.T) {
 
 		assert.True(t, runner.Snapshot().Prune.Running)
 		assert.ErrorIs(t, runner.Trigger(t.Context(), OperationOptimize), ErrBusy)
+	})
+}
+
+func TestMaintenanceOutcomeLogs(t *testing.T) {
+	t.Parallel()
+	t.Run("manual completion includes trigger operation and duration", func(t *testing.T) {
+		t.Parallel()
+		var output bytes.Buffer
+		runner := &Runner{store: &fakeStore{}, logger: slog.New(slog.NewJSONHandler(&output, nil))}
+		require.NoError(t, runner.Trigger(t.Context(), OperationOptimize))
+		assert.Contains(t, output.String(), `"event":"database_maintenance_completed"`)
+		assert.Contains(t, output.String(), `"trigger":"manual"`)
+		assert.Contains(t, output.String(), `"operation":"optimize"`)
+		assert.Contains(t, output.String(), `"duration_ms":`)
+		assert.Contains(t, output.String(), `"level":"INFO"`)
+	})
+	t.Run("scheduled completion uses the same outcome record", func(t *testing.T) {
+		t.Parallel()
+		var output bytes.Buffer
+		runner := &Runner{store: &fakeStore{}, retention: time.Hour, logger: slog.New(slog.NewJSONHandler(&output, nil))}
+		require.NoError(t, runner.execute(t.Context(), OperationPrune, "scheduled"))
+		assert.Contains(t, output.String(), `"event":"database_maintenance_completed"`)
+		assert.Contains(t, output.String(), `"trigger":"scheduled"`)
+		assert.Contains(t, output.String(), `"operation":"prune"`)
+	})
+	t.Run("failure never reports completion", func(t *testing.T) {
+		t.Parallel()
+		var output bytes.Buffer
+		runner := &Runner{store: &fakeStore{optimizeFailure: true}, logger: slog.New(slog.NewJSONHandler(&output, nil))}
+		require.Error(t, runner.Trigger(t.Context(), OperationOptimize))
+		assert.Contains(t, output.String(), `"event":"database_maintenance_failed"`)
+		assert.Contains(t, output.String(), `"outcome":"failed"`)
+		assert.Contains(t, output.String(), `"level":"WARN"`)
+		assert.NotContains(t, output.String(), "database_maintenance_completed")
 	})
 }

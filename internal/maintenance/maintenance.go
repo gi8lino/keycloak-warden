@@ -42,6 +42,16 @@ const (
 	OperationOptimize Operation = "optimize"
 )
 
+// Trigger identifies how a maintenance execution was initiated.
+type Trigger string
+
+const (
+	// TriggerManual identifies an operator-requested execution.
+	TriggerManual Trigger = "manual"
+	// TriggerScheduled identifies an execution started by the scheduler.
+	TriggerScheduled Trigger = "scheduled"
+)
+
 // Schedule configures the independent database maintenance intervals.
 type Schedule struct {
 	// PruneInterval controls how often old login observations are deleted.
@@ -112,7 +122,7 @@ type Runner struct {
 	schedule Schedule
 	// retention determines how long detection observations remain available.
 	retention time.Duration
-	// logger records background maintenance failures.
+	// logger records maintenance outcomes independently of HTTP access logging.
 	logger *slog.Logger
 	// executeMu prevents concurrent maintenance from overlapping.
 	executeMu sync.Mutex
@@ -188,12 +198,13 @@ func (r *Runner) Trigger(ctx context.Context, operation Operation) error {
 	}
 	defer r.executeMu.Unlock()
 
-	return r.execute(ctx, operation)
+	return r.execute(ctx, operation, TriggerManual)
 }
 
 // execute records the outcome of an operation while executeMu is held.
-func (r *Runner) execute(ctx context.Context, operation Operation) error {
-	now := time.Now().UTC()
+func (r *Runner) execute(ctx context.Context, operation Operation, trigger Trigger) error {
+	started := time.Now()
+	now := started.UTC()
 	r.statusMu.Lock()
 	status := r.statusFor(operation)
 	status.Running = true
@@ -221,7 +232,30 @@ func (r *Runner) execute(ctx context.Context, operation Operation) error {
 	}
 	r.statusMu.Unlock()
 
+	r.logOutcome(operation, trigger, started, err)
 	return err
+}
+
+// logOutcome records actual execution results without attributing callers from untrusted headers.
+func (r *Runner) logOutcome(operation Operation, trigger Trigger, started time.Time, err error) {
+	logger := r.logger.With(
+		"operation", operation,
+		"trigger", trigger,
+		"duration_ms", float64(time.Since(started))/float64(time.Millisecond),
+	)
+
+	if err != nil {
+		logger.Warn("database maintenance failed",
+			"event", "database_maintenance_failed",
+			"outcome", "failed",
+			"error", err,
+		)
+		return
+	}
+	logger.Info("database maintenance completed",
+		"event", "database_maintenance_completed",
+		"outcome", "completed",
+	)
 }
 
 // statusFor returns the protected status value; statusMu must be held.
@@ -242,15 +276,8 @@ func (r *Runner) run(ctx context.Context) {
 		now := time.Now()
 		if !now.Before(nextPrune) {
 			r.executeMu.Lock()
-			err := r.execute(ctx, OperationPrune)
+			err := r.execute(ctx, OperationPrune, TriggerScheduled)
 			r.executeMu.Unlock()
-
-			if err != nil && ctx.Err() == nil {
-				r.logger.Warn("observation cleanup failed",
-					"event", "observation_cleanup_failed",
-					"error", err,
-				)
-			}
 
 			interval := r.schedule.PruneInterval
 			if err != nil {
@@ -262,15 +289,8 @@ func (r *Runner) run(ctx context.Context) {
 		now = time.Now()
 		if !now.Before(nextOptimize) && ctx.Err() == nil {
 			r.executeMu.Lock()
-			err := r.execute(ctx, OperationOptimize)
+			err := r.execute(ctx, OperationOptimize, TriggerScheduled)
 			r.executeMu.Unlock()
-
-			if err != nil && ctx.Err() == nil {
-				r.logger.Warn("sqlite optimization failed",
-					"event", "sqlite_optimize_failed",
-					"error", err,
-				)
-			}
 
 			interval := r.schedule.OptimizeInterval
 			if err != nil {

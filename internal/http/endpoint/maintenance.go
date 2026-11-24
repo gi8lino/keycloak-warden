@@ -51,11 +51,6 @@ func RunMaintenance(
 			return
 		}
 
-		logger.Info("database maintenance completed",
-			"event", "database_maintenance_completed",
-			"operation", operation,
-		)
-
 		httpresponse.Respond(w, http.StatusOK, operations.Snapshot())
 	}
 }
