@@ -8,6 +8,8 @@ import (
 	"log/slog"
 	"sync"
 	"time"
+
+	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
 )
 
 const (
@@ -98,8 +100,12 @@ type TaskStatus struct {
 	LastError string `json:"lastError,omitempty" yaml:"lastError,omitempty"`
 }
 
-// Status is a safe snapshot of the in-process maintenance scheduler.
+// Status is a safe snapshot of the maintenance worker and its scheduled tasks.
 type Status struct {
+	// State is idle, processing, or stopped.
+	State workerstate.State `json:"state" yaml:"state"`
+	// StartedAt records when the maintenance worker was started.
+	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
 	// Prune reports the last observation cleanup attempt.
 	Prune TaskStatus `json:"prune" yaml:"prune"`
 	// Optimize reports the last SQLite optimization attempt.
@@ -173,12 +179,24 @@ func (r *Runner) Close() {
 	<-r.done
 }
 
-// Snapshot returns the last attempt state without waiting on SQLite.
+// Snapshot returns the worker lifecycle and task history without querying SQLite.
 func (r *Runner) Snapshot() Status {
 	r.statusMu.Lock()
 	defer r.statusMu.Unlock()
 
+	state := workerstate.StateIdle
+	select {
+	case <-r.done:
+		state = workerstate.StateStopped
+	default:
+		if r.pruneStatus.Running || r.optimizeStatus.Running {
+			state = workerstate.StateProcessing
+		}
+	}
+
 	return Status{
+		State:            state,
+		StartedAt:        r.startedAt,
 		Prune:            r.pruneStatus,
 		Optimize:         r.optimizeStatus,
 		PruneInterval:    r.schedule.PruneInterval.String(),

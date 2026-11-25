@@ -10,6 +10,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
 )
 
 func TestMaintenance(t *testing.T) {
@@ -22,7 +24,7 @@ func TestMaintenance(t *testing.T) {
 			assert.Equal(t, http.MethodGet, r.Method)
 			assert.Equal(t, "/warden/maintenance", r.URL.Path)
 			assert.Equal(t, "Bearer secret", r.Header.Get("Authorization"))
-			_, _ = w.Write([]byte(`{"prune":{},"optimize":{},"pruneInterval":"1h0m0s","optimizeInterval":"24h0m0s"}`))
+			_, _ = w.Write([]byte(`{"state":"idle","startedAt":"2026-11-25T08:00:00Z","prune":{},"optimize":{},"pruneInterval":"1h0m0s","optimizeInterval":"24h0m0s"}`))
 		}))
 		defer server.Close()
 
@@ -31,6 +33,8 @@ func TestMaintenance(t *testing.T) {
 
 		status, err := client.MaintenanceStatus(t.Context())
 		require.NoError(t, err)
+		assert.Equal(t, workerstate.StateIdle, status.State)
+		assert.Equal(t, time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC), status.StartedAt)
 		assert.Equal(t, "1h0m0s", status.PruneInterval)
 	})
 

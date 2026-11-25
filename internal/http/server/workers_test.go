@@ -16,6 +16,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/workers"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
+	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
 
 // testWorkerStatus supplies deterministic worker state without opening SQLite.
@@ -35,7 +36,7 @@ func (s testWorkerStatus) Snapshot(context.Context) (workers.Status, error) {
 			StartedAt:         time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
 			PendingDeliveries: 2,
 		},
-		Maintenance: workers.Maintenance{
+		Maintenance: maintenance.Status{
 			State: workerstate.StateIdle,
 		},
 	}, nil
@@ -88,6 +89,7 @@ func TestWorkersRoute(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.Code)
 		assert.Contains(t, response.Body.String(), `"pendingDeliveries":2`)
 		assert.Contains(t, response.Body.String(), `"maintenance"`)
+		assert.Contains(t, response.Body.String(), `"state":"idle"`)
 	})
 
 	t.Run("respects the application route prefix", func(t *testing.T) {

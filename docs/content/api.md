@@ -84,7 +84,7 @@ A `delivered` status confirms acceptance of a notification, not necessarily that
 
 ## Worker status
 
-`GET /workers` returns one read-only snapshot of the two Warden background workers. It is authenticated with the same bearer token as bans and maintenance. The **actions** worker reports its runtime lifecycle (`idle`, `processing`, `stopped`) and persisted delivery counts for the current revision of each decision, plus the next persisted wake-up deadline and the last completed attempt. The **maintenance** worker reports its runtime state and the existing prune/optimize task statuses.
+`GET /workers` returns one read-only snapshot of the two Warden background workers. It is authenticated with the same bearer token as bans and maintenance. The **actions** worker reports its runtime lifecycle (`idle`, `processing`, `stopped`) and persisted delivery counts for the current revision of each decision, plus the next persisted wake-up deadline and the last completed attempt. The **maintenance** worker reports its runtime state and the existing prune/optimize task statuses. The same maintenance snapshot, including `state` and `startedAt`, is also returned by `GET /maintenance`.
 
 The Go client provides `Client.WorkerStatus(ctx)` with typed results. The endpoint uses Warden's application route prefix, not the independent management listener. It does not modify the queue or start additional workers. Worker states and database counts are collected separately, so this is not a transactional snapshot.
 
@@ -122,7 +122,7 @@ Use [CLI](cli.md) for supported manual operations and [Configuration](configurat
 
 Authenticated administrator requests (the same bearer token as `/bans`) can inspect and trigger housekeeping:
 
-- `GET /maintenance` — status of in-process observation pruning and SQLite optimization, including last attempts and results.
+- `GET /maintenance` — worker lifecycle (`state`, `startedAt`) and in-process pruning/optimization task status, including last attempts and results.
 - `POST /maintenance/prune` — remove expired failure observations using Warden's configured retention rule.
 - `POST /maintenance/optimize` — invoke SQLite `PRAGMA optimize` (not a full `VACUUM`).
 

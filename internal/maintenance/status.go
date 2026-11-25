@@ -27,5 +27,8 @@ func (r *Runner) WorkerSnapshot() RuntimeStatus {
 		}
 	}
 
-	return RuntimeStatus{State: state, StartedAt: r.startedAt}
+	return RuntimeStatus{
+		State:     state,
+		StartedAt: r.startedAt,
+	}
 }

@@ -13,7 +13,7 @@ import (
 // Store supplies durable delivery counts and the next wake-up deadline.
 type Store interface {
 	// WorkerStats returns current-revision delivery counts and activity.
-	WorkerStats(context.Context, time.Time) (actions.QueueStats, error)
+	WorkerStats(context.Context, time.Time) (QueueStats, error)
 	// NextDeadline returns the earliest due source expiry or delivery retry.
 	NextDeadline(context.Context) (time.Time, error)
 }
@@ -38,28 +38,12 @@ type Actions struct {
 	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty" yaml:"lastAttemptAt,omitempty"`
 }
 
-// Maintenance is the maintenance worker's runtime state and task history.
-type Maintenance struct {
-	// State is idle, processing, or stopped.
-	State workerstate.State `json:"state" yaml:"state"`
-	// StartedAt is the start of the current maintenance process.
-	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
-	// Prune is the last observation cleanup attempt.
-	Prune maintenance.TaskStatus `json:"prune" yaml:"prune"`
-	// Optimize is the last SQLite optimization attempt.
-	Optimize maintenance.TaskStatus `json:"optimize" yaml:"optimize"`
-	// PruneInterval is the configured cleanup cadence.
-	PruneInterval string `json:"pruneInterval" yaml:"pruneInterval"`
-	// OptimizeInterval is the configured optimization cadence.
-	OptimizeInterval string `json:"optimizeInterval" yaml:"optimizeInterval"`
-}
-
 // Status is the combined observable worker state for administrators.
 type Status struct {
 	// Actions handles expiry, ban deliveries, and retries.
 	Actions Actions `json:"actions" yaml:"actions"`
 	// Maintenance handles periodic observation cleanup and SQLite optimization.
-	Maintenance Maintenance `json:"maintenance" yaml:"maintenance"`
+	Maintenance maintenance.Status `json:"maintenance" yaml:"maintenance"`
 }
 
 // Service collects status from the existing runners and SQLite; it starts no workers.
@@ -73,8 +57,16 @@ type Service struct {
 }
 
 // NewService composes the two runners with their existing durable queue.
-func NewService(actionRunner *actions.Runner, maintenanceRunner *maintenance.Runner, store Store) *Service {
-	return &Service{actions: actionRunner, maintenance: maintenanceRunner, store: store}
+func NewService(
+	actionRunner *actions.Runner,
+	maintenanceRunner *maintenance.Runner,
+	store Store,
+) *Service {
+	return &Service{
+		actions:     actionRunner,
+		maintenance: maintenanceRunner,
+		store:       store,
+	}
 }
 
 // Snapshot returns a point-in-time view; queue counts can change between queries.
@@ -83,13 +75,13 @@ func (s *Service) Snapshot(ctx context.Context) (Status, error) {
 	if err != nil {
 		return Status{}, err
 	}
+
 	deadline, err := s.store.NextDeadline(ctx)
 	if err != nil {
 		return Status{}, err
 	}
 
 	action := s.actions.Snapshot()
-	maintenanceWorker := s.maintenance.WorkerSnapshot()
 	maintenanceStatus := s.maintenance.Snapshot()
 
 	result := Status{
@@ -102,18 +94,13 @@ func (s *Service) Snapshot(ctx context.Context) (Status, error) {
 			ActiveBans:          stats.ActiveBans,
 			LastAttemptAt:       stats.LastAttemptAt,
 		},
-		Maintenance: Maintenance{
-			State:            maintenanceWorker.State,
-			StartedAt:        maintenanceWorker.StartedAt,
-			Prune:            maintenanceStatus.Prune,
-			Optimize:         maintenanceStatus.Optimize,
-			PruneInterval:    maintenanceStatus.PruneInterval,
-			OptimizeInterval: maintenanceStatus.OptimizeInterval,
-		},
+		Maintenance: maintenanceStatus,
 	}
+
 	if !deadline.IsZero() {
 		utc := deadline.UTC()
 		result.Actions.NextDeadline = &utc
 	}
+
 	return result, nil
 }

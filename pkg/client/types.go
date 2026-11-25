@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
 )
 
 // Decision is Warden's desired block or release state, independent of delivery.
@@ -99,6 +100,10 @@ type TaskStatus struct {
 
 // Maintenance is the housekeeping status returned by the application API.
 type Maintenance struct {
+	// State is the worker lifecycle reported by the scheduler.
+	State workerstate.State `json:"state" yaml:"state"`
+	// StartedAt records when the maintenance worker started.
+	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
 	// Prune reports observation cleanup.
 	Prune TaskStatus `json:"prune" yaml:"prune"`
 	// Optimize reports SQLite planner optimization.

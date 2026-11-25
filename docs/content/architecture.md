@@ -59,7 +59,7 @@ The `bans` application package evaluates source extension and effective decision
 
 ## Worker observability
 
-The two existing background goroutines remain independent: the action worker handles ban expiry, destination delivery and retries, while the maintenance worker handles scheduled database pruning and optimization. The authenticated `GET /workers` endpoint aggregates their read-only runtime snapshots with SQLite-backed queue counts and deadlines. It does **not** create a registry or another worker, and it never changes a decision or schedule.
+The two existing background goroutines remain independent: the action worker handles ban expiry, destination delivery and retries, while the maintenance worker handles scheduled database pruning and optimization. Each runner exposes one concurrency-safe `Snapshot()` method. The maintenance snapshot also backs `GET /maintenance`; action queue statistics and deadlines remain in SQLite, not in the runner. The authenticated `GET /workers` endpoint aggregates these read-only snapshots with SQLite-backed queue counts and deadlines. It does **not** create a registry or another worker, and it never changes a decision or schedule.
 
 ```mermaid
 flowchart TD
