@@ -19,10 +19,12 @@ func ValidateTargets(ctx context.Context, store ManagedTargetReader, configured 
 	if err != nil {
 		return err
 	}
+
 	for _, name := range managed {
 		if !slices.Contains(configured, name) {
 			return fmt.Errorf("destination %q has managed decisions; keep it configured until release", name)
 		}
 	}
+
 	return nil
 }

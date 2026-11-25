@@ -29,6 +29,8 @@ type Config struct {
 	Overview endpoint.OverviewQueries
 	// Maintenance exposes authenticated manual maintenance and status.
 	Maintenance endpoint.MaintenanceOperations
+	// Workers reports action and maintenance worker state to administrators.
+	Workers endpoint.WorkerStatus
 	// Logger records request failures and optional access logs.
 	Logger *slog.Logger
 	// Processor validates and persists authenticated security events.

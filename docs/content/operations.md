@@ -24,6 +24,22 @@ remained below the detection threshold, or left a decision unchanged. DEBUG logs
 repeat ordinary successful event processing or delivery starts. HTTP access logs remain
 independently controlled by `--access-log`.
 
+## Worker status
+
+`GET /workers` is available on the **authenticated application listener** when an administrator token is configured; it is not exposed by the management listener. It reports both background workers without adding a worker registry or control operations:
+
+- **Actions:** `idle`, `processing`, or `stopped`; start time; unexpired ban IP count; `pending`, `retrying`, and `exhausted` counts for each destination's **current** decision revision; the next persisted expiry/delivery deadline; and the most recent completed delivery attempt. The last attempt can predate the current process because it is read from SQLite.
+- **Maintenance:** worker state and start time, configured prune/optimize intervals, and each operation's latest attempt, success, and error information. Manual and scheduled work share the existing maintenance runner.
+
+Example:
+
+```sh
+curl -fsS -H "Authorization: Bearer $WARDEN_ADMIN_TOKEN" \
+  http://127.0.0.1:8080/workers
+```
+
+The endpoint is observational only. A healthy worker can coexist with exhausted delivery revisions: `exhausted` means that destination has not acknowledged the current revision, and an exhausted unban may leave a remote block in place. Queue counts and the deadline are snapshots, not an atomic view of concurrent changes.
+
 ## SQLite maintenance
 
 Warden runs SQLite `PRAGMA optimize` when opening its database and periodically afterward. It also prunes stale failed-login observations. The two schedules are independent:

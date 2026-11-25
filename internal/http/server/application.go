@@ -74,6 +74,13 @@ func newApplication(config Config) http.Handler {
 		))
 	}
 
+	if config.AdminToken != "" && config.Workers != nil {
+		mux.Handle("GET /workers", httpkitmiddleware.Chain(
+			endpoint.Workers(config.Workers, config.Logger),
+			middleware.AuthenticateAdmin(config.AdminToken),
+		))
+	}
+
 	if config.AccessLog {
 		middlewares = append(middlewares, httpkitmiddleware.AccessLog(
 			config.Logger,

@@ -74,12 +74,19 @@ Warden also exposes two authenticated, read-only cross-decision endpoints, using
 
 - `GET /decisions/history` lists **committed effective decision changes** (including extensions and releases), newest first. Each entry includes the stable decision ID, canonical IP, revision, desired state, expiry, UTC commit timestamp, cause (`automatic`, `manual`, `release`, `expiry`, or `reconciled`), and the active source snapshot (kind, reason, expiry) evaluated for that revision. Use `page=2`, `through-sequence=<first response throughSequence>` to pin subsequent pages against new inserts, `ip=203.0.113.42` (exact canonical IP), and `state=banned|unbanned` to filter.
 - `GET /deliveries` lists **only the current revision** for each persisted decision/destination, including released decisions whose unban delivery has not been acknowledged. Each row includes desired and acknowledged revision, state, status, attempt count, optional latest provider error and retry time. Use `page=2`, `status=pending|retrying|delivered|exhausted`, and `destination=cloudflare.edge` to filter.
+- `GET /workers` reports the action and maintenance worker lifecycles, current-revision delivery counts, active bans, the next source-expiry/delivery deadline, latest completed delivery attempt, and maintenance task outcomes. It is read-only and requires the same administrator token.
 
 Both responses use `{ "items": [...], "page": 1, "nextPage": 2 }`, with a maximum of 20 entries per page. `nextPage` is omitted for the last page. Filters are single-valued; invalid/duplicate parameters return HTTP 400. Navigation is ordered by revision commit time (and deterministic tie-breakers), with SQL LIMIT/OFFSET; new changes can shift page boundaries between requests. Use the decision detail endpoint for complete delivery attempts.
 
 Decision revisions are written **in the same SQLite transaction as the state change**. The journal starts recording after migration `0008`; earlier decisions are not given invented timestamps or source histories. No event is written when the effective revision is unchanged, even if the reason on a current source changes. Warden does not record a separate authenticated operator identity for administrative changes.
 
 A `delivered` status confirms acceptance of a notification, not necessarily that a remote firewall already reconciled it. In particular, an `exhausted` unban delivery may mean a destination still blocks an IP after Warden released the decision.
+
+## Worker status
+
+`GET /workers` returns one read-only snapshot of the two Warden background workers. It is authenticated with the same bearer token as bans and maintenance. The **actions** worker reports its runtime lifecycle (`idle`, `processing`, `stopped`) and persisted delivery counts for the current revision of each decision, plus the next persisted wake-up deadline and the last completed attempt. The **maintenance** worker reports its runtime state and the existing prune/optimize task statuses.
+
+The Go client provides `Client.WorkerStatus(ctx)` with typed results. The endpoint uses Warden's application route prefix, not the independent management listener. It does not modify the queue or start additional workers. Worker states and database counts are collected separately, so this is not a transactional snapshot.
 
 ## Go administration client
 

@@ -57,6 +57,18 @@ See [API](api.md) for the endpoints and [Operations](operations.md) for maintena
 
 The `bans` application package evaluates source extension and effective decision revisions. SQLite exposes transactional read/write primitives and synchronizes persisted delivery rows without interpreting ban policy.
 
+## Worker observability
+
+The two existing background goroutines remain independent: the action worker handles ban expiry, destination delivery and retries, while the maintenance worker handles scheduled database pruning and optimization. The authenticated `GET /workers` endpoint aggregates their read-only runtime snapshots with SQLite-backed queue counts and deadlines. It does **not** create a registry or another worker, and it never changes a decision or schedule.
+
+```mermaid
+flowchart TD
+    UI["Authenticated GET /workers"] --> S["Worker status service"]
+    S --> A["Actions runner"]
+    S --> M["Maintenance runner"]
+    S --> DB["SQLite queue statistics and deadline"]
+```
+
 ## Delivery retry backoff
 
 The `actions` package calculates the capped exponential retry delay (10 seconds up to 5 minutes) using the destination's last persisted delay. SQLite only loads the previous delay and atomically stores the calculated pause and retry deadline along with the attempt result.

@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync/atomic"
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
@@ -60,6 +61,10 @@ type Runner struct {
 	done chan struct{}
 	// err is written before done closes and read only after completion.
 	err error
+	// startedAt records when this worker was launched.
+	startedAt time.Time
+	// processing marks a cycle currently performing expiry or delivery work.
+	processing atomic.Bool
 }
 
 // Start launches the action worker and returns a runner that must be closed before its queue.
@@ -72,8 +77,9 @@ func Start(
 ) *Runner {
 	ctx, cancel := context.WithCancel(parent)
 	runner := &Runner{
-		cancel: cancel,
-		done:   make(chan struct{}),
+		cancel:    cancel,
+		done:      make(chan struct{}),
+		startedAt: time.Now().UTC(),
 	}
 
 	go runner.runUntilDone(ctx, q, expirer, destinations, logger)
@@ -92,7 +98,7 @@ func (r *Runner) runUntilDone(
 	defer close(r.done)
 	defer r.cancel()
 
-	r.err = run(ctx, q, expirer, destinations, logger)
+	r.err = run(ctx, q, expirer, destinations, logger, &r.processing)
 }
 
 // Done closes when the worker has stopped and its terminal error is available.
@@ -119,9 +125,12 @@ func run(
 	expirer Expirer,
 	destinations map[string]Target,
 	logger *slog.Logger,
+	processing *atomic.Bool,
 ) error {
 	for ctx.Err() == nil {
+		processing.Store(true)
 		deadline, err := processReady(ctx, q, expirer, destinations, logger)
+		processing.Store(false)
 		if ctx.Err() != nil {
 			return nil
 		}
@@ -155,6 +164,7 @@ func processReady(
 	if err != nil {
 		return time.Time{}, err
 	}
+
 	for _, decision := range expired {
 		logger.Info("ban expired",
 			"event", "ban_expired",

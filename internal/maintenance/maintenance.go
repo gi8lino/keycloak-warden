@@ -118,6 +118,8 @@ type Runner struct {
 	done chan struct{}
 	// store executes bounded SQLite maintenance operations.
 	store Store
+	// startedAt records the worker launch timestamp.
+	startedAt time.Time
 	// schedule configures normal recurrence.
 	schedule Schedule
 	// retention determines how long detection observations remain available.
@@ -147,6 +149,7 @@ func Start(
 	runner := &Runner{
 		cancel:    cancel,
 		done:      make(chan struct{}),
+		startedAt: time.Now().UTC(),
 		store:     store,
 		schedule:  schedule,
 		retention: retention,
