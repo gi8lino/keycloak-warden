@@ -8,7 +8,7 @@ RUN install -d -o 0 -g 0 -m 2775 /outfs/config /outfs/data /outfs/tmp
 FROM gcr.io/distroless/static:nonroot
 
 ARG TARGETPLATFORM
-COPY ${TARGETPLATFORM}/keycloak-warden /keycloak-warden
+COPY ${TARGETPLATFORM}/warden /warden
 # Copy the directory entries themselves so their group-writable modes survive.
 COPY --from=prep /outfs/ /
 
@@ -20,5 +20,5 @@ ENV HOME=/tmp \
 WORKDIR /data
 USER 65532:0
 
-ENTRYPOINT ["/keycloak-warden"]
+ENTRYPOINT ["/warden"]
 CMD ["serve"]

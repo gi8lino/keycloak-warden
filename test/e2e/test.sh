@@ -42,7 +42,7 @@ wait_http() {
 }
 
 active_bans() {
-  compose exec -T warden /keycloak-warden \
+  compose exec -T warden /warden \
     list-active \
     --admin-token development-admin-token \
     -o json
@@ -148,7 +148,7 @@ wait_for_webhook banned
 wait_for_slack 1
 printf 'Verified header-authenticated banned-state webhook\n'
 
-compose exec -T warden /keycloak-warden unban "$ip" \
+compose exec -T warden /warden unban "$ip" \
   --admin-token development-admin-token \
   --output json
 

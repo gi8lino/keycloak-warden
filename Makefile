@@ -41,8 +41,6 @@ logo-png: $(SVG_TO_PNG) $(LOGO_SOURCE) ## Generate a PNG version of the logo.
 .PHONY: favicon
 favicon: $(FAVICON_GENERATE) $(FAVICON_SOURCE) ## Generate Web UI and documentation favicons from the logo.
 	$(call run-tool,$(FAVICON_GENERATE),--apple-touch "$(FAVICON_SOURCE)" "docs/assets" $(FAVICON_SIZES))
-	$(call run-tool,$(FAVICON_GENERATE),--apple-touch "$(FAVICON_SOURCE)" "docs/assets" $(FAVICON_SIZES))
-	$(call run-tool,$(FAVICON_GENERATE),--apple-touch "$(FAVICON_SOURCE)" "docs/assets" $(FAVICON_SIZES))
 
 
 ## End-to-end Compose Configuration

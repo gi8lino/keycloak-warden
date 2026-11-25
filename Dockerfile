@@ -23,7 +23,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
   GOOS=$TARGETOS GOARCH=$TARGETARCH \
   go build -trimpath \
   -ldflags="-s -w -X main.Version=${VERSION}" \
-  -o /keycloak-warden ./cmd/warden
+  -o /warden ./cmd/warden
 
 # Make the database and temporary directories writable by non-root and
 # arbitrary OpenShift UIDs belonging to group 0.
@@ -31,7 +31,7 @@ RUN install -d -o 0 -g 0 -m 2775 /outfs/config /outfs/data /outfs/tmp
 
 FROM gcr.io/distroless/static:nonroot
 
-COPY --from=build /keycloak-warden /keycloak-warden
+COPY --from=build /warden /warden
 # Copy the directory entries themselves so their group-writable modes survive.
 COPY --from=build /outfs/ /
 
@@ -43,5 +43,5 @@ ENV HOME=/tmp \
 WORKDIR /data
 USER 65532:0
 
-ENTRYPOINT ["/keycloak-warden"]
+ENTRYPOINT ["/warden"]
 CMD ["serve"]

@@ -58,7 +58,7 @@ To inspect active bans through the authenticated application API:
 
 ```sh
 docker compose -p keycloak-warden-e2e -f test/e2e/compose.yaml exec warden \
-    /keycloak-warden list-active --admin-token development-admin-token -o json
+    /warden list-active --admin-token development-admin-token -o json
 ```
 
 ## What `make e2e-test` verifies

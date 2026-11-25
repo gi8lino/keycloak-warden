@@ -187,14 +187,14 @@ Create a manual ban:
 
 ```sh
 kubectl -n keycloak exec deployment/keycloak-warden -- \
-  /keycloak-warden ban 203.0.113.42 --duration 1h --reason "Investigation"
+  /warden ban 203.0.113.42 --duration 1h --reason "Investigation"
 ```
 
 Remove a ban:
 
 ```sh
 kubectl -n keycloak exec deployment/keycloak-warden -- \
-  /keycloak-warden unban 203.0.113.42
+  /warden unban 203.0.113.42
 ```
 
 Unbanning clears both manual and automatic bans for that IP address.
