@@ -1,5 +1,4 @@
-// Package output encodes command results in JSON or YAML.
-// Package output encodes command results in JSON or YAML.
+// Package output formats command results for interactive and structured output.
 package output
 
 import (

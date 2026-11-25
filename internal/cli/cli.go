@@ -26,14 +26,22 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 	root.HideEnvs()
 	root.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
 
-	format := root.String("output", output.FormatYAML, "Output format").
+	format := root.String("output", "", "Detailed output format (default: concise ban/unban, YAML for queries)").
 		Section("Output").
+		OneOfGroup("output-mode").
+		HideDefault().
 		Choices(output.FormatText, output.FormatJSON, output.FormatYAML).
 		Short("o").
 		Value()
 
+	quiet := root.Bool("quiet", false, "Suppress successful command output").
+		Section("Output").
+		Short("q").
+		OneOfGroup("output-mode").
+		Value()
+
 	// Bind the flag value; the encoder reads it when a command runs, after parsing.
-	encode := output.New(format, stdout)
+	encode := output.NewCLI(format, quiet, stdout)
 
 	serverFlags := appflags.RegisterServer(root)
 

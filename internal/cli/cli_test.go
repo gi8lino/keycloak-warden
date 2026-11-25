@@ -429,11 +429,7 @@ func TestRun(t *testing.T) {
 		assert.Equal(t, []string{"203.0.113.10", "203.0.113.20"}, received)
 		receivedMu.Unlock()
 
-		var batch output.Batch
-		require.NoError(t, yaml.Load(stdout.Bytes(), &batch))
-		assert.Equal(t, output.OperationBan, batch.Operation)
-		assert.Equal(t, 2, batch.Succeeded)
-		assert.Zero(t, batch.Failed)
+		assert.Equal(t, "Banned 203.0.113.10\nBanned 203.0.113.20\n", stdout.String())
 	})
 
 	t.Run("unban canonicalizes and deduplicates addresses before requesting", func(t *testing.T) {
@@ -463,11 +459,7 @@ func TestRun(t *testing.T) {
 
 		require.NoError(t, err, stderr.String())
 		assert.EqualValues(t, 1, deletes.Load())
-		var batch output.Batch
-		require.NoError(t, yaml.Load(stdout.Bytes(), &batch))
-		assert.Equal(t, output.OperationUnban, batch.Operation)
-		assert.Equal(t, 1, batch.Succeeded)
-		assert.Zero(t, batch.Failed)
+		assert.Equal(t, "Unbanned 203.0.113.10\n", stdout.String())
 	})
 
 	t.Run("ban rejects blank reason during flag parsing", func(t *testing.T) {
@@ -972,5 +964,47 @@ func TestAdminClientFlags(t *testing.T) {
 
 		require.True(t, errors.Is(err, context.DeadlineExceeded), "expected a maintenance timeout, got: %v", err)
 		assert.Less(t, time.Since(start), 750*time.Millisecond)
+	})
+}
+
+func TestQuietOutput(t *testing.T) {
+	t.Parallel()
+
+	t.Run("quiet and output are mutually exclusive", func(t *testing.T) {
+		t.Parallel()
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"ban", "203.0.113.10", "--duration=1h", "--reason=test", "--output=json", "-q"}, "test", &stdout, &stderr)
+		require.Error(t, err)
+		assert.Contains(t, stderr.String(), "output-mode")
+		assert.Empty(t, stdout.String())
+	})
+
+	t.Run("quiet suppresses successful output", func(t *testing.T) {
+		t.Parallel()
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			_, _ = w.Write([]byte(`{"decision":{"id":"one"}}`))
+		}))
+		defer server.Close()
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"ban", "203.0.113.10", "--duration=1h", "--reason=test", "-q", "--application-url", server.URL, "--admin-token=test"}, "test", &stdout, &stderr)
+		require.NoError(t, err)
+		assert.EqualValues(t, 1, requests.Load())
+		assert.Empty(t, stdout.String())
+		assert.Empty(t, stderr.String())
+	})
+
+	t.Run("quiet retains errors and failure result", func(t *testing.T) {
+		t.Parallel()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
+		defer server.Close()
+		var stdout, stderr bytes.Buffer
+		err := Run(t.Context(), []string{"ban", "203.0.113.10", "--duration=1h", "--reason=test", "--quiet", "--application-url", server.URL, "--admin-token=test"}, "test", &stdout, &stderr)
+		require.Error(t, err)
+		assert.Empty(t, stdout.String())
+		assert.Contains(t, stderr.String(), "503")
 	})
 }
