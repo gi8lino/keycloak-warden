@@ -35,10 +35,8 @@ spec:
           imagePullPolicy: IfNotPresent
           args:
             - serve
-            - --config=/config/warden.yaml
-            - --database=/data/warden.db
-            - --listen-address=:8080
-            - --management-listen-address=:8081
+            # - --config=/custom/path/warden.yaml # defaults to /config/warden.yaml
+            # - --database=/custom/path/warden.db # defaults to /data/warden.db
             - --metrics
             - --access-log
           securityContext:

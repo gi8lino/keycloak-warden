@@ -38,6 +38,7 @@ COPY --from=build /outfs/ /
 ENV HOME=/tmp \
   WARDEN__LISTEN_ADDRESS=:8080 \
   WARDEN__MANAGEMENT_LISTEN_ADDRESS=:8081 \
+  WARDEN__CONFIG=/config/warden.yaml \
   WARDEN__DATABASE=/data/warden.db
 
 WORKDIR /data
