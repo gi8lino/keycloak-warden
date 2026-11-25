@@ -33,12 +33,6 @@ spec:
           # Pin a released image that includes the serve flags below.
           image: ghcr.io/gi8lino/keycloak-warden:latest
           imagePullPolicy: IfNotPresent
-          args:
-            - serve
-            # - --config=/custom/path/warden.yaml # defaults to /config/warden.yaml
-            # - --database=/custom/path/warden.db # defaults to /data/warden.db
-            - --metrics
-            - --access-log
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
@@ -49,6 +43,10 @@ spec:
             runAsUser: 65532
             runAsGroup: 0
           env:
+            - name: WARDEN__METRICS
+              value: "true"
+            - name: WARDEN__ACCESS_LOG
+              value: "true"
             - name: WARDEN__SNITCH_SECRET
               valueFrom:
                 secretKeyRef:
