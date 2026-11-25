@@ -40,8 +40,7 @@ func recordAttempt(
 	d := job.Decision
 	var message *string
 	if deliveryErr != nil {
-		diagnostic := deliveryErr.Error()
-		message = &diagnostic
+		message = new(deliveryErr.Error())
 	}
 	if _, err := tx.ExecContext(ctx, `
 INSERT INTO delivery_attempts (ip, revision, destination, number, completed_at, error)
@@ -145,20 +144,24 @@ ORDER BY h.revision DESC, h.destination, a.number
 			d.NextAttemptAt = optionalTime(retry)
 			history = append(history, d)
 		}
+
 		if number.Valid {
 			attempt := decisions.DeliveryAttempt{
 				Number:  number.Int64,
 				At:      time.UnixMilli(completed.Int64).UTC(),
 				Outcome: deliverystate.OutcomeSucceeded,
 			}
+
 			if message.Valid {
 				attempt.Outcome = deliverystate.OutcomeFailed
 				attempt.Error = message.String
 			}
+
 			last := &history[len(history)-1]
 			if len(last.Attempts) == 0 && number.Int64 > 1 {
 				last.AttemptsTruncated = true
 			}
+
 			last.Attempts = append(last.Attempts, attempt)
 		}
 	}
@@ -180,6 +183,5 @@ func optionalTime(value sql.NullInt64) *time.Time {
 	if !value.Valid {
 		return nil
 	}
-	t := time.UnixMilli(value.Int64).UTC()
-	return &t
+	return new(time.UnixMilli(value.Int64).UTC())
 }

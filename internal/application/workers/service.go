@@ -79,8 +79,8 @@ func (s *Service) Snapshot(ctx context.Context) (Status, error) {
 	}
 
 	if !deadline.IsZero() {
-		utc := deadline.UTC()
-		result.Actions.NextDeadline = &utc
+		result.Actions.NextDeadline = new(deadline.UTC())
 	}
+
 	return result, nil
 }

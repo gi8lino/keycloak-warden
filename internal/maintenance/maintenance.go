@@ -245,8 +245,7 @@ func (r *Runner) execute(ctx context.Context, operation Operation, trigger Trigg
 	r.statusMu.Lock()
 	status.Running = false
 	if err == nil {
-		completed := time.Now().UTC()
-		status.LastSuccessAt = &completed
+		status.LastSuccessAt = new(time.Now().UTC())
 		status.LastError = ""
 	} else {
 		status.LastError = err.Error()

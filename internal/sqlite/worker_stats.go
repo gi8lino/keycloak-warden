@@ -37,8 +37,7 @@ SELECT MAX(completed_at) FROM delivery_attempts
 		return workers.QueueStats{}, err
 	}
 	if last.Valid {
-		completed := time.UnixMilli(last.Int64).UTC()
-		stats.LastAttemptAt = &completed
+		stats.LastAttemptAt = new(time.UnixMilli(last.Int64).UTC())
 	}
 
 	return stats, nil
