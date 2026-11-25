@@ -10,13 +10,13 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
-
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/workers"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
+	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
 )
 
 // testWorkerStatus supplies deterministic worker state without opening SQLite.
@@ -32,9 +32,13 @@ func (s testWorkerStatus) Snapshot(context.Context) (workers.Status, error) {
 	}
 	return workers.Status{
 		Actions: workers.Actions{
-			State:             workerstate.StateIdle,
-			StartedAt:         time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
-			PendingDeliveries: 2,
+			RuntimeStatus: actions.RuntimeStatus{
+				State:     workerstate.StateIdle,
+				StartedAt: time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
+			},
+			QueueStats: workers.QueueStats{
+				PendingDeliveries: 2,
+			},
 		},
 		Maintenance: maintenance.Status{
 			State: workerstate.StateIdle,

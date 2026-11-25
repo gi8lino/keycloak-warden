@@ -26,5 +26,8 @@ func (r *Runner) Snapshot() RuntimeStatus {
 		}
 	}
 
-	return RuntimeStatus{State: state, StartedAt: r.startedAt}
+	return RuntimeStatus{
+		State:     state,
+		StartedAt: r.startedAt,
+	}
 }

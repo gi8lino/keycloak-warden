@@ -7,7 +7,6 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
 )
 
 // Store supplies durable delivery counts and the next wake-up deadline.
@@ -20,22 +19,12 @@ type Store interface {
 
 // Actions is the action worker's runtime state and durable queue summary.
 type Actions struct {
-	// State is idle, processing, or stopped.
-	State workerstate.State `json:"state" yaml:"state"`
-	// StartedAt is the start of the current worker process.
-	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
-	// PendingDeliveries counts current pending destination revisions.
-	PendingDeliveries int `json:"pendingDeliveries" yaml:"pendingDeliveries"`
-	// RetryingDeliveries counts current retrying destination revisions.
-	RetryingDeliveries int `json:"retryingDeliveries" yaml:"retryingDeliveries"`
-	// ExhaustedDeliveries counts current exhausted destination revisions.
-	ExhaustedDeliveries int `json:"exhaustedDeliveries" yaml:"exhaustedDeliveries"`
-	// ActiveBans counts addresses with at least one unexpired ban source.
-	ActiveBans int `json:"activeBans" yaml:"activeBans"`
+	// RuntimeStatus supplies the in-process lifecycle state.
+	actions.RuntimeStatus `yaml:",inline"`
+	// QueueStats supplies the persisted delivery and ban statistics.
+	QueueStats `yaml:",inline"`
 	// NextDeadline is the earliest pending delivery or source expiry.
 	NextDeadline *time.Time `json:"nextDeadline,omitempty" yaml:"nextDeadline,omitempty"`
-	// LastAttemptAt is the latest completed delivery attempt, including previous runs.
-	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty" yaml:"lastAttemptAt,omitempty"`
 }
 
 // Status is the combined observable worker state for administrators.
@@ -81,26 +70,17 @@ func (s *Service) Snapshot(ctx context.Context) (Status, error) {
 		return Status{}, err
 	}
 
-	action := s.actions.Snapshot()
-	maintenanceStatus := s.maintenance.Snapshot()
-
 	result := Status{
 		Actions: Actions{
-			State:               action.State,
-			StartedAt:           action.StartedAt,
-			PendingDeliveries:   stats.PendingDeliveries,
-			RetryingDeliveries:  stats.RetryingDeliveries,
-			ExhaustedDeliveries: stats.ExhaustedDeliveries,
-			ActiveBans:          stats.ActiveBans,
-			LastAttemptAt:       stats.LastAttemptAt,
+			RuntimeStatus: s.actions.Snapshot(),
+			QueueStats:    stats,
 		},
-		Maintenance: maintenanceStatus,
+		Maintenance: s.maintenance.Snapshot(),
 	}
 
 	if !deadline.IsZero() {
 		utc := deadline.UTC()
 		result.Actions.NextDeadline = &utc
 	}
-
 	return result, nil
 }

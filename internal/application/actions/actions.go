@@ -131,6 +131,7 @@ func run(
 		processing.Store(true)
 		deadline, err := processReady(ctx, q, expirer, destinations, logger)
 		processing.Store(false)
+
 		if ctx.Err() != nil {
 			return nil
 		}

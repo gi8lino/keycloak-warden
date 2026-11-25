@@ -2,6 +2,7 @@ package workers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -105,6 +106,43 @@ func TestSnapshot(t *testing.T) {
 		assert.Contains(t, []workerstate.State{workerstate.StateIdle, workerstate.StateProcessing}, status.Maintenance.State)
 		assert.False(t, status.Maintenance.StartedAt.IsZero())
 		assert.Equal(t, "1h0m0s", status.Maintenance.PruneInterval)
+	})
+
+	t.Run("flattens embedded action fields in JSON", func(t *testing.T) {
+		t.Parallel()
+
+		startedAt := time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC)
+		lastAttemptAt := startedAt.Add(5 * time.Minute)
+		nextDeadline := startedAt.Add(time.Hour)
+
+		status := Actions{
+			RuntimeStatus: actions.RuntimeStatus{
+				State:     workerstate.StateIdle,
+				StartedAt: startedAt,
+			},
+			QueueStats: QueueStats{
+				PendingDeliveries:   2,
+				RetryingDeliveries:  3,
+				ExhaustedDeliveries: 1,
+				ActiveBans:          4,
+				LastAttemptAt:       &lastAttemptAt,
+			},
+			NextDeadline: &nextDeadline,
+		}
+
+		encoded, err := json.Marshal(status)
+
+		require.NoError(t, err)
+		assert.JSONEq(t, `{
+			"state": "idle",
+			"startedAt": "2026-11-25T08:00:00Z",
+			"pendingDeliveries": 2,
+			"retryingDeliveries": 3,
+			"exhaustedDeliveries": 1,
+			"activeBans": 4,
+			"lastAttemptAt": "2026-11-25T08:05:00Z",
+			"nextDeadline": "2026-11-25T09:00:00Z"
+		}`, string(encoded))
 	})
 
 	t.Run("fails without inventing a partial worker snapshot", func(t *testing.T) {
