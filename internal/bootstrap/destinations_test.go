@@ -470,7 +470,10 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 		t.Parallel()
 
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {URL: "https://example.org", Headers: map[string]string{"X-Key": "abc\tdef"}},
+			"edge": {
+				URL:     "https://example.org",
+				Headers: map[string]string{"X-Key": "abc\tdef"},
+			},
 		}})
 		require.NoError(t, err)
 	})
@@ -478,7 +481,10 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 	t.Run("validates resolved header value", func(t *testing.T) {
 		t.Setenv("WARDEN_TEST_BAD_HEADER_VALUE", "oops\r\nInjected: yes")
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {URL: "https://example.org", Headers: map[string]string{"X-Key": "env:WARDEN_TEST_BAD_HEADER_VALUE"}},
+			"edge": {
+				URL:     "https://example.org",
+				Headers: map[string]string{"X-Key": "env:WARDEN_TEST_BAD_HEADER_VALUE"},
+			},
 		}})
 		require.ErrorContains(t, err, "invalid HTTP header value")
 	})
@@ -487,7 +493,10 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 		t.Parallel()
 
 		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {URL: "https://example.org", Headers: map[string]string{"Content-Type": "text/plain"}},
+			"edge": {
+				URL:     "https://example.org",
+				Headers: map[string]string{"Content-Type": "text/plain"},
+			},
 		}})
 		require.ErrorContains(t, err, "Content-Type is reserved")
 	})
@@ -497,7 +506,10 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 func assertInvalidHeaderValue(t *testing.T, value string) {
 	t.Helper()
 	_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-		"edge": {URL: "https://example.org", Headers: map[string]string{"X-API-Key": value}},
+		"edge": {
+			URL:     "https://example.org",
+			Headers: map[string]string{"X-API-Key": value},
+		},
 	}})
 	require.ErrorContains(t, err, "invalid HTTP header value")
 }
@@ -516,8 +528,13 @@ func TestDeterministicDestinations(t *testing.T) {
 		t.Parallel()
 
 		targets := config.Targets{Webhook: map[string]config.WebhookTarget{
-			"zeta":  {URL: "bad://example.org"},
-			"alpha": {URL: "https://example.org", Headers: map[string]string{"X-Key": "env:WARDEN_TEST_UNKNOWN_ALPHA_201"}},
+			"zeta": {
+				URL: "bad://example.org",
+			},
+			"alpha": {
+				URL:     "https://example.org",
+				Headers: map[string]string{"X-Key": "env:WARDEN_TEST_UNKNOWN_ALPHA_201"},
+			},
 		}}
 		_, _, err := Destinations(targets)
 		require.ErrorContains(t, err, `target "webhook.alpha"`)
@@ -527,10 +544,13 @@ func TestDeterministicDestinations(t *testing.T) {
 		t.Parallel()
 
 		targets := config.Targets{Webhook: map[string]config.WebhookTarget{
-			"ops": {URL: "https://example.org", Headers: map[string]string{
-				"Z-Key": "env:WARDEN_TEST_UNKNOWN_Z_202",
-				"A-Key": "env:WARDEN_TEST_UNKNOWN_A_203",
-			}},
+			"ops": {
+				URL: "https://example.org",
+				Headers: map[string]string{
+					"Z-Key": "env:WARDEN_TEST_UNKNOWN_Z_202",
+					"A-Key": "env:WARDEN_TEST_UNKNOWN_A_203",
+				},
+			},
 		}}
 		_, _, err := Destinations(targets)
 		require.ErrorContains(t, err, "headers A-Key:")

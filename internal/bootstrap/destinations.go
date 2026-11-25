@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/http/httpguts"
+
 	"github.com/containeroo/notifykit/response"
 	"github.com/containeroo/notifykit/templates"
 	"github.com/containeroo/resolver"
@@ -196,7 +198,8 @@ func resolveWebhookHeaders(
 		if err != nil {
 			return nil, fmt.Errorf("headers %s: %w", name, err)
 		}
-		if !validHeaderValue(value) {
+
+		if !httpguts.ValidHeaderFieldValue(value) {
 			return nil, fmt.Errorf("headers %q: invalid HTTP header value", name)
 		}
 
@@ -204,22 +207,6 @@ func resolveWebhookHeaders(
 	}
 
 	return headers, nil
-}
-
-// validHeaderValue rejects control characters, including CR and LF injection.
-func validHeaderValue(value string) bool {
-	for i := range len(value) {
-		if isForbiddenHeaderControl(value[i]) {
-			return false
-		}
-	}
-	return true
-}
-
-// isForbiddenHeaderControl identifies control bytes disallowed in HTTP field values.
-func isForbiddenHeaderControl(c byte) bool {
-	const deleteByte = 0x7f
-	return (c < ' ' && c != '\t') || c == deleteByte
 }
 
 // parseWebhookBodyTemplate resolves and parses the configured body template.
