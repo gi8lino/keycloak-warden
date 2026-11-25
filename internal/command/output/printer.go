@@ -5,8 +5,8 @@ import (
 	"io"
 )
 
-// NewCLI selects concise mutation results, explicit structured output, or quiet mode.
-func NewCLI(format *string, quiet *bool, writer io.Writer) Encoder {
+// NewPrinter selects concise mutation results, explicit structured output, or quiet mode.
+func NewPrinter(format *string, quiet *bool, writer io.Writer) Encoder {
 	return func(value any) error {
 		if *quiet {
 			return nil

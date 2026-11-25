@@ -13,9 +13,9 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/command/inspect"
 	"github.com/gi8lino/keycloak-warden/internal/command/listactive"
 	"github.com/gi8lino/keycloak-warden/internal/command/maintenance"
+	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/internal/command/serve"
 	"github.com/gi8lino/keycloak-warden/internal/command/unban"
-	"github.com/gi8lino/keycloak-warden/internal/output"
 )
 
 // Run parses and executes one Warden command.
@@ -41,7 +41,7 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 		Value()
 
 	// Bind the flag value; the encoder reads it when a command runs, after parsing.
-	encode := output.NewCLI(format, quiet, stdout)
+	encode := output.NewPrinter(format, quiet, stdout)
 
 	serverFlags := appflags.RegisterServer(root)
 

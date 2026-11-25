@@ -17,7 +17,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/internal/command/output"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"

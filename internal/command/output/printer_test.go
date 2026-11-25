@@ -8,14 +8,14 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestCLI(t *testing.T) {
+func TestPrinter(t *testing.T) {
 	t.Parallel()
 
 	t.Run("mixed batch prints only successes", func(t *testing.T) {
 		t.Parallel()
 		var stdout bytes.Buffer
 		format, quiet := "", false
-		err := NewCLI(&format, &quiet, &stdout)(Batch{
+		err := NewPrinter(&format, &quiet, &stdout)(Batch{
 			Operation: OperationBan,
 			Results:   []Item{{IPAddress: "203.0.113.1", Success: true}, {IPAddress: "203.0.113.2", Error: "failed"}},
 		})
@@ -26,7 +26,7 @@ func TestCLI(t *testing.T) {
 	t.Run("confirmation write failure is returned", func(t *testing.T) {
 		t.Parallel()
 		format, quiet := "", false
-		err := NewCLI(&format, &quiet, failingWriter{})(Batch{
+		err := NewPrinter(&format, &quiet, failingWriter{})(Batch{
 			Operation: OperationBan,
 			Results:   []Item{{IPAddress: "203.0.113.1", Success: true}},
 		})
@@ -37,7 +37,7 @@ func TestCLI(t *testing.T) {
 		t.Parallel()
 		var stdout bytes.Buffer
 		format, quiet := "", false
-		require.NoError(t, NewCLI(&format, &quiet, &stdout)(sampleResult{IP: "203.0.113.1"}))
+		require.NoError(t, NewPrinter(&format, &quiet, &stdout)(sampleResult{IP: "203.0.113.1"}))
 		assert.Equal(t, "ipAddress: 203.0.113.1\n", stdout.String())
 	})
 }

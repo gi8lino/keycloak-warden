@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 

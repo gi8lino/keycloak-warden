@@ -7,7 +7,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/command/adminopts"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
-	"github.com/gi8lino/keycloak-warden/internal/output"
+	"github.com/gi8lino/keycloak-warden/internal/command/output"
 )
 
 // Register adds authenticated remote active-ban listing and its flags.
