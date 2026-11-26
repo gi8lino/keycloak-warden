@@ -83,7 +83,7 @@ func TestSnapshot(t *testing.T) {
 			},
 			deadline: deadline,
 		}
-		actionsRunner := actions.Start(ctx, queue, fakeExpirer{}, nil, logger)
+		actionsRunner := actions.Start(ctx, queue, fakeExpirer{}, nil, actions.DefaultRetryPolicy(), logger)
 		defer func() { require.NoError(t, actionsRunner.Close()) }()
 		maintenanceRunner := maintenance.Start(ctx, fakeMaintenanceStore{}, maintenance.Schedule{
 			PruneInterval:    time.Hour,
@@ -153,7 +153,7 @@ func TestSnapshot(t *testing.T) {
 
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		queue := fakeQueue{err: errors.New("storage error")}
-		actionsRunner := actions.Start(ctx, queue, fakeExpirer{}, nil, logger)
+		actionsRunner := actions.Start(ctx, queue, fakeExpirer{}, nil, actions.DefaultRetryPolicy(), logger)
 		defer func() { require.NoError(t, actionsRunner.Close()) }()
 		maintenanceRunner := maintenance.Start(ctx, fakeMaintenanceStore{}, maintenance.Schedule{
 			PruneInterval:    time.Hour,

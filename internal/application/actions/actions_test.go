@@ -43,7 +43,7 @@ func TestStart(t *testing.T) {
 
 		expirer := &blockingExpirer{started: make(chan struct{}), stopped: make(chan struct{})}
 		q := &scriptedQueue{}
-		runner := Start(t.Context(), q, expirer, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		runner := Start(t.Context(), q, expirer, nil, DefaultRetryPolicy(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 		defer func() { require.NoError(t, runner.Close()) }()
 		select {
 		case <-expirer.started:
@@ -82,7 +82,7 @@ func TestRunnerWait(t *testing.T) {
 
 		expirer := &blockingExpirer{started: make(chan struct{}), stopped: make(chan struct{})}
 		q := &scriptedQueue{}
-		runner := Start(t.Context(), q, expirer, nil, slog.New(slog.NewTextHandler(io.Discard, nil)))
+		runner := Start(t.Context(), q, expirer, nil, DefaultRetryPolicy(), slog.New(slog.NewTextHandler(io.Discard, nil)))
 		defer func() { require.NoError(t, runner.Close()) }()
 		<-expirer.started
 		waitResult := make(chan error, 1)
@@ -125,6 +125,8 @@ type scriptedQueue struct {
 	finished []Job
 	// limits records the attempt budgets passed by the worker.
 	limits []int
+	// delays records the retry pauses supplied by the application.
+	delays []time.Duration
 }
 
 // Changes returns the test change notification channel.
@@ -163,7 +165,8 @@ func (q *scriptedQueue) Next(context.Context, time.Time) (*Job, error) {
 }
 
 // Finish records successfully dispatched work.
-func (q *scriptedQueue) Finish(_ context.Context, job Job, deliveryErr error, limit int, _ time.Time, _ time.Duration) error {
+func (q *scriptedQueue) Finish(_ context.Context, job Job, deliveryErr error, limit int, _ time.Time, delay time.Duration) error {
+	q.delays = append(q.delays, delay)
 	q.limits = append(q.limits, limit)
 	if deliveryErr == nil {
 		q.finished = append(q.finished, job)
@@ -195,7 +198,7 @@ func TestDrainReady(t *testing.T) {
 		}}
 		provider := &acceptProvider{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, logger, time.Now().Add(time.Second)))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, DefaultRetryPolicy(), logger, time.Now().Add(time.Second)))
 
 		assert.Equal(t, 2, provider.applied)
 		assert.Len(t, q.finished, 2)
@@ -215,7 +218,7 @@ func TestDrainReady(t *testing.T) {
 			"cloudflare.edge":  {Provider: &acceptProvider{}, MaxAttempts: DefaultMaxAttempts},
 		}
 
-		err := drainReady(t.Context(), q, destinations, slog.Default(), time.Now().Add(time.Second))
+		err := drainReady(t.Context(), q, destinations, DefaultRetryPolicy(), slog.Default(), time.Now().Add(time.Second))
 
 		require.NoError(t, err)
 		assert.Equal(t, []int{5, DefaultMaxAttempts}, q.limits)
@@ -226,7 +229,7 @@ func TestDrainReady(t *testing.T) {
 
 		q := &scriptedQueue{jobs: []*Job{{Decision: decisions.Decision{ID: "one"}, Destination: "target"}}}
 		provider := &acceptProvider{}
-		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, slog.Default(), time.Now().Add(-time.Second)))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, DefaultRetryPolicy(), slog.Default(), time.Now().Add(-time.Second)))
 
 		assert.Zero(t, provider.applied)
 		assert.Empty(t, q.finished)
@@ -238,7 +241,7 @@ func TestWorkerWakeups(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		q := &scriptedQueue{changes: make(chan struct{}, 1), deadlines: []time.Time{{}, time.Now().Add(11 * time.Minute)}}
-		r := Start(t.Context(), q, &scriptedExpirer{}, nil, slog.Default())
+		r := Start(t.Context(), q, &scriptedExpirer{}, nil, DefaultRetryPolicy(), slog.Default())
 		defer func() { require.NoError(t, r.Close()) }()
 		synctest.Wait()
 		require.Equal(t, 1, int(q.cycles.Load()))
@@ -307,7 +310,7 @@ func TestDispatchLogging(t *testing.T) {
 		queue := &scriptedQueue{}
 		provider := &acceptProvider{}
 
-		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, logger, job))
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, DefaultRetryPolicy(), logger, job))
 		assert.Equal(t, 1, provider.applied)
 		assert.Contains(t, logs.String(), `"event":"delivery_completed"`)
 		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "successful delivery should emit one log entry")
@@ -322,7 +325,7 @@ func TestDispatchLogging(t *testing.T) {
 		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		queue := &scriptedQueue{}
 
-		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: failingProvider{}, MaxAttempts: DefaultMaxAttempts}}, logger, job))
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: failingProvider{}, MaxAttempts: DefaultMaxAttempts}}, DefaultRetryPolicy(), logger, job))
 		assert.Contains(t, logs.String(), `"event":"delivery_failed"`)
 		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "failed delivery should emit one log entry")
 		assert.Contains(t, logs.String(), `"level":"WARN"`)
@@ -336,7 +339,7 @@ func TestDispatchLogging(t *testing.T) {
 		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		queue := &scriptedQueue{}
 
-		err := dispatch(t.Context(), queue, nil, logger, job)
+		err := dispatch(t.Context(), queue, nil, DefaultRetryPolicy(), logger, job)
 
 		require.ErrorContains(t, err, "destination missing from configuration")
 		assert.Empty(t, queue.limits)
@@ -356,7 +359,7 @@ func TestExpiryLogging(t *testing.T) {
 		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: decisionstate.StateUnbanned,
 	}}}
 
-	_, err := processReady(t.Context(), q, expirer, nil, logger)
+	_, err := processReady(t.Context(), q, expirer, nil, DefaultRetryPolicy(), logger)
 	require.NoError(t, err)
 	assert.Contains(t, logs.String(), `"event":"ban_expired"`)
 	assert.Contains(t, logs.String(), `"decision_id":"expired-id"`)
@@ -364,7 +367,7 @@ func TestExpiryLogging(t *testing.T) {
 	assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
 
 	logs.Reset()
-	_, err = processReady(t.Context(), q, expirer, nil, logger)
+	_, err = processReady(t.Context(), q, expirer, nil, DefaultRetryPolicy(), logger)
 	require.NoError(t, err)
 	assert.Empty(t, logs.String(), "expiry notification must not be emitted again")
 }
@@ -380,9 +383,51 @@ func TestProcessReadyUsesExpirer(t *testing.T) {
 			ID: "release", State: decisionstate.StateUnbanned,
 		}}}
 
-		_, err := processReady(t.Context(), q, expirer, nil, slog.Default())
+		_, err := processReady(t.Context(), q, expirer, nil, DefaultRetryPolicy(), slog.Default())
 
 		require.NoError(t, err)
 		assert.Empty(t, expirer.expired)
+	})
+}
+
+func TestStartUsesRetryPolicy(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		queue := &scriptedQueue{
+			jobs: []*Job{
+				{
+					Decision:    decisions.Decision{ID: "one"},
+					Destination: "target",
+				},
+				{
+					Decision:      decisions.Decision{ID: "two"},
+					Destination:   "target",
+					PreviousDelay: 3 * time.Second,
+				},
+				{
+					Decision:      decisions.Decision{ID: "three"},
+					Destination:   "target",
+					PreviousDelay: 6 * time.Second,
+				},
+			},
+		}
+		targets := map[string]Target{
+			"target": {
+				Provider:    failingProvider{},
+				MaxAttempts: DefaultMaxAttempts,
+			},
+		}
+		policy := RetryPolicy{
+			InitialDelay: 3 * time.Second,
+			MaxDelay:     10 * time.Second,
+		}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		runner := Start(t.Context(), queue, &scriptedExpirer{}, targets, policy, logger)
+		synctest.Wait()
+		require.NoError(t, runner.Close())
+
+		assert.Equal(t, []time.Duration{3 * time.Second, 6 * time.Second, 10 * time.Second}, queue.delays)
+		assert.Equal(t, []int{DefaultMaxAttempts, DefaultMaxAttempts, DefaultMaxAttempts}, queue.limits)
 	})
 }

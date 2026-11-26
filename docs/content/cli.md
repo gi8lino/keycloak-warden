@@ -23,6 +23,8 @@ warden serve --config=warden.yaml --database=/data/warden.db
 
 Use `warden serve --observe-only` (or `WARDEN__OBSERVE_ONLY=true`) to record hypothetical bans without invoking providers. This mode defaults to off. See [Configuration](/configuration/) for startup safety requirements.
 
+Use `--retry-initial-delay=10s` and `--retry-max-delay=5m` to configure global destination backoff (defaults shown). See [Configuration](configuration.md) for validation and restart behavior.
+
 A shared Snitch secret is required; set `WARDEN__SNITCH_SECRET` securely or pass `--snitch-secret`.
 
 ## Ban or unban an address

@@ -224,6 +224,24 @@ func TestServeFlagValidation(t *testing.T) {
 		require.NoError(t, parse("--snitch-secret", "secret", "--prune-interval=15m", "--optimize-interval=6h"))
 	})
 
+	t.Run("accepts retry delay overrides", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, parse("--snitch-secret", "secret", "--retry-initial-delay=2s", "--retry-max-delay=30s"))
+	})
+
+	t.Run("rejects zero initial retry delay", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--retry-initial-delay=0s"), "retry-initial-delay")
+	})
+
+	t.Run("rejects negative maximum retry delay", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--retry-max-delay=-1s"), "retry-max-delay")
+	})
+
 	t.Run("rejects zero prune interval", func(t *testing.T) {
 		t.Parallel()
 
@@ -351,4 +369,52 @@ func TestObserveOnlyEnvironment(t *testing.T) {
 
 	_, err = runServeCommand(t, observeOnlyConfig, "--observe-only=false")
 	require.ErrorContains(t, err, "at least one webhook or cloudflare target is required")
+}
+
+func TestRetryDelayFlags(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses defaults", func(t *testing.T) {
+		t.Parallel()
+
+		line := startupLog(t)
+		assert.Contains(t, line, `"retry_initial_delay":"10s"`)
+		assert.Contains(t, line, `"retry_max_delay":"5m0s"`)
+	})
+
+	t.Run("uses explicit overrides", func(t *testing.T) {
+		t.Parallel()
+
+		line := startupLog(t, "--retry-initial-delay=2s", "--retry-max-delay=30s")
+		assert.Contains(t, line, `"retry_initial_delay":"2s"`)
+		assert.Contains(t, line, `"retry_max_delay":"30s"`)
+	})
+
+	t.Run("rejects inverted delays before starting listeners", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := runServeCommand(t, observeOnlyConfig, "--observe-only", "--retry-initial-delay=20s", "--retry-max-delay=10s")
+		require.ErrorContains(t, err, "must not be less than retry-initial-delay")
+	})
+
+	t.Run("rejects submillisecond delays", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := runServeCommand(t, observeOnlyConfig, "--observe-only", "--retry-initial-delay=500us")
+		require.ErrorContains(t, err, "positive whole number of milliseconds")
+	})
+}
+
+func TestRetryDelayEnvironment(t *testing.T) {
+	// Environment changes are process-wide and cannot be used in parallel tests.
+	t.Setenv("WARDEN__RETRY_INITIAL_DELAY", "3s")
+	t.Setenv("WARDEN__RETRY_MAX_DELAY", "45s")
+
+	line := startupLog(t)
+	assert.Contains(t, line, `"retry_initial_delay":"3s"`)
+	assert.Contains(t, line, `"retry_max_delay":"45s"`)
+
+	line = startupLog(t, "--retry-initial-delay=4s", "--retry-max-delay=1m")
+	assert.Contains(t, line, `"retry_initial_delay":"4s"`)
+	assert.Contains(t, line, `"retry_max_delay":"1m0s"`)
 }

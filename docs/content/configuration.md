@@ -171,10 +171,14 @@ warden serve \
 | `--access-log`                | Off              | HTTP access logs                                  |
 | `--debug`                     | Off              | Diagnostic logging                                |
 | `--log-format`                | `json`           | `json` or `text`                                  |
+| `--retry-initial-delay`       | `10s`            | Initial destination retry pause                   |
+| `--retry-max-delay`           | `5m`             | Maximum destination retry pause                   |
 | `--prune-interval`            | `1h`             | Observation cleanup frequency                     |
 | `--optimize-interval`         | `24h`            | SQLite query-planner optimization frequency       |
 
 Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables, replacing hyphens with underscores. For example, `WARDEN__SNITCH_SECRET` and `WARDEN__OPTIMIZE_INTERVAL`.
+
+Delivery retry timing is configured globally by `--retry-initial-delay` and `--retry-max-delay`, or `WARDEN__RETRY_INITIAL_DELAY` and `WARDEN__RETRY_MAX_DELAY`. Both must be positive whole-millisecond durations, and the maximum must be at least the initial delay. Equal values produce a constant pause. Each failing destination doubles its previous pause up to the maximum; a successful delivery resets that destination's backoff. Changing these flags requires a restart and affects the next calculated delay, not already persisted retry deadlines. The YAML `max-attempts` settings remain per-destination attempt budgets.
 
 The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
 

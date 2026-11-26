@@ -16,11 +16,17 @@ import (
 )
 
 const (
-	pageParam            = "page"
-	ipParam              = "ip"
-	stateParam           = "state"
-	statusParam          = "status"
-	destinationParam     = "destination"
+	// pageParam selects the requested result page.
+	pageParam = "page"
+	// ipParam filters results by IP address.
+	ipParam = "ip"
+	// stateParam filters results by decision state.
+	stateParam = "state"
+	// statusParam filters results by delivery status.
+	statusParam = "status"
+	// destinationParam filters results by delivery destination.
+	destinationParam = "destination"
+	// throughSequenceParam bounds history results to a specific sequence.
 	throughSequenceParam = "through-sequence"
 )
 

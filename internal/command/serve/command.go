@@ -3,17 +3,21 @@ package serve
 import (
 	"context"
 	"io"
+	"time"
 
 	appkitconfig "github.com/containeroo/appkit/config"
 	appkitlogging "github.com/containeroo/appkit/logging"
 	"github.com/containeroo/tinyflags"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
 
 const (
+	// sectionDelivery groups action delivery flags.
+	sectionDelivery = "Delivery"
 	// sectionMaintenance groups scheduled database maintenance flags.
 	sectionMaintenance = "Maintenance"
 	// sectionConfig groups server configuration flags in command help.
@@ -31,6 +35,7 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		sectionConfig,
 		appkitconfig.SectionDatabase,
 		appkitconfig.SectionAuthentication,
+		sectionDelivery,
 		sectionMaintenance,
 		appkitconfig.SectionLogging,
 	)
@@ -89,6 +94,15 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		Section(appkitconfig.SectionLogging).
 		Value()
 
+	retryInitialDelay := command.Duration("retry-initial-delay", actions.DefaultInitialRetryDelay, "Initial pause after a failed delivery").
+		Section(sectionDelivery).
+		Validate(tinyflags.Positive[time.Duration]()).
+		Value()
+	retryMaxDelay := command.Duration("retry-max-delay", actions.DefaultMaxRetryDelay, "Maximum destination retry pause").
+		Section(sectionDelivery).
+		Validate(tinyflags.Positive[time.Duration]()).
+		Value()
+
 	pruneInterval := command.Duration("prune-interval", maintenance.DefaultPruneInterval, "Interval between SQLite observation cleanup runs").
 		Validate(tinyflags.Between(maintenance.MinInterval, maintenance.MaxInterval)).
 		Section(sectionMaintenance).
@@ -109,6 +123,8 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 			"event", "app_starting",
 			"version", version,
 			"observe_only", *observeOnly,
+			"retry_initial_delay", retryInitialDelay.String(),
+			"retry_max_delay", retryMaxDelay.String(),
 		)
 		if len(command.Overrides()) > 0 {
 			logger.Info("CLI Overrides",
@@ -129,6 +145,10 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 			Logger:                  logger,
 			AccessLog:               *accessLog,
 			MetricsEnabled:          *metricsEnabled,
+			RetryPolicy: actions.RetryPolicy{
+				InitialDelay: *retryInitialDelay,
+				MaxDelay:     *retryMaxDelay,
+			},
 			Maintenance: maintenance.Schedule{
 				PruneInterval:    *pruneInterval,
 				OptimizeInterval: *optimizeInterval,

@@ -71,7 +71,7 @@ flowchart TD
 
 ## Delivery retry backoff
 
-The `actions` package calculates the capped exponential retry delay (10 seconds up to 5 minutes) using the destination's last persisted delay. SQLite only loads the previous delay and atomically stores the calculated pause and retry deadline along with the attempt result.
+The `actions` package calculates the capped exponential retry delay (default 10 seconds up to 5 minutes, configurable with `--retry-initial-delay` and `--retry-max-delay`) using the destination's last persisted delay. SQLite only loads the previous delay and atomically stores the calculated pause and retry deadline along with the attempt result.
 
 ## Expiry and release workflows
 

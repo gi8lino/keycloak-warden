@@ -67,12 +67,13 @@ type Runner struct {
 	processing atomic.Bool
 }
 
-// Start launches the action worker and returns a runner that must be closed before its queue.
+// Start launches the action worker with a validated retry policy; close it before its queue.
 func Start(
 	parent context.Context,
 	q Queue,
 	expirer Expirer,
 	destinations map[string]Target,
+	retryPolicy RetryPolicy,
 	logger *slog.Logger,
 ) *Runner {
 	ctx, cancel := context.WithCancel(parent)
@@ -82,7 +83,7 @@ func Start(
 		startedAt: time.Now().UTC(),
 	}
 
-	go runner.runUntilDone(ctx, q, expirer, destinations, logger)
+	go runner.runUntilDone(ctx, q, expirer, destinations, retryPolicy, logger)
 
 	return runner
 }
@@ -93,12 +94,13 @@ func (r *Runner) runUntilDone(
 	q Queue,
 	expirer Expirer,
 	destinations map[string]Target,
+	retryPolicy RetryPolicy,
 	logger *slog.Logger,
 ) {
 	defer close(r.done)
 	defer r.cancel()
 
-	r.err = run(ctx, q, expirer, destinations, logger, &r.processing)
+	r.err = run(ctx, q, expirer, destinations, retryPolicy, logger, &r.processing)
 }
 
 // Done closes when the worker has stopped and its terminal error is available.
@@ -124,12 +126,13 @@ func run(
 	q Queue,
 	expirer Expirer,
 	destinations map[string]Target,
+	retryPolicy RetryPolicy,
 	logger *slog.Logger,
 	processing *atomic.Bool,
 ) error {
 	for ctx.Err() == nil {
 		processing.Store(true)
-		deadline, err := processReady(ctx, q, expirer, destinations, logger)
+		deadline, err := processReady(ctx, q, expirer, destinations, retryPolicy, logger)
 		processing.Store(false)
 
 		if ctx.Err() != nil {
@@ -159,6 +162,7 @@ func processReady(
 	q Queue,
 	expirer Expirer,
 	destinations map[string]Target,
+	retryPolicy RetryPolicy,
 	logger *slog.Logger,
 ) (nextDeadline time.Time, err error) {
 	expired, err := expirer.Expire(ctx, time.Now())
@@ -176,7 +180,7 @@ func processReady(
 		)
 	}
 
-	if err := drainReady(ctx, q, destinations, logger, time.Now().Add(drainBudget)); err != nil {
+	if err := drainReady(ctx, q, destinations, retryPolicy, logger, time.Now().Add(drainBudget)); err != nil {
 		return time.Time{}, err
 	}
 
@@ -188,6 +192,7 @@ func drainReady(
 	ctx context.Context,
 	q Queue,
 	destinations map[string]Target,
+	retryPolicy RetryPolicy,
 	logger *slog.Logger,
 	deadline time.Time,
 ) error {
@@ -205,7 +210,7 @@ func drainReady(
 			return nil
 		}
 
-		if err := dispatch(ctx, q, destinations, logger, *job); err != nil {
+		if err := dispatch(ctx, q, destinations, retryPolicy, logger, *job); err != nil {
 			return err
 		}
 	}
@@ -239,6 +244,7 @@ func dispatch(
 	ctx context.Context,
 	q Queue,
 	destinations map[string]Target,
+	retryPolicy RetryPolicy,
 	logger *slog.Logger,
 	job Job,
 ) error {
@@ -262,7 +268,7 @@ func dispatch(
 			"event", "delivery_failed",
 			"error", err,
 		)
-		return q.Finish(ctx, job, err, target.MaxAttempts, time.Now(), NextRetryDelay(job.PreviousDelay))
+		return q.Finish(ctx, job, err, target.MaxAttempts, time.Now(), retryPolicy.NextDelay(job.PreviousDelay))
 	}
 
 	log.Info("delivery completed",

@@ -46,6 +46,8 @@ type Options struct {
 	AccessLog bool
 	// MetricsEnabled enables management metrics and instrumentation.
 	MetricsEnabled bool
+	// RetryPolicy configures destination-wide delivery backoff.
+	RetryPolicy actions.RetryPolicy
 	// Maintenance configures observation pruning and SQLite optimization.
 	Maintenance maintenance.Schedule
 	// Version labels the running build in metrics.
@@ -61,6 +63,9 @@ func Run(parent context.Context, options Options) error {
 		return err
 	}
 	if err := schedule.Validate(); err != nil {
+		return err
+	}
+	if err := options.RetryPolicy.Validate(); err != nil {
 		return err
 	}
 	protection, err := bans.NewProtection(cfg.ProtectedIPs)
@@ -132,7 +137,7 @@ func Run(parent context.Context, options Options) error {
 	defer stop()
 
 	maintenanceRunner := maintenance.Start(ctx, store, schedule, max(maintenance.MinObservationRetention, cfg.Rule.Window), logger)
-	runner := actions.Start(ctx, store, expirer, destinations, logger)
+	runner := actions.Start(ctx, store, expirer, destinations, options.RetryPolicy, logger)
 	handlers := server.New(server.Config{
 		AccessLog:      options.AccessLog,
 		MetricsEnabled: options.MetricsEnabled,

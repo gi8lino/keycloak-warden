@@ -99,7 +99,7 @@ func TestDeliveryOverview(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
-		require.NoError(t, store.Finish(t.Context(), *job, errors.New("receiver rejected"), 1, now.Add(2*time.Second), actions.NextRetryDelay(0)))
+		require.NoError(t, store.Finish(t.Context(), *job, errors.New("receiver rejected"), 1, now.Add(2*time.Second), actions.DefaultRetryPolicy().NextDelay(0)))
 
 		page, err := viewer.Deliveries(t.Context(), 1, deliverystate.StatusExhausted, "webhook.receiver")
 		require.NoError(t, err)

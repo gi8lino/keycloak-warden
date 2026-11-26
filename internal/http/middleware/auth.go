@@ -16,13 +16,10 @@ import (
 const (
 	// maxEventBodyBytes limits signed Snitch event bodies to 64 KiB.
 	maxEventBodyBytes = 64 << 10
-
 	// requestReadTimeout bounds how long the server waits to read a signed event body.
 	requestReadTimeout = 5 * time.Second
-
 	// headerSnitchTimestamp carries the timestamp used for signature verification.
 	headerSnitchTimestamp = "X-Snitch-Timestamp"
-
 	// headerSnitchSignature carries the signed request authentication value.
 	headerSnitchSignature = "X-Snitch-Signature"
 )
