@@ -18,7 +18,7 @@ const (
 	OutcomeBelowThreshold Outcome = "below_threshold"
 	// OutcomeUnchanged indicates the threshold was met without revising the desired decision.
 	OutcomeUnchanged Outcome = "unchanged"
-	// OutcomeProtected indicates the threshold was met for an exempt address.
+	// OutcomeProtected indicates a matching event was excluded before recording a failure.
 	OutcomeProtected Outcome = "protected"
 	// OutcomeObserved indicates a would-ban result was persisted without enforcement.
 	OutcomeObserved Outcome = "observed"

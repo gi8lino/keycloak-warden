@@ -249,7 +249,6 @@ func TestServiceProcess(t *testing.T) {
 	})
 }
 
-// TestProcessingOutcomes distinguishes every non-error detection path for diagnostic logging.
 // assertProcessingOutcome checks one independent processing path.
 func assertProcessingOutcome(t *testing.T, kind, ip string, inserted bool, count int, unchanged bool, outcome ingestion.Outcome, reason string) {
 	t.Helper()
@@ -286,6 +285,7 @@ func assertProcessingOutcome(t *testing.T, kind, ip string, inserted bool, count
 	}
 }
 
+// TestProcessingOutcomes distinguishes detection paths for diagnostic logging.
 func TestProcessingOutcomes(t *testing.T) {
 	t.Parallel()
 
@@ -371,5 +371,89 @@ func TestServiceProcessCommitFailure(t *testing.T) {
 		assert.Equal(t, ingestion.Result{}, result)
 		assert.Equal(t, 1, repository.calls)
 		assert.Equal(t, []string{"edge"}, tx.targets)
+	})
+}
+
+// TestProtectedEvents verifies that exempt login failures never reach storage.
+func TestProtectedEvents(t *testing.T) {
+	t.Parallel()
+
+	t.Run("protected address skips storage before threshold", func(t *testing.T) {
+		t.Parallel()
+
+		protection, err := bans.NewProtection([]string{"203.0.113.5"})
+		require.NoError(t, err)
+
+		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 1}}
+		service, err := ingestion.NewWithPolicy(repo, detection.Rule{
+			Threshold: 5,
+			Window:    time.Minute,
+			Ban:       15 * time.Minute,
+		}, nil, bans.Policy{Protection: protection})
+		require.NoError(t, err)
+
+		result, err := service.Process(t.Context(), validEvent(), time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, ingestion.Result{
+			Outcome: ingestion.OutcomeProtected,
+			IP:      "203.0.113.5",
+		}, result)
+		assert.Zero(t, repo.calls)
+	})
+
+	t.Run("mapped address in protected CIDR skips observe-only storage", func(t *testing.T) {
+		t.Parallel()
+
+		protection, err := bans.NewProtection([]string{"203.0.113.0/24"})
+		require.NoError(t, err)
+
+		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 5}}
+		service, err := ingestion.NewWithPolicy(repo, detection.Rule{
+			Threshold: 5,
+			Window:    time.Minute,
+			Ban:       15 * time.Minute,
+		}, nil, bans.Policy{
+			Protection:  protection,
+			ObserveOnly: true,
+		})
+		require.NoError(t, err)
+
+		event := validEvent()
+		event.IP = "::ffff:203.0.113.5"
+		result, err := service.Process(t.Context(), event, time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, ingestion.Result{
+			Outcome: ingestion.OutcomeProtected,
+			IP:      "203.0.113.5",
+		}, result)
+		assert.Zero(t, repo.calls)
+	})
+
+	t.Run("unprotected address still enters detection", func(t *testing.T) {
+		t.Parallel()
+
+		protection, err := bans.NewProtection([]string{"198.51.100.0/24"})
+		require.NoError(t, err)
+
+		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 4}}
+		service, err := ingestion.NewWithPolicy(repo, detection.Rule{
+			Threshold: 5,
+			Window:    time.Minute,
+			Ban:       15 * time.Minute,
+		}, nil, bans.Policy{Protection: protection})
+		require.NoError(t, err)
+
+		result, err := service.Process(t.Context(), validEvent(), time.Now())
+
+		require.NoError(t, err)
+		assert.Equal(t, ingestion.Result{
+			Outcome:   ingestion.OutcomeBelowThreshold,
+			IP:        "203.0.113.5",
+			Failures:  4,
+			Threshold: 5,
+		}, result)
+		assert.Equal(t, 1, repo.calls)
 	})
 }

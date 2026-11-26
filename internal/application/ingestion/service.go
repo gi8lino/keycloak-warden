@@ -99,6 +99,11 @@ func (s *Service) Process(
 		return result, nil
 	}
 
+	if s.policy.Protection.Contains(event.IP) {
+		result.Outcome = OutcomeProtected
+		return result, nil
+	}
+
 	err = s.repository.TransactObservation(ctx, func(tx Transaction) error {
 		var processErr error
 		result, processErr = s.processFailure(ctx, tx, event, now)
@@ -107,7 +112,6 @@ func (s *Service) Process(
 	if err != nil {
 		return Result{}, err
 	}
-
 	return result, nil
 }
 
@@ -135,17 +139,11 @@ func (s *Service) processFailure(
 	if err != nil {
 		return Result{}, err
 	}
-
 	result.Failures = count
 	result.Threshold = s.rule.Threshold
 
 	if !s.rule.Triggered(count) {
 		result.Outcome = OutcomeBelowThreshold
-		return result, nil
-	}
-
-	if s.policy.Protection.Contains(event.IP) {
-		result.Outcome = OutcomeProtected
 		return result, nil
 	}
 
