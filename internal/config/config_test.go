@@ -51,7 +51,7 @@ func TestConfigValidate(t *testing.T) {
 		require.ErrorContains(t, cfg.Validate(), "Content-Type is reserved")
 	})
 
-	t.Run("rejects valid detection rules without destinations", func(t *testing.T) {
+	t.Run("accepts valid detection rules without destinations", func(t *testing.T) {
 		t.Parallel()
 
 		cfg := Config{Rule: detection.Rule{
@@ -59,17 +59,25 @@ func TestConfigValidate(t *testing.T) {
 			Window:    time.Minute,
 			Ban:       15 * time.Minute,
 		}}
-		require.ErrorContains(t, cfg.Validate(), "at least one")
+		require.NoError(t, cfg.Validate())
 	})
 }
 
 func TestTargetsValidate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("requires at least one destination", func(t *testing.T) {
+	t.Run("accepts an empty destination configuration", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, (Targets{}).Validate(), "at least one")
+		require.NoError(t, (Targets{}).Validate())
+	})
+
+	t.Run("rejects an invalid attempt limit without destinations", func(t *testing.T) {
+		t.Parallel()
+
+		limit := 0
+		targets := Targets{MaxAttempts: &limit}
+		require.ErrorContains(t, targets.Validate(), "max-attempts")
 	})
 
 	t.Run("allows arbitrary valid HTTP headers except Content-Type", func(t *testing.T) {

@@ -49,6 +49,9 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		Section(sectionConfig).
 		NotBlank().
 		Value()
+	observeOnly := command.Bool("observe-only", false, "Record hypothetical bans without enforcing them").
+		Section(sectionConfig).
+		Value()
 	database := command.String("database", "warden.db", "SQLite database file").
 		Section(appkitconfig.SectionDatabase).
 		NotBlank().
@@ -105,6 +108,7 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		logger.Info("starting Keycloak Warden",
 			"event", "app_starting",
 			"version", version,
+			"observe_only", *observeOnly,
 		)
 		if len(command.Overrides()) > 0 {
 			logger.Info("CLI Overrides",
@@ -115,6 +119,7 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 
 		if err := Run(ctx, Options{
 			Config:                  cfg,
+			ObserveOnly:             *observeOnly,
 			RoutePrefix:             *flags.RoutePrefix,
 			ListenAddress:           *flags.ListenAddress,
 			ManagementListenAddress: *managementAddr,

@@ -26,6 +26,8 @@ import (
 type Options struct {
 	// Config contains the detection rule and destination configuration.
 	Config config.Config
+	// ObserveOnly records hypothetical bans without invoking action providers.
+	ObserveOnly bool
 	// RoutePrefix is prepended to application endpoints, but not management endpoints.
 	RoutePrefix string
 	// ListenAddress selects the application HTTP listener.
@@ -54,29 +56,24 @@ type Options struct {
 func Run(parent context.Context, options Options) error {
 	cfg := options.Config
 	schedule := options.Maintenance
-
 	logger := options.Logger
-
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
 	if err := schedule.Validate(); err != nil {
 		return err
 	}
-
 	protection, err := bans.NewProtection(cfg.ProtectedIPs)
 	if err != nil {
 		return err
 	}
-
 	policy := bans.Policy{
 		Protection:  protection,
-		ObserveOnly: cfg.ObserveOnly,
+		ObserveOnly: options.ObserveOnly,
 	}
-
 	var destinations map[string]actions.Target
 	var names []string
-	if !cfg.ObserveOnly {
+	if !options.ObserveOnly {
 		destinations, names, err = bootstrap.Destinations(cfg.Targets)
 		if err != nil {
 			return err
@@ -96,7 +93,6 @@ func Run(parent context.Context, options Options) error {
 	if err := actions.ValidateTargets(parent, store, names); err != nil {
 		return err
 	}
-
 	if err := actions.ReconcileTargets(parent, store, destinations); err != nil {
 		return err
 	}
@@ -105,27 +101,22 @@ func Run(parent context.Context, options Options) error {
 	if err != nil {
 		return err
 	}
-
 	banAdmin, err := bans.NewAdminServiceWithPolicy(store, names, policy)
 	if err != nil {
 		return err
 	}
-
 	overviewService, err := overview.NewService(store)
 	if err != nil {
 		return err
 	}
-
 	retryService, err := actions.NewRetryService(store, names)
 	if err != nil {
 		return err
 	}
-
 	operations, err := overview.NewOperations(store)
 	if err != nil {
 		return err
 	}
-
 	expirer, err := bans.NewExpiryService(store, names)
 	if err != nil {
 		return err
@@ -141,8 +132,7 @@ func Run(parent context.Context, options Options) error {
 	defer stop()
 
 	maintenanceRunner := maintenance.Start(ctx, store, schedule, max(maintenance.MinObservationRetention, cfg.Rule.Window), logger)
-	actionRunner := actions.Start(ctx, store, expirer, destinations, logger)
-
+	runner := actions.Start(ctx, store, expirer, destinations, logger)
 	handlers := server.New(server.Config{
 		AccessLog:      options.AccessLog,
 		MetricsEnabled: options.MetricsEnabled,
@@ -155,11 +145,11 @@ func Run(parent context.Context, options Options) error {
 		Retry:          retryService,
 		Operations:     operations,
 		Maintenance:    maintenanceRunner,
-		Workers:        workers.NewService(actionRunner, maintenanceRunner, store),
+		Workers:        workers.NewService(runner, maintenanceRunner, store),
 		Logger:         logger,
 		Processor:      processor,
 		Readiness:      store,
-		WorkerDone:     actionRunner.Done(),
+		WorkerDone:     runner.Done(),
 	})
 
 	// The server owns the blocking lifecycle; stop the worker before closing SQLite.
@@ -172,7 +162,7 @@ func Run(parent context.Context, options Options) error {
 		logger.With("server", "management"),
 	)
 
-	workerErr := actionRunner.Close()
+	workerErr := runner.Close()
 	maintenanceRunner.Close()
 
 	return errors.Join(err, workerErr)

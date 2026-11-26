@@ -10,13 +10,10 @@ import (
 	"unicode"
 )
 
-// Validate checks target names, required fields and webhook header names.
+// Validate checks configured targets without requiring a destination to be present.
 func (targets Targets) Validate() error {
 	if err := validateMaxAttempts("targets", targets.MaxAttempts); err != nil {
 		return err
-	}
-	if len(targets.Webhook)+len(targets.Cloudflare) == 0 {
-		return errors.New("at least one webhook or cloudflare target is required")
 	}
 
 	// Sort names so the same configuration always reports the same first error.

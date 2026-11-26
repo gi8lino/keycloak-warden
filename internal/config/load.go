@@ -16,8 +16,6 @@ import (
 type document struct {
 	// ProtectedIPs contains literal addresses or CIDRs.
 	ProtectedIPs []string `yaml:"protected-ips"`
-	// ObserveOnly disables enforcement.
-	ObserveOnly bool `yaml:"observe-only"`
 	// Rule contains the failed-login detection settings.
 	Rule struct {
 		// Threshold is the number of distinct failures required to trigger detection.
@@ -65,7 +63,6 @@ func Load(path string) (cfg Config, err error) {
 
 	return Config{
 		ProtectedIPs: raw.ProtectedIPs,
-		ObserveOnly:  raw.ObserveOnly,
 		Rule: detection.Rule{
 			Threshold: raw.Rule.Threshold,
 			Window:    window,

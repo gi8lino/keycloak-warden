@@ -19,8 +19,6 @@ import (
 // startupLogs executes the registered command against an occupied port and captures all startup logs.
 func startupLogs(t *testing.T, args ...string) string {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "warden.yaml")
 	config := `
 rule:
   threshold: 2
@@ -31,6 +29,17 @@ targets:
     local:
       url: http://127.0.0.1:8090/hook
 `
+	output, err := runServeCommand(t, config, args...)
+	require.ErrorContains(t, err, "address already in use")
+	return output
+}
+
+// runServeCommand runs the registered command against an occupied application port.
+func runServeCommand(t *testing.T, config string, args ...string) (string, error) {
+	t.Helper()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "warden.yaml")
 	require.NoError(t, os.WriteFile(path, []byte(config), 0o600))
 
 	occupied := httptest.NewServer(http.NotFoundHandler())
@@ -50,8 +59,8 @@ targets:
 	}
 	runner, err := root.ParseRunner(append(commandArgs, args...))
 	require.NoError(t, err)
-	require.ErrorContains(t, runner.Run(t.Context()), "address already in use")
-	return strings.TrimSpace(output.String())
+	err = runner.Run(t.Context())
+	return strings.TrimSpace(output.String()), err
 }
 
 // startupLog returns the first startup record for log-format assertions.
@@ -279,4 +288,67 @@ func TestMaintenanceIntervalEnvironment(t *testing.T) {
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.NoError(t, err)
+}
+
+// observeOnlyConfig is a valid detection rule without action destinations.
+const observeOnlyConfig = `
+rule:
+  threshold: 2
+  window: 1m
+  ban: 1m
+`
+
+func TestObserveOnlyFlag(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults to enforcement and requires a destination", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := runServeCommand(t, observeOnlyConfig)
+		require.ErrorContains(t, err, "at least one webhook or cloudflare target is required")
+	})
+
+	t.Run("allows startup without destinations", func(t *testing.T) {
+		t.Parallel()
+
+		logs, err := runServeCommand(t, observeOnlyConfig, "--observe-only")
+		require.ErrorContains(t, err, "address already in use")
+		assert.Contains(t, logs, `"observe_only":true`)
+	})
+
+	t.Run("does not resolve configured provider credentials", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := observeOnlyConfig + `targets:
+  webhook:
+    local:
+      url: file:/nonexistent/warden-observe-only-url
+`
+		_, err := runServeCommand(t, cfg, "--observe-only")
+		require.ErrorContains(t, err, "address already in use")
+	})
+
+	t.Run("still rejects invalid target structure", func(t *testing.T) {
+		t.Parallel()
+
+		cfg := observeOnlyConfig + `targets:
+  webhook:
+    local:
+      url: ""
+`
+		_, err := runServeCommand(t, cfg, "--observe-only")
+		require.ErrorContains(t, err, "url: value must not be blank")
+	})
+}
+
+func TestObserveOnlyEnvironment(t *testing.T) {
+	// Environment changes are process-wide and cannot be used in parallel tests.
+	t.Setenv("WARDEN__OBSERVE_ONLY", "true")
+
+	logs, err := runServeCommand(t, observeOnlyConfig)
+	require.ErrorContains(t, err, "address already in use")
+	assert.Contains(t, logs, `"observe_only":true`)
+
+	_, err = runServeCommand(t, observeOnlyConfig, "--observe-only=false")
+	require.ErrorContains(t, err, "at least one webhook or cloudflare target is required")
 }

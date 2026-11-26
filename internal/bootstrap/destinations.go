@@ -34,6 +34,10 @@ func Destinations(targets config.Targets) (destinations map[string]actions.Targe
 		return nil, nil, err
 	}
 
+	if len(targets.Webhook)+len(targets.Cloudflare) == 0 {
+		return nil, nil, errors.New("at least one webhook or cloudflare target is required")
+	}
+
 	destinations = make(map[string]actions.Target, len(targets.Webhook)+len(targets.Cloudflare))
 	defaultLimit := effectiveMaxAttempts(targets.MaxAttempts, actions.DefaultMaxAttempts)
 

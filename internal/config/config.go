@@ -48,24 +48,19 @@ type CloudflareTarget struct {
 type Config struct {
 	// ProtectedIPs lists addresses and CIDRs exempt from bans.
 	ProtectedIPs []string
-	// ObserveOnly disables enforcement and records threshold hits.
-	ObserveOnly bool
 	// Rule configures the failed-login detector.
 	Rule detection.Rule
 	// Targets groups named destinations by provider.
 	Targets Targets
 }
 
-// Validate checks the detection rule and structural target configuration.
+// Validate checks the detection rule, protected addresses and structural target configuration.
 func (cfg Config) Validate() error {
 	if err := cfg.Rule.Validate(); err != nil {
 		return err
 	}
 	if _, err := bans.NewProtection(cfg.ProtectedIPs); err != nil {
 		return err
-	}
-	if cfg.ObserveOnly && len(cfg.Targets.Webhook)+len(cfg.Targets.Cloudflare) == 0 {
-		return validateMaxAttempts("targets", cfg.Targets.MaxAttempts)
 	}
 	if err := cfg.Targets.Validate(); err != nil {
 		return err

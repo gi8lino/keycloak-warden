@@ -223,10 +223,9 @@ targets:
 func TestAdmissionConfiguration(t *testing.T) {
 	t.Parallel()
 
-	t.Run("observe-only permits no targets", func(t *testing.T) {
+	t.Run("accepts protection without targets", func(t *testing.T) {
 		t.Parallel()
-		cfg, err := Load(writeConfig(t, `observe-only: true
-protected-ips:
+		cfg, err := Load(writeConfig(t, `protected-ips:
   - 203.0.113.0/24
   - 2001:db8::1
 rule:
@@ -236,14 +235,19 @@ rule:
 `))
 		require.NoError(t, err)
 		require.NoError(t, cfg.Validate())
-		assert.True(t, cfg.ObserveOnly)
 		assert.Equal(t, []string{"203.0.113.0/24", "2001:db8::1"}, cfg.ProtectedIPs)
+	})
+
+	t.Run("rejects observe-only as a YAML setting", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := Load(writeConfig(t, "observe-only: true\n"))
+		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("invalid protection fails startup", func(t *testing.T) {
 		t.Parallel()
-		cfg, err := Load(writeConfig(t, `observe-only: true
-protected-ips: [bad-address]
+		cfg, err := Load(writeConfig(t, `protected-ips: [bad-address]
 rule:
   threshold: 2
   window: 1m

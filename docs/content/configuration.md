@@ -32,7 +32,7 @@ targets:
 
 **Destination names** must be at most 128 bytes and cannot contain whitespace or control characters.
 
-**At least one destination is required.** Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
+**At least one destination is required in enforcement mode.** Observe-only mode permits an empty target configuration. Each destination independently reconciles the same desired decision. Names appear as `cloudflare.edge` and `webhook.notifications` in delivery records and logs.
 
 ### Templated webhook bodies
 
@@ -166,6 +166,7 @@ warden serve \
 | `--listen-address`            | `127.0.0.1:8080` | Application listener                              |
 | `--management-listen-address` | `127.0.0.1:8081` | Health and metrics listener                       |
 | `--route-prefix`              | Empty            | Prefix for application routes                     |
+| `--observe-only`              | Off              | Record hypothetical bans without enforcement      |
 | `--metrics`                   | Off              | Prometheus exposition and instrumentation         |
 | `--access-log`                | Off              | HTTP access logs                                  |
 | `--debug`                     | Off              | Diagnostic logging                                |
@@ -181,20 +182,33 @@ Administrative CLI commands (`ban`, `unban`, `list-active`, `inspect`, and `main
 
 Consult `warden serve --help` for the definitive list of supported flags for your installed release.
 
-## Protected addresses and observe-only mode
+## Protected addresses
 
-Both options are optional top-level YAML settings (not part of `rule`):
+`protected-ips` is an optional top-level YAML setting (not part of `rule`):
 
 ```yaml
 protected-ips:
   - 192.0.2.10
   - 198.51.100.0/24
   - 2001:db8:1234::/48
-observe-only: false
 ```
 
 Protected addresses are matched after canonicalization, including IPv4-mapped IPv6. Matching login failures from protected addresses are accepted but excluded from detection before opening a database transaction. They are not persisted, deduplicated, counted, or recorded as hypothetical bans, and produce a `protected` debug outcome. HTTP ingestion metrics still count successfully processed events. Existing failure observations are not deleted when protection is enabled; they age out under the usual window and retention policies. Manual bans return HTTP 409. Invalid IPs/CIDRs fail startup. Protection does not silently release existing bans: release affected active bans and reconcile their deliveries before adding protection. Unban operations are never blocked by the protected-address policy.
 
-Set `observe-only: true` to evaluate the existing detection threshold without creating ban sources, enforcement decisions, or delivery jobs. Manual bans are rejected with HTTP 409. Targets may be omitted; configured target structures are still validated, but credentials are not resolved and providers are not constructed. Warden refuses to start in this mode if the database contains active bans or destination-owned work, including exhausted releases. Reconcile and release those first, or use an isolated database for rule tuning.
+## Observe-only mode
+
+Enable the runtime mode using the serve flag or its environment variable:
+
+```sh
+warden serve --observe-only
+```
+
+```sh
+WARDEN__OBSERVE_ONLY=true warden serve
+```
+
+In Kubernetes, set `WARDEN__OBSERVE_ONLY` to `"true"` in the Warden container environment. The mode defaults to off; restart Warden with the flag omitted and the environment variable unset (or use `--observe-only=false`) to resume enforcement. Remove any previous `observe-only` YAML key: strict YAML loading rejects it.
+
+Observe-only mode allows Warden to evaluate the existing detection threshold without creating ban sources, enforcement decisions, or delivery jobs. Manual bans are rejected with HTTP 409. Targets may be omitted; configured target structures are still validated, but credentials are not resolved and providers are not constructed. Warden refuses to start in this mode if the database contains active bans or destination-owned work, including exhausted releases. Reconcile and release those first, or use an isolated database for rule tuning.
 
 Every distinct threshold-triggering event for an unprotected address records a hypothetical automatic ban (count, threshold, address, trigger event ID, and proposed expiry). These records are not replayed when enforcement is enabled and are pruned using the same retention cutoff as login observations. Recent failure counts themselves remain in the sliding detection window, so a fresh event after switching back can trigger a real ban. The authenticated `GET /observations` endpoint and Web UI expose the recorded outcomes.
