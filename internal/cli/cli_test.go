@@ -362,17 +362,18 @@ func TestRun(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
-		var stderr bytes.Buffer
+		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{
 			"ban", "203.0.113.10", "not-an-ip",
 			"--duration", "1h",
 			"--reason", "incident",
 			"--admin-token", "admin",
 			"--application-url", server.URL,
-		}, "test", io.Discard, &stderr)
+		}, "test", &stdout, &stderr)
 
-		require.ErrorContains(t, err, "not-an-ip")
+		require.ErrorContains(t, err, `invalid IP address "not-an-ip"`)
 		assert.Zero(t, requests.Load())
+		assert.Empty(t, stdout.String())
 	})
 
 	t.Run("unban rejects invalid IP before sending a request", func(t *testing.T) {
@@ -384,15 +385,16 @@ func TestRun(t *testing.T) {
 			w.WriteHeader(http.StatusInternalServerError)
 		}))
 		defer server.Close()
-		var stderr bytes.Buffer
+		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{
 			"unban", "203.0.113.10", "not-an-ip",
 			"--admin-token", "admin",
 			"--application-url", server.URL,
-		}, "test", io.Discard, &stderr)
+		}, "test", &stdout, &stderr)
 
-		require.ErrorContains(t, err, "not-an-ip")
+		require.ErrorContains(t, err, `invalid IP address "not-an-ip"`)
 		assert.Zero(t, requests.Load())
+		assert.Empty(t, stdout.String())
 	})
 
 	t.Run("ban canonicalizes and deduplicates addresses before requesting", func(t *testing.T) {

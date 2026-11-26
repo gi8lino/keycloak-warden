@@ -44,7 +44,7 @@ func TestRun(t *testing.T) {
 		}))
 		defer server.Close()
 		var buf bytes.Buffer
-		err := Run(
+		err := run(
 			t.Context(),
 			server.URL,
 			"admin-secret",
@@ -95,7 +95,7 @@ func TestRun(t *testing.T) {
 		}))
 		defer server.Close()
 		var buf bytes.Buffer
-		err := Run(
+		err := run(
 			t.Context(),
 			server.URL,
 			"admin-secret",
@@ -137,7 +137,7 @@ func TestRun(t *testing.T) {
 		}))
 		defer server.Close()
 		var buf bytes.Buffer
-		err := Run(
+		err := run(
 			t.Context(),
 			server.URL,
 			"admin-secret",
@@ -167,21 +167,10 @@ func yamlFormat() *string {
 func TestRunFailures(t *testing.T) {
 	t.Parallel()
 
-	t.Run("invalid IP fails before connecting", func(t *testing.T) {
-		t.Parallel()
-		encoded := false
-		err := Run(t.Context(), "http://127.0.0.1:8080", "admin", []string{"bad-ip"}, func(any) error {
-			encoded = true
-			return nil
-		})
-		require.Error(t, err)
-		assert.False(t, encoded)
-	})
-
 	t.Run("missing token fails before connecting", func(t *testing.T) {
 		t.Parallel()
 		encoded := false
-		err := Run(t.Context(), "http://127.0.0.1:8080", "", []string{"203.0.113.10"}, func(any) error {
+		err := run(t.Context(), "http://127.0.0.1:8080", "", []string{"203.0.113.10"}, func(any) error {
 			encoded = true
 			return nil
 		})
@@ -196,7 +185,7 @@ func TestRunFailures(t *testing.T) {
 		}))
 		defer server.Close()
 		encoded := false
-		err := Run(t.Context(), server.URL, "admin", []string{"203.0.113.10"}, func(any) error {
+		err := run(t.Context(), server.URL, "admin", []string{"203.0.113.10"}, func(any) error {
 			encoded = true
 			return nil
 		})
@@ -216,7 +205,7 @@ func TestRunFailures(t *testing.T) {
 		}))
 		defer server.Close()
 		encodeErr := errors.New("cannot write output")
-		err := Run(t.Context(), server.URL, "admin", []string{"203.0.113.10"}, func(value any) error {
+		err := run(t.Context(), server.URL, "admin", []string{"203.0.113.10"}, func(value any) error {
 			batch, ok := value.(output.Batch)
 			require.True(t, ok)
 			assert.Equal(t, 1, batch.Succeeded)
@@ -232,7 +221,7 @@ func TestRunFailures(t *testing.T) {
 		}))
 		defer server.Close()
 		encodeErr := errors.New("cannot write output")
-		err := Run(t.Context(), server.URL, "admin", []string{"203.0.113.10"}, func(value any) error {
+		err := run(t.Context(), server.URL, "admin", []string{"203.0.113.10"}, func(value any) error {
 			batch, ok := value.(output.Batch)
 			require.True(t, ok)
 			assert.Equal(t, 1, batch.Failed)

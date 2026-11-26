@@ -21,14 +21,12 @@ func Register(
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
 	command.MinPositional(1)
-	command.SetPositionalValidate(ipargs.Validate)
-
 	command.SetPositionalFinalizeAll(ipargs.Unique)
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 
 	command.Run(func(ctx context.Context) error {
-		return Run(
+		return run(
 			ctx,
 			*adminFlags.ApplicationURL,
 			*adminFlags.AdminToken,

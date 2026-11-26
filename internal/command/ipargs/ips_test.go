@@ -7,61 +7,71 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidate(t *testing.T) {
+func TestParse(t *testing.T) {
 	t.Parallel()
 
 	t.Run("accepts public IPv4 address", func(t *testing.T) {
 		t.Parallel()
 
-		require.NoError(t, Validate("203.0.113.10"))
+		_, err := parse("203.0.113.10")
+		require.NoError(t, err)
 	})
 
 	t.Run("accepts IPv6 address", func(t *testing.T) {
 		t.Parallel()
 
-		require.NoError(t, Validate("2001:db8::10"))
+		_, err := parse("2001:db8::10")
+
+		require.NoError(t, err)
 	})
 
 	t.Run("rejects blank input", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate(""), "invalid IP address")
+		_, err := parse("")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 
 	t.Run("rejects hostnames", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate("example.org"), "invalid IP address")
+		_, err := parse("example.org")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 
 	t.Run("rejects unspecified addresses", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate("0.0.0.0"), "invalid IP address")
+		_, err := parse("0.0.0.0")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 
 	t.Run("rejects mapped unspecified addresses", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate("::ffff:0.0.0.0"), "invalid IP address")
+		_, err := parse("::ffff:0.0.0.0")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 
 	t.Run("rejects mapped multicast addresses", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate("::ffff:224.0.0.1"), "invalid IP address")
+		_, err := parse("::ffff:224.0.0.1")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 
 	t.Run("rejects multicast addresses", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate("ff02::1"), "invalid IP address")
+		_, err := parse("ff02::1")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 
 	t.Run("rejects IPv6 zone IDs", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, Validate("fe80::1%eth0"), "invalid IP address")
+		_, err := parse("fe80::1%eth0")
+		require.ErrorContains(t, err, "invalid IP address")
 	})
 }
 

@@ -9,12 +9,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 )
 
-// Validate requires a single unicast IPv4 or IPv6 address without a zone.
-func Validate(value string) error {
-	_, err := parse(value)
-	return err
-}
-
 // Unique validates all inputs before returning canonical, deduplicated IP addresses.
 func Unique(values []string) (addresses []string, err error) {
 	if len(values) == 0 {

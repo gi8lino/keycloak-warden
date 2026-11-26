@@ -10,8 +10,8 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
-// Run validates the requested IPs, prepares the client, and reports batch results.
-func Run(
+// run creates manual bans for validated addresses and reports batch results.
+func run(
 	ctx context.Context,
 	applicationURL, token string,
 	addresses []string,

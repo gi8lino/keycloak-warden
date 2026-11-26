@@ -10,8 +10,8 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
-// Run resolves requested addresses to active decision IDs and reports batch results.
-func Run(
+// run resolves validated addresses to active decision IDs and reports batch results.
+func run(
 	ctx context.Context,
 	applicationURL, token string,
 	addresses []string,
