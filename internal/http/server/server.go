@@ -27,6 +27,10 @@ type Config struct {
 	BanAdmin endpoint.BanAdministration
 	// Overview exposes authenticated cross-decision read-only listings.
 	Overview endpoint.OverviewQueries
+	// Retry exposes explicit delivery retry operations.
+	Retry endpoint.RetryOperations
+	// Operations exposes operational read projections.
+	Operations endpoint.OperationalQueries
 	// Maintenance exposes authenticated manual maintenance and status.
 	Maintenance endpoint.MaintenanceOperations
 	// Workers reports action and maintenance worker state to administrators.

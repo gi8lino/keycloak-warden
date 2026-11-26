@@ -66,6 +66,9 @@ func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, 
 	return tx.count, nil
 }
 
+// RecordObservation accepts hypothetical threshold hits in tests.
+func (tx *fakeTx) RecordObservation(context.Context, ingestion.Observation) error { return nil }
+
 // EnsureDecision records that ingestion requested an automatic source.
 func (tx *fakeTx) EnsureDecision(context.Context, string) error {
 	tx.blocked = true

@@ -33,7 +33,11 @@ func (s *Store) ReconcileAttemptLimit(ctx context.Context, name string, limit in
 	defer func() { _ = tx.Rollback() }()
 
 	rows, err := tx.QueryContext(ctx, `
-SELECT h.ip, h.revision, COALESCE(MAX(a.number), 0)
+SELECT h.ip, h.revision, COALESCE(MAX(a.number), 0) - COALESCE((
+    SELECT r.previous_attempts FROM delivery_retries AS r
+    WHERE r.ip = h.ip AND r.revision = h.revision AND r.destination = h.destination
+    ORDER BY r.id DESC LIMIT 1
+), 0)
 FROM delivery_history AS h
 LEFT JOIN delivery_attempts AS a
     ON a.ip = h.ip AND a.revision = h.revision AND a.destination = h.destination
@@ -83,10 +87,14 @@ WHERE ip = ? AND revision = ? AND destination = ?
 func applyAttemptLimit(ctx context.Context, tx *sql.Tx, name string, limit int, ip string, revision int64) error {
 	var completed int64
 	if err := tx.QueryRowContext(ctx, `
-SELECT COALESCE(MAX(number), 0)
+SELECT COALESCE(MAX(number), 0) - COALESCE((
+    SELECT previous_attempts FROM delivery_retries
+    WHERE ip = ? AND revision = ? AND destination = ?
+    ORDER BY id DESC LIMIT 1
+), 0)
 FROM delivery_attempts
 WHERE ip = ? AND revision = ? AND destination = ?
-`, ip, revision, name).Scan(&completed); err != nil {
+`, ip, revision, name, ip, revision, name).Scan(&completed); err != nil {
 		return err
 	}
 

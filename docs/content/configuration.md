@@ -180,3 +180,21 @@ The two maintenance intervals must be between `5m` and `8760h`. Intervals determ
 Administrative CLI commands (`ban`, `unban`, `list-active`, `inspect`, and `maintenance` subcommands) also accept `--request-timeout` (default `10s`), `--maintenance-timeout` (default `35s`), and `--max-response-bytes` (default `1048576`). These flags configure only the outgoing administrative HTTP client, not Warden's server request limits or outbound webhook destinations. Their corresponding environment variables are `WARDEN__REQUEST_TIMEOUT`, `WARDEN__MAINTENANCE_TIMEOUT`, and `WARDEN__MAX_RESPONSE_BYTES`. Both timeouts must be positive; the response limit must also be less than `MaxInt64`.
 
 Consult `warden serve --help` for the definitive list of supported flags for your installed release.
+
+## Protected addresses and observe-only mode
+
+Both options are optional top-level YAML settings (not part of `rule`):
+
+```yaml
+protected-ips:
+  - 192.0.2.10
+  - 198.51.100.0/24
+  - 2001:db8:1234::/48
+observe-only: false
+```
+
+Protected addresses are matched after canonicalization, including IPv4-mapped IPv6. A protected address still contributes to failure observations, but an automatic threshold hit is logged as `protected`; manual bans return HTTP 409. Invalid IPs/CIDRs fail startup. Protection does not silently release existing bans: release affected active bans and reconcile their deliveries before adding protection. Unban operations are never blocked by the protected-address policy.
+
+Set `observe-only: true` to evaluate the existing detection threshold without creating ban sources, enforcement decisions, or delivery jobs. Manual bans are rejected with HTTP 409. Targets may be omitted; configured target structures are still validated, but credentials are not resolved and providers are not constructed. Warden refuses to start in this mode if the database contains active bans or destination-owned work, including exhausted releases. Reconcile and release those first, or use an isolated database for rule tuning.
+
+Every distinct threshold-triggering event for an unprotected address records a hypothetical automatic ban (count, threshold, address, trigger event ID, and proposed expiry). These records are not replayed when enforcement is enabled and are pruned using the same retention cutoff as login observations. Recent failure counts themselves remain in the sliding detection window, so a fresh event after switching back can trigger a real ban. The authenticated `GET /observations` endpoint and Web UI expose the recorded outcomes.

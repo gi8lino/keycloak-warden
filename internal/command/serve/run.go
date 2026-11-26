@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/containeroo/appkit/httpserver"
 	"github.com/containeroo/httpkit/grace"
@@ -60,9 +61,21 @@ func Run(parent context.Context, options Options) error {
 	if err := schedule.Validate(); err != nil {
 		return err
 	}
-	destinations, names, err := bootstrap.Destinations(cfg.Targets)
+	protection, err := bans.NewProtection(cfg.ProtectedIPs)
 	if err != nil {
 		return err
+	}
+	policy := bans.Policy{
+		Protection:  protection,
+		ObserveOnly: cfg.ObserveOnly,
+	}
+	var destinations map[string]actions.Target
+	var names []string
+	if !cfg.ObserveOnly {
+		destinations, names, err = bootstrap.Destinations(cfg.Targets)
+		if err != nil {
+			return err
+		}
 	}
 
 	store, err := sqlite.Open(options.Database)
@@ -71,6 +84,10 @@ func Run(parent context.Context, options Options) error {
 	}
 	defer store.Close() //nolint:errcheck
 
+	if err := bootstrap.ValidateAdmission(parent, store, policy, time.Now()); err != nil {
+		return err
+	}
+
 	if err := actions.ValidateTargets(parent, store, names); err != nil {
 		return err
 	}
@@ -78,15 +95,23 @@ func Run(parent context.Context, options Options) error {
 		return err
 	}
 
-	processor, err := ingestion.New(store, cfg.Rule, names)
+	processor, err := ingestion.NewWithPolicy(store, cfg.Rule, names, policy)
 	if err != nil {
 		return err
 	}
-	banAdmin, err := bans.NewAdminService(store, names)
+	banAdmin, err := bans.NewAdminServiceWithPolicy(store, names, policy)
 	if err != nil {
 		return err
 	}
 	overviewService, err := overview.NewService(store)
+	if err != nil {
+		return err
+	}
+	retryService, err := actions.NewRetryService(store, names)
+	if err != nil {
+		return err
+	}
+	operations, err := overview.NewOperations(store)
 	if err != nil {
 		return err
 	}
@@ -115,6 +140,8 @@ func Run(parent context.Context, options Options) error {
 		AdminToken:     options.AdminToken,
 		BanAdmin:       banAdmin,
 		Overview:       overviewService,
+		Retry:          retryService,
+		Operations:     operations,
 		Maintenance:    maintenanceRunner,
 		Workers:        workers.NewService(runner, maintenanceRunner, store),
 		Logger:         logger,

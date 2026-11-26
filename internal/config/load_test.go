@@ -219,3 +219,37 @@ targets:
 		require.ErrorContains(t, cfg.Targets.Validate(), "max-attempts")
 	})
 }
+
+func TestAdmissionConfiguration(t *testing.T) {
+	t.Parallel()
+
+	t.Run("observe-only permits no targets", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, `observe-only: true
+protected-ips:
+  - 203.0.113.0/24
+  - 2001:db8::1
+rule:
+  threshold: 2
+  window: 1m
+  ban: 15m
+`))
+		require.NoError(t, err)
+		require.NoError(t, cfg.Validate())
+		assert.True(t, cfg.ObserveOnly)
+		assert.Equal(t, []string{"203.0.113.0/24", "2001:db8::1"}, cfg.ProtectedIPs)
+	})
+
+	t.Run("invalid protection fails startup", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, `observe-only: true
+protected-ips: [bad-address]
+rule:
+  threshold: 2
+  window: 1m
+  ban: 15m
+`))
+		require.NoError(t, err)
+		require.ErrorContains(t, cfg.Validate(), "invalid protected IP or CIDR")
+	})
+}

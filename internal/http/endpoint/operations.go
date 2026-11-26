@@ -1,0 +1,93 @@
+package endpoint
+
+import (
+	"context"
+	"errors"
+	"log/slog"
+	"net/http"
+	"time"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/overview"
+	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
+)
+
+// RetryOperations exposes validated explicit retries.
+type RetryOperations interface {
+	Retry(context.Context, actions.RetryRequest, time.Time) error
+}
+
+// RetryDelivery queues one exhausted current delivery via the application service.
+func RetryDelivery(service RetryOperations, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var request actions.RetryRequest
+		if !decodeAdminPayload(w, r, &request, "Invalid retry request.", "Retry request is too large.") {
+			return
+		}
+		err := service.Retry(r.Context(), request, time.Now())
+		switch {
+		case errors.Is(err, actions.ErrRetryInvalid):
+			httpresponse.Problem(w, http.StatusBadRequest, err.Error())
+		case errors.Is(err, actions.ErrRetryConflict):
+			httpresponse.Problem(w, http.StatusConflict, err.Error())
+		case err != nil:
+			logger.Error("delivery retry failed", "error", err)
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "Retry unavailable.")
+		default:
+			logger.Info("delivery retry queued", "event", "delivery_retry_queued", "decision_id", request.DecisionID, "revision", request.Revision, "destination", request.Destination, "actor", request.Actor)
+			httpresponse.Respond(w, http.StatusAccepted, map[string]bool{"queued": true})
+		}
+	}
+}
+
+// OperationalQueries exposes read-only operational projections.
+type OperationalQueries interface {
+	Health(context.Context) ([]overview.DestinationHealth, error)
+	Timeline(context.Context, string, int) (overview.TimelinePage, error)
+	Observations(context.Context, int) (overview.ObservationPage, error)
+}
+
+// DeliveryHealth returns current counts grouped by destination.
+func DeliveryHealth(service OperationalQueries, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		result, err := service.Health(r.Context())
+		if writeOverviewError(w, logger, err) {
+			return
+		}
+		httpresponse.Respond(w, http.StatusOK, result)
+	}
+}
+
+// DecisionTimeline returns persisted chronological decision activity.
+func DecisionTimeline(service OperationalQueries, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, page, ok := overviewQuery(w, r)
+		if !ok {
+			return
+		}
+		result, err := service.Timeline(r.Context(), r.PathValue("id"), page)
+		if errors.Is(err, overview.ErrTimelineNotFound) {
+			httpresponse.Problem(w, http.StatusNotFound, "Decision not found.")
+			return
+		}
+		if writeOverviewError(w, logger, err) {
+			return
+		}
+		httpresponse.Respond(w, http.StatusOK, result)
+	}
+}
+
+// Observations returns hypothetical bans recorded in observe-only mode.
+func Observations(service OperationalQueries, logger *slog.Logger) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		_, page, ok := overviewQuery(w, r)
+		if !ok {
+			return
+		}
+		result, err := service.Observations(r.Context(), page)
+		if writeOverviewError(w, logger, err) {
+			return
+		}
+		httpresponse.Respond(w, http.StatusOK, result)
+	}
+}

@@ -2,11 +2,8 @@ package endpoint
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"log/slog"
-	"mime"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,9 +12,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 )
-
-// maxBanBodyBytes limits administrative ban requests to 16 KiB.
-const maxBanBodyBytes = 16 << 10
 
 // BanAdministration exposes validated administrative ban operations independently of HTTP.
 type BanAdministration interface {
@@ -70,42 +64,11 @@ func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc 
 	}
 }
 
-// decodeBanPayload enforces the JSON content type, size limit, and single-object contract.
+// decodeBanPayload decodes the administrative ban request using the shared JSON contract.
 func decodeBanPayload(w http.ResponseWriter, r *http.Request) (createBanPayload, bool) {
 	var payload createBanPayload
-	media, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || media != "application/json" {
-		httpresponse.Problem(w, http.StatusUnsupportedMediaType, "Expected application/json.")
-		return payload, false
-	}
-
-	controller := http.NewResponseController(w)
-	if err := controller.SetReadDeadline(time.Now().Add(5 * time.Second)); err == nil {
-		defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
-	}
-
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxBanBodyBytes))
-	decoder.DisallowUnknownFields()
-
-	if err := decoder.Decode(&payload); err != nil {
-		writeBanDecodeError(w, err, "Invalid ban request.")
-		return payload, false
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		writeBanDecodeError(w, err, "Expected exactly one JSON object.")
-		return payload, false
-	}
-
-	return payload, true
-}
-
-// writeBanDecodeError distinguishes oversized bodies from malformed JSON without leaking input.
-func writeBanDecodeError(w http.ResponseWriter, err error, invalidMessage string) {
-	if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-		httpresponse.Problem(w, http.StatusRequestEntityTooLarge, "Ban request is too large.")
-		return
-	}
-	httpresponse.Problem(w, http.StatusBadRequest, invalidMessage)
+	ok := decodeAdminPayload(w, r, &payload, "Invalid ban request.", "Ban request is too large.")
+	return payload, ok
 }
 
 // ListBans returns current blocks and their independent sources.
@@ -197,6 +160,8 @@ func writeBanError(w http.ResponseWriter, logger *slog.Logger, err error) bool {
 		return false
 	}
 	switch {
+	case errors.Is(err, bans.ErrProtected), errors.Is(err, bans.ErrObserveOnly):
+		httpresponse.Problem(w, http.StatusConflict, err.Error())
 	case errors.Is(err, bans.ErrInvalid):
 		httpresponse.Problem(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, bans.ErrNotFound):

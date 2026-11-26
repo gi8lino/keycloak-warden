@@ -136,3 +136,29 @@ curl -fsS -X POST -H "Authorization: Bearer $WARDEN_ADMIN_TOKEN" http://127.0.0.
 ```
 
 With a route prefix, these routes are prefixed like `/bans`; the management listener remains separate.
+
+## Delivery health, explicit retries, and decision timelines
+
+These authenticated application endpoints use the existing admin bearer token and route prefix:
+
+| Method | Path                         | Purpose                                                                                            |
+| ------ | ---------------------------- | -------------------------------------------------------------------------------------------------- |
+| GET    | `/deliveries/health`         | Aggregate current-revision status counts per destination, including failed and exhausted releases. |
+| POST   | `/deliveries/retry`          | Requeue one exhausted current-revision delivery.                                                   |
+| GET    | `/bans/{id}/timeline?page=1` | Paginated newest-first source, revision, delivery attempt and retry activity.                      |
+| GET    | `/observations?page=1`       | Paginated hypothetical automatic ban outcomes.                                                     |
+
+A retry request contains `decisionId`, positive `revision`, `destination`, and nonblank `actor` (at most 512 bytes):
+
+```json
+{
+  "decisionId": "fee0c026-0eb3-416a-9e13-823248fdb9da",
+  "revision": 4,
+  "destination": "webhook.receiver",
+  "actor": "operator"
+}
+```
+
+HTTP 202 with `{"queued":true}` acknowledges queue admission, not delivery success. HTTP 409 rejects stale revisions, already queued or delivered work, expired bans, or unavailable destinations. The request, identity, and number of previously completed attempts are stored atomically with queue admission. The configured attempt budget starts again, but attempt numbers and previous errors are never erased. Shared destination backoff remains in force. A shared admin token cannot authenticate individual human identities; the direct API caller asserts `actor`, whereas WebUI supplies its authenticated account name server-side.
+
+Health is based on current persisted delivery status, not a provider connectivity probe. It includes destinations with recorded current history, even for released decisions. Failed unbans are retrying or exhausted current releases; exhausted unbans are a subset. Timeline and observation pages contain up to 20 records and reflect live data (new inserts can shift pages). The timeline reports actual persisted timestamps, causes, source edits, delivery attempt outcomes and explicit retries. It does not fabricate older audit history or treat scheduled expiry as proof of release.

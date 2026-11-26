@@ -23,6 +23,8 @@ type Transaction interface {
 	RecordFailure(context.Context, events.Event, time.Time) (bool, error)
 	// CountFailures returns observed failures in the active sliding window.
 	CountFailures(context.Context, string, time.Time) (int, error)
+	// RecordObservation stores a would-ban result atomically with the failure.
+	RecordObservation(context.Context, Observation) error
 	// Ban policy reads and writes share this observation transaction.
 	bans.Transaction
 }
@@ -41,17 +43,36 @@ type Service struct {
 	rule detection.Rule
 	// targets identifies the configured destinations for new decisions.
 	targets []string
+	// policy controls enforcement admission.
+	policy bans.Policy
 }
 
 // New constructs an ingestion service with a validated detection policy.
 func New(repository Repository, rule detection.Rule, targets []string) (*Service, error) {
+	return NewWithPolicy(repository, rule, targets, bans.Policy{})
+}
+
+// NewWithPolicy constructs ingestion with explicit enforcement admission policy.
+func NewWithPolicy(
+	repository Repository,
+	rule detection.Rule,
+	targets []string,
+	policy bans.Policy,
+) (*Service, error) {
 	if repository == nil {
 		return nil, errors.New("ingestion repository is required")
 	}
+
 	if err := rule.Validate(); err != nil {
 		return nil, err
 	}
-	return &Service{repository: repository, rule: rule, targets: slices.Clone(targets)}, nil
+
+	return &Service{
+		repository: repository,
+		rule:       rule,
+		targets:    slices.Clone(targets),
+		policy:     policy,
+	}, nil
 }
 
 // Process validates an envelope and returns the committed detection outcome.
@@ -69,6 +90,7 @@ func (s *Service) Process(
 	if event.IP.IsValid() {
 		result.IP = event.IP.String()
 	}
+
 	if !s.rule.Matches(event) {
 		result.Reason = "unsupported_event_type"
 		if !event.IP.IsValid() {
@@ -85,6 +107,7 @@ func (s *Service) Process(
 	if err != nil {
 		return Result{}, err
 	}
+
 	return result, nil
 }
 
@@ -112,10 +135,32 @@ func (s *Service) processFailure(
 	if err != nil {
 		return Result{}, err
 	}
+
 	result.Failures = count
 	result.Threshold = s.rule.Threshold
+
 	if !s.rule.Triggered(count) {
 		result.Outcome = OutcomeBelowThreshold
+		return result, nil
+	}
+
+	if s.policy.Protection.Contains(event.IP) {
+		result.Outcome = OutcomeProtected
+		return result, nil
+	}
+	if s.policy.ObserveOnly {
+		if err := tx.RecordObservation(ctx, Observation{
+			Source:    event.Source,
+			EventID:   event.ID,
+			IP:        result.IP,
+			At:        now,
+			ExpiresAt: now.Add(s.rule.Ban),
+			Failures:  count,
+			Threshold: s.rule.Threshold,
+		}); err != nil {
+			return Result{}, err
+		}
+		result.Outcome = OutcomeObserved
 		return result, nil
 	}
 

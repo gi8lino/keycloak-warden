@@ -1,7 +1,10 @@
 // Package config defines Warden's detection and destination configuration.
 package config
 
-import "github.com/gi8lino/keycloak-warden/internal/application/detection"
+import (
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+)
 
 // Targets groups named destinations by their provider type.
 type Targets struct {
@@ -43,6 +46,10 @@ type CloudflareTarget struct {
 
 // Config contains detection and action destination configuration from YAML.
 type Config struct {
+	// ProtectedIPs lists addresses and CIDRs exempt from bans.
+	ProtectedIPs []string
+	// ObserveOnly disables enforcement and records threshold hits.
+	ObserveOnly bool
 	// Rule configures the failed-login detector.
 	Rule detection.Rule
 	// Targets groups named destinations by provider.
@@ -53,6 +60,12 @@ type Config struct {
 func (cfg Config) Validate() error {
 	if err := cfg.Rule.Validate(); err != nil {
 		return err
+	}
+	if _, err := bans.NewProtection(cfg.ProtectedIPs); err != nil {
+		return err
+	}
+	if cfg.ObserveOnly && len(cfg.Targets.Webhook)+len(cfg.Targets.Cloudflare) == 0 {
+		return validateMaxAttempts("targets", cfg.Targets.MaxAttempts)
 	}
 	if err := cfg.Targets.Validate(); err != nil {
 		return err

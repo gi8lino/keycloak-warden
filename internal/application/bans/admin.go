@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/netip"
 	"slices"
 	"strings"
 	"time"
@@ -24,6 +25,10 @@ const (
 var (
 	// ErrInvalid identifies invalid manual ban input.
 	ErrInvalid = errors.New("invalid manual ban")
+	// ErrProtected identifies a request to ban an exempt address.
+	ErrProtected = errors.New("IP address is protected")
+	// ErrObserveOnly identifies an enforcement request in observation mode.
+	ErrObserveOnly = errors.New("observe-only mode disables manual bans")
 	// ErrNotFound identifies a missing decision or a ban that is no longer active for release.
 	ErrNotFound = errors.New("active ban not found")
 )
@@ -45,14 +50,25 @@ type AdminService struct {
 	store Store
 	// targets identifies the configured destinations for revised decisions.
 	targets []string
+	// policy controls admission of new bans.
+	policy Policy
 }
 
 // NewAdminService constructs the administrative ban service.
 func NewAdminService(store Store, targets []string) (*AdminService, error) {
+	return NewAdminServiceWithPolicy(store, targets, Policy{})
+}
+
+// NewAdminServiceWithPolicy constructs administrative operations with ban admission policy.
+func NewAdminServiceWithPolicy(store Store, targets []string, policy Policy) (*AdminService, error) {
 	if store == nil {
 		return nil, errors.New("ban store is required")
 	}
-	return &AdminService{store: store, targets: slices.Clone(targets)}, nil
+	return &AdminService{
+		store:   store,
+		targets: slices.Clone(targets),
+		policy:  policy,
+	}, nil
 }
 
 // BanManual validates the request and adds or extends only its manual source.
@@ -62,6 +78,12 @@ func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, 
 		return Record{}, err
 	}
 
+	if s.policy.Protection.Contains(netip.MustParseAddr(ip)) {
+		return Record{}, ErrProtected
+	}
+	if s.policy.ObserveOnly {
+		return Record{}, ErrObserveOnly
+	}
 	return ApplyManualBan(ctx, s.store, ip, now.Add(request.Duration), reason, now, s.targets)
 }
 

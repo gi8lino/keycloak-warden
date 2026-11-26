@@ -1,6 +1,10 @@
 package ingestion
 
-import "github.com/gi8lino/keycloak-warden/internal/application/decisions"
+import (
+	"time"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+)
 
 // Outcome identifies why a valid security event did or did not revise a decision.
 type Outcome string
@@ -14,6 +18,10 @@ const (
 	OutcomeBelowThreshold Outcome = "below_threshold"
 	// OutcomeUnchanged indicates the threshold was met without revising the desired decision.
 	OutcomeUnchanged Outcome = "unchanged"
+	// OutcomeProtected indicates the threshold was met for an exempt address.
+	OutcomeProtected Outcome = "protected"
+	// OutcomeObserved indicates a would-ban result was persisted without enforcement.
+	OutcomeObserved Outcome = "observed"
 	// OutcomeUpdated indicates the effective desired decision was revised.
 	OutcomeUpdated Outcome = "updated"
 )
@@ -32,4 +40,22 @@ type Result struct {
 	Failures int
 	// Threshold is the configured minimum number of failures to trigger a ban.
 	Threshold int
+}
+
+// Observation describes a threshold hit that would have requested an automatic ban.
+type Observation struct {
+	// Source identifies the event producer.
+	Source string `json:"source"`
+	// EventID identifies the triggering event.
+	EventID string `json:"eventId"`
+	// IP is the canonical address.
+	IP string `json:"ipAddress"`
+	// At is the observation time.
+	At time.Time `json:"at"`
+	// ExpiresAt is the hypothetical automatic source expiry.
+	ExpiresAt time.Time `json:"expiresAt"`
+	// Failures is the observed count.
+	Failures int `json:"failures"`
+	// Threshold is the configured trigger count.
+	Threshold int `json:"threshold"`
 }

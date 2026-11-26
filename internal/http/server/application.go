@@ -45,6 +45,15 @@ func newApplication(config Config) http.Handler {
 		))
 	}
 
+	if config.AdminToken != "" && config.Retry != nil {
+		mux.Handle("POST /deliveries/retry", httpkitmiddleware.Chain(endpoint.RetryDelivery(config.Retry, config.Logger), middleware.AuthenticateAdmin(config.AdminToken)))
+	}
+	if config.AdminToken != "" && config.Operations != nil {
+		guard := middleware.AuthenticateAdmin(config.AdminToken)
+		mux.Handle("GET /deliveries/health", httpkitmiddleware.Chain(endpoint.DeliveryHealth(config.Operations, config.Logger), guard))
+		mux.Handle("GET /bans/{id}/timeline", httpkitmiddleware.Chain(endpoint.DecisionTimeline(config.Operations, config.Logger), guard))
+		mux.Handle("GET /observations", httpkitmiddleware.Chain(endpoint.Observations(config.Operations, config.Logger), guard))
+	}
 	if config.AdminToken != "" && config.Overview != nil {
 		guard := middleware.AuthenticateAdmin(config.AdminToken)
 		mux.Handle("GET /decisions/history", httpkitmiddleware.Chain(

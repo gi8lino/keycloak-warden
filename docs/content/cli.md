@@ -77,3 +77,14 @@ warden maintenance prune --help
 ```
 
 See [Configuration](configuration.md) for runtime flags and [API](api.md) for the corresponding HTTP routes.
+
+## Retry an exhausted delivery
+
+After fixing the destination and restarting Warden if credentials changed, use the stable decision ID, exact destination, and current revision from `inspect` or WebUI:
+
+```sh
+warden retry-delivery fee0c026-0eb3-416a-9e13-823248fdb9da webhook.receiver \
+  --revision 4 --actor operator
+```
+
+The command uses the same authenticated application API flags as `inspect`. The actor is asserted by the administrative CLI caller and stored with the retry audit record. A queued result is not a provider acknowledgement. Existing destination backoff is preserved.

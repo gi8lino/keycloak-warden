@@ -49,6 +49,8 @@ func logEventOutcome(
 			"threshold", result.Threshold,
 		)
 
+	case ingestion.OutcomeProtected, ingestion.OutcomeObserved:
+		logger.Info("automatic ban not enforced", "event", string(result.Outcome), "event_id", envelope.ID, "ip", result.IP, "failures", result.Failures, "threshold", result.Threshold)
 	case ingestion.OutcomeUpdated:
 		if decision := result.Decision; decision != nil {
 			logger.Info("automatic ban updated",
