@@ -7,7 +7,7 @@ require (
 	github.com/containeroo/httpkit v0.2.0
 	github.com/containeroo/notifykit v0.11.0
 	github.com/containeroo/resolver v0.6.1
-	github.com/containeroo/tinyflags v0.12.0
+	github.com/containeroo/tinyflags v0.13.0
 	github.com/gofrs/flock v0.13.2
 	github.com/prometheus/client_golang v1.25.0
 	github.com/stretchr/testify v1.12.1

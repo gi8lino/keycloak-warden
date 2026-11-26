@@ -23,9 +23,18 @@ func Register(
 	command.MinPositional(1)
 	command.SetPositionalValidate(ipargs.Validate)
 
+	command.SetPositionalFinalizeAll(ipargs.Unique)
+
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 
 	command.Run(func(ctx context.Context) error {
-		return Run(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, command.Args(), encode, adminopts.FromFlags(adminFlags)...)
+		return Run(
+			ctx,
+			*adminFlags.ApplicationURL,
+			*adminFlags.AdminToken,
+			command.Args(),
+			encode,
+			adminopts.FromFlags(adminFlags)...,
+		)
 	})
 }

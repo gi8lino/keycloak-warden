@@ -40,6 +40,8 @@ func Register(
 		Validate(tinyflags.LengthBetween(1, bans.MaxReasonLength)).
 		Value()
 
+	command.SetPositionalFinalizeAll(ipargs.Unique)
+
 	command.Run(func(ctx context.Context) error {
 		return Run(
 			ctx,

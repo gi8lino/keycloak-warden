@@ -6,18 +6,18 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // Run resolves requested addresses to active decision IDs and reports batch results.
-func Run(ctx context.Context, applicationURL, token string, inputs []string, encode output.Encoder, opts ...client.Option) error {
-	addresses, err := ipargs.Unique(inputs)
-	if err != nil {
-		return err
-	}
-
+func Run(
+	ctx context.Context,
+	applicationURL, token string,
+	addresses []string,
+	encode output.Encoder,
+	opts ...client.Option,
+) error {
 	client, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err

@@ -6,7 +6,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
@@ -15,17 +14,12 @@ import (
 func Run(
 	ctx context.Context,
 	applicationURL, token string,
-	inputs []string,
+	addresses []string,
 	duration time.Duration,
 	reason string,
 	encode output.Encoder,
 	opts ...client.Option,
 ) error {
-	addresses, err := ipargs.Unique(inputs)
-	if err != nil {
-		return err
-	}
-
 	client, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err
