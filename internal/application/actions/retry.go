@@ -45,10 +45,12 @@ func NewRetryService(store RetryStore, names []string) (*RetryService, error) {
 	if store == nil {
 		return nil, errors.New("retry store is required")
 	}
+
 	targets := make(map[string]struct{}, len(names))
 	for _, name := range names {
 		targets[name] = struct{}{}
 	}
+
 	return &RetryService{
 		store:   store,
 		targets: targets,

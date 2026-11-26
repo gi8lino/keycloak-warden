@@ -18,9 +18,11 @@ func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode 
 	command.HideEnvs()
 	command.Note("\nArguments: DECISION_ID DESTINATION. Flags can also be set using WARDEN__<FLAG_NAME> environment variables.")
 	command.ExactPositional(2)
+
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 	revision := command.Int("revision", 0, "Expected current decision revision").Required().Validate(tinyflags.Positive[int]()).Value()
 	actor := command.String("actor", "", "Operator identity for the retry audit record").Required().NotBlank().Value()
+
 	command.Run(func(ctx context.Context) error {
 		args := command.Args()
 		return Run(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, client.RetryRequest{

@@ -25,10 +25,12 @@ func ValidateAdmission(ctx context.Context, state AdmissionState, policy bans.Po
 		if err != nil {
 			return err
 		}
+
 		if len(managed) > 0 {
 			return errors.New("observe-only requires all existing bans and releases to be reconciled first")
 		}
 	}
+
 	if !policy.ObserveOnly && policy.Protection.Empty() {
 		return nil
 	}
@@ -37,6 +39,7 @@ func ValidateAdmission(ctx context.Context, state AdmissionState, policy bans.Po
 	if err != nil {
 		return err
 	}
+
 	for _, record := range active {
 		address, err := netip.ParseAddr(record.Decision.IP)
 		if err != nil {

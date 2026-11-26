@@ -148,6 +148,7 @@ func (s *Service) processFailure(
 		result.Outcome = OutcomeProtected
 		return result, nil
 	}
+
 	if s.policy.ObserveOnly {
 		if err := tx.RecordObservation(ctx, Observation{
 			Source:    event.Source,

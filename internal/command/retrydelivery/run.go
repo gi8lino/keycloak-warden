@@ -13,8 +13,10 @@ func Run(ctx context.Context, applicationURL, token string, request client.Retry
 	if err != nil {
 		return err
 	}
+
 	if err := api.RetryDelivery(ctx, request); err != nil {
 		return err
 	}
+
 	return encode(map[string]bool{"queued": true})
 }

@@ -116,12 +116,24 @@ func (c *Client) DeliveryHealth(ctx context.Context) ([]DestinationHealth, error
 
 // DecisionTimeline reads one bounded page of recorded decision activity.
 func (c *Client) DecisionTimeline(ctx context.Context, id string, page int) (TimelinePage, error) {
-	if id == "" || id == "." || id == ".." || len(id) > 128 || strings.ContainsAny(id, "/%\\?#") || page < 1 {
+	if !validDecisionID(id) || page < 1 {
 		return TimelinePage{}, errors.New("invalid timeline selector")
 	}
+
 	var result TimelinePage
+
 	err := c.do(ctx, http.MethodGet, "/bans/"+id+"/timeline?page="+strconv.Itoa(page), nil, &result)
+
 	return result, err
+}
+
+// validDecisionID reports whether the ID is safe to use as a URL path segment.
+func validDecisionID(id string) bool {
+	return id != "" &&
+		id != "." &&
+		id != ".." &&
+		len(id) <= 128 &&
+		!strings.ContainsAny(id, "/%\\?#")
 }
 
 // ListObservations reads hypothetical automatic ban outcomes.
