@@ -13,7 +13,7 @@ import (
 // Register adds authenticated remote active-ban listing and its flags.
 func Register(
 	root *tinyflags.Command,
-	serverFlags appflags.ServerFlags,
+	serverFlags *appflags.ServerFlags,
 	encode output.Encoder,
 ) {
 	command := root.Command("list-active", "List active security decisions via the authenticated application API")

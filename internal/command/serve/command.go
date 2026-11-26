@@ -3,6 +3,7 @@ package serve
 import (
 	"context"
 	"io"
+	"net"
 	"time"
 
 	appkitconfig "github.com/containeroo/appkit/config"
@@ -25,7 +26,7 @@ const (
 )
 
 // Register adds the serve command and its operational flags to the command tree.
-func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Writer, version string) {
+func Register(root *tinyflags.Command, flags *appflags.ServerFlags, stdout io.Writer, version string) {
 	command := root.Command("serve", "Start authenticated event ingestion and action delivery")
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__LISTEN_ADDRESS.")
@@ -40,15 +41,19 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		appkitconfig.SectionLogging,
 	)
 
-	managementAddr := command.String(
+	var managementAddr *net.TCPAddr
+	command.TCPAddrVar(
+		&managementAddr,
 		"management-listen-address",
-		"127.0.0.1:8081",
+		&net.TCPAddr{
+			IP:   net.IPv4(127, 0, 0, 1),
+			Port: 8081,
+		},
 		"Management HTTP listen address",
 	).
 		Placeholder("ADDR").
 		Section(appkitconfig.SectionServer).
-		NotBlank().
-		Value()
+		Validate(appflags.ValidateListenAddress)
 	path := command.String("config", "warden.yaml", "YAML detection rules and action destinations").
 		Placeholder("FILE").
 		Section(sectionConfig).
@@ -136,9 +141,9 @@ func Register(root *tinyflags.Command, flags appflags.ServerFlags, stdout io.Wri
 		if err := Run(ctx, Options{
 			Config:                  cfg,
 			ObserveOnly:             *observeOnly,
-			RoutePrefix:             *flags.RoutePrefix,
-			ListenAddress:           *flags.ListenAddress,
-			ManagementListenAddress: *managementAddr,
+			RoutePrefix:             flags.RoutePrefix,
+			ListenAddress:           flags.ListenAddress.String(),
+			ManagementListenAddress: managementAddr.String(),
 			Database:                *database,
 			SnitchSecret:            *secret,
 			AdminToken:              *adminToken,

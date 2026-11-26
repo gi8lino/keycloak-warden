@@ -13,7 +13,7 @@ import (
 )
 
 // Register binds one decision ID and destination to a revision-guarded retry request.
-func Register(root *tinyflags.Command, serverFlags appflags.ServerFlags, encode output.Encoder) {
+func Register(root *tinyflags.Command, serverFlags *appflags.ServerFlags, encode output.Encoder) {
 	command := root.Command("retry-delivery", "Retry an exhausted delivery by decision ID and destination")
 	command.HideEnvs()
 	command.Note("\nArguments: DECISION_ID DESTINATION. Flags can also be set using WARDEN__<FLAG_NAME> environment variables.")

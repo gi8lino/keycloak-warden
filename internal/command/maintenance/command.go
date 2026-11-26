@@ -13,7 +13,7 @@ import (
 // Register adds authenticated remote database maintenance commands to the Warden CLI.
 func Register(
 	root *tinyflags.Command,
-	serverFlags appflags.ServerFlags,
+	serverFlags *appflags.ServerFlags,
 	encode output.Encoder,
 ) {
 	command := root.Command("maintenance", "Inspect and run database maintenance through the authenticated application API")
@@ -29,7 +29,7 @@ func Register(
 // registerOperation binds one maintenance subcommand to the shared admin API flags.
 func registerOperation(
 	group *tinyflags.Command,
-	serverFlags appflags.ServerFlags,
+	serverFlags *appflags.ServerFlags,
 	encode output.Encoder,
 	action Action,
 	description string,

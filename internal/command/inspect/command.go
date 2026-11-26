@@ -13,7 +13,7 @@ import (
 // Register adds authenticated remote decision inspection and its flags.
 func Register(
 	root *tinyflags.Command,
-	serverFlags appflags.ServerFlags,
+	serverFlags *appflags.ServerFlags,
 	encode output.Encoder,
 ) {
 	command := root.Command("inspect", "Inspect security decisions by ID via the authenticated application API")

@@ -18,7 +18,7 @@ const sectionBan = "Manual ban"
 // Register adds the authenticated manual-ban command and its flags.
 func Register(
 	root *tinyflags.Command,
-	serverFlags appflags.ServerFlags,
+	serverFlags *appflags.ServerFlags,
 	encode output.Encoder,
 ) {
 	command := root.Command("ban", "Manually ban one or more IP addresses via the authenticated application API")

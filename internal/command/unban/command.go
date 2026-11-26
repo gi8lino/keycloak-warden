@@ -14,7 +14,7 @@ import (
 // Register adds the authenticated unban command and its flags.
 func Register(
 	root *tinyflags.Command,
-	serverFlags appflags.ServerFlags,
+	serverFlags *appflags.ServerFlags,
 	encode output.Encoder,
 ) {
 	command := root.Command("unban", "Unblock one or more IP addresses via the authenticated application API")

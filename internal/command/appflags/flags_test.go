@@ -48,11 +48,19 @@ func TestRegisterAdmin(t *testing.T) {
 		t.Setenv("WARDEN__APPLICATION_URL", "")
 
 		root, _ := adminCommand()
-		require.ErrorContains(t, root.Parse([]string{"ban"}), "--listen-address")
+		require.ErrorContains(t, root.Parse([]string{"ban"}), "WARDEN__LISTEN_ADDRESS")
 	})
 
-	t.Run("explicit URL takes precedence over invalid server address", func(t *testing.T) {
+	t.Run("explicit URL does not bypass invalid typed listener", func(t *testing.T) {
 		t.Setenv("WARDEN__LISTEN_ADDRESS", "missing-port")
+		t.Setenv("WARDEN__APPLICATION_URL", "https://env.example")
+
+		root, _ := adminCommand()
+		require.ErrorContains(t, root.Parse([]string{"ban", "--application-url=https://override.example"}), "WARDEN__LISTEN_ADDRESS")
+	})
+
+	t.Run("explicit URL overrides a valid listener and environment URL", func(t *testing.T) {
+		t.Setenv("WARDEN__LISTEN_ADDRESS", ":9080")
 		t.Setenv("WARDEN__APPLICATION_URL", "https://env.example")
 
 		root, admin := adminCommand()

@@ -173,7 +173,7 @@ func TestServeFlagValidation(t *testing.T) {
 	t.Run("rejects whitespace application listener", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, parse("--snitch-secret", "secret", "--listen-address", "  "), "must not be blank")
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--listen-address", "  "), "--listen-address")
 	})
 
 	t.Run("rejects empty management listener without metrics", func(t *testing.T) {
@@ -185,7 +185,7 @@ func TestServeFlagValidation(t *testing.T) {
 	t.Run("rejects whitespace management listener without metrics", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, parse("--snitch-secret", "secret", "--management-listen-address", "   "), "must not be blank")
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--management-listen-address", "   "), "--management-listen-address")
 	})
 
 	t.Run("rejects empty management listener with metrics", func(t *testing.T) {
@@ -197,7 +197,25 @@ func TestServeFlagValidation(t *testing.T) {
 	t.Run("rejects whitespace management listener with metrics", func(t *testing.T) {
 		t.Parallel()
 
-		require.ErrorContains(t, parse("--snitch-secret", "secret", "--metrics", "--management-listen-address", "   "), "must not be blank")
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--metrics", "--management-listen-address", "   "), "--management-listen-address")
+	})
+
+	t.Run("rejects wildcard application listener with zero port", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--listen-address=:0"), "--listen-address")
+	})
+
+	t.Run("rejects wildcard management listener with zero port", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--management-listen-address=:0"), "--management-listen-address")
+	})
+
+	t.Run("allows explicit application IP with zero port", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, parse("--snitch-secret", "secret", "--listen-address=127.0.0.1:0"))
 	})
 
 	t.Run("allows explicitly configured management listener without metrics", func(t *testing.T) {
@@ -292,7 +310,7 @@ func TestServeRejectsBlankManagementListenerEnvironment(t *testing.T) {
 	Register(root, appflags.RegisterServer(root), &bytes.Buffer{}, "test")
 
 	_, err := root.ParseRunner([]string{"serve"})
-	require.ErrorContains(t, err, "must not be blank")
+	require.ErrorContains(t, err, "WARDEN__MANAGEMENT_LISTEN_ADDRESS")
 }
 
 func TestMaintenanceIntervalEnvironment(t *testing.T) {

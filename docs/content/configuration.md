@@ -178,6 +178,8 @@ warden serve \
 
 Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables, replacing hyphens with underscores. For example, `WARDEN__SNITCH_SECRET` and `WARDEN__OPTIMIZE_INTERVAL`.
 
+Listener addresses are parsed as TCP addresses, including when an explicit administrative URL is supplied. Blank addresses and the ambiguous wildcard `:0` are rejected; use an explicit IP such as `127.0.0.1:0` or `[::]:0` for an automatically allocated port.
+
 Delivery retry timing is configured globally by `--retry-initial-delay` and `--retry-max-delay`, or `WARDEN__RETRY_INITIAL_DELAY` and `WARDEN__RETRY_MAX_DELAY`. Both must be positive whole-millisecond durations, and the maximum must be at least the initial delay. Equal values produce a constant pause. Each failing destination doubles its previous pause up to the maximum; a successful delivery resets that destination's backoff. Changing these flags requires a restart and affects the next calculated delay, not already persisted retry deadlines. The YAML `max-attempts` settings remain per-destination attempt budgets.
 
 The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
