@@ -15,7 +15,7 @@ KUMBUKA_CLI := bin/.kumbuka/$(KUMBUKA_CLI_VERSION)/kumbuka-cli
 KUMBUKA_CLI_ASSET ?= kumbuka-cli_{version}_{os}_{arch}.tar.gz
 
 # renovate: datasource=github-releases depName=gi8lino/keycloak-snitch
-SNITCH_VERSION ?= v1.0.0
+SNITCH_VERSION ?= v1.0.1
 SNITCH_RELEASE := $(patsubst v%,%,$(SNITCH_VERSION))
 SNITCH_JAR := test/e2e/snitch/keycloak-snitch-$(SNITCH_RELEASE).jar
 SNITCH_URL := https://github.com/gi8lino/keycloak-snitch/releases/download/$(SNITCH_VERSION)/keycloak-snitch-$(SNITCH_RELEASE).jar
