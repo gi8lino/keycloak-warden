@@ -4,9 +4,9 @@
   <img src="docs/assets/warden.svg" alt="Keycloak Warden" width="240" />
 </p>
 
-**Automatic IP banning for Keycloak.**
+**Security event detection and automatic IP banning for Keycloak.**
 
-Warden monitors failed login attempts reported by [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) and automatically blocks offending IP addresses through Cloudflare or HTTP webhooks.
+Warden evaluates named detection rules against user and administrative events reported by [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) and can automatically block offending IP addresses through Cloudflare or HTTP webhooks. Named rule threshold hits are recorded as incidents and can independently notify selected Slack, Teams or webhook destinations.
 
 It uses SQLite to persist decisions, supports manual bans and protected IPs/CIDRs, and reliably retries failed deliveries. Observe-only mode records hypothetical automatic bans without enforcing them. Exhausted current-revision deliveries can be explicitly retried without discarding their attempt history. An append-only revision journal records new ban, release, and extension events for the authenticated administration API.
 

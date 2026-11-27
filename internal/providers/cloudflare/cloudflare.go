@@ -80,8 +80,8 @@ type pagination struct {
 	Pages int `json:"total_pages"`
 }
 
-// Apply discovers an owned rule before creation or release, including after an interrupted request.
-func (p Provider) Apply(ctx context.Context, d model.Decision) error {
+// Deliver discovers an owned rule before creation or release, including after an interrupted request.
+func (p Provider) Deliver(ctx context.Context, d model.Decision) error {
 	if !d.State.Valid() {
 		return fmt.Errorf("invalid decision state %q", d.State)
 	}

@@ -31,8 +31,8 @@ type MutationTransaction interface {
 	DecisionByID(context.Context, string) (model.Decision, error)
 	// DeleteSources clears every reason for a specified address.
 	DeleteSources(context.Context, string) error
-	// ResetFailures advances the failed-login observation generation.
-	ResetFailures(context.Context, string) error
+	// AdvanceBanGeneration advances the failed-login observation generation.
+	AdvanceBanGeneration(context.Context, string) error
 	// ExpiredSourceIPs lists addresses that require expiry reconciliation.
 	ExpiredSourceIPs(context.Context, time.Time) ([]string, error)
 	// DeleteExpiredSources removes elapsed sources at the given time.

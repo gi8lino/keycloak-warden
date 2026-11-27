@@ -150,7 +150,7 @@ func writeBanError(w http.ResponseWriter, logger *slog.Logger, err error) bool {
 		return false
 	}
 	switch {
-	case errors.Is(err, bans.ErrProtected), errors.Is(err, bans.ErrObserveOnly):
+	case errors.Is(err, bans.ErrProtected), errors.Is(err, bans.ErrObserveOnly), errors.Is(err, bans.ErrNoDestinations):
 		httpresponse.Problem(w, http.StatusConflict, err.Error())
 	case errors.Is(err, bans.ErrInvalid):
 		httpresponse.Problem(w, http.StatusBadRequest, err.Error())

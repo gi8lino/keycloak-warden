@@ -9,29 +9,26 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
-	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
-// ErrInvalidEvent identifies an event rejected by the application contract.
-var ErrInvalidEvent = errors.New("invalid security event")
-
 // Transaction provides atomic, storage-independent observation operations.
 type Transaction interface {
-	// RecordFailure deduplicates an occurrence and reports whether it was new.
-	RecordFailure(context.Context, events.Event, time.Time) (bool, error)
-	// CountFailures returns observed failures in the active sliding window.
-	CountFailures(context.Context, string, time.Time) (int, error)
-	// RecordObservation stores a would-ban result atomically with the failure.
-	RecordObservation(context.Context, model.Observation) error
+	// RecordEvent deduplicates a normalized envelope and reports whether it was new.
+	RecordEvent(context.Context, events.Envelope, time.Time, bool) (bool, error)
+	// CountMatches returns observations matching a rule within its window.
+	CountMatches(context.Context, detection.MatchQuery) (int, error)
+	// RecordIncident stores a named threshold hit and queues selected notifications.
+	RecordIncident(context.Context, model.Incident, []string) (int64, error)
 	// Ban policy reads and writes share this observation transaction.
 	bans.Transaction
 }
 
 // Repository executes an application operation within one atomic transaction.
 type Repository interface {
-	// TransactObservation atomically records a failed login and any resulting decision.
+	// TransactObservation atomically records an event and any resulting incidents or decision.
 	TransactObservation(context.Context, func(Transaction) error) error
 }
 
@@ -39,37 +36,37 @@ type Repository interface {
 type Service struct {
 	// repository provides transactional persistence for this application service.
 	repository Repository
-	// rule contains the validated failed-login policy.
-	rule Rule
+	// rules contains the validated detection policies.
+	rules []detection.Rule
 	// targets identifies the configured destinations for new decisions.
 	targets []string
 	// policy controls enforcement admission.
 	policy bans.Policy
 }
 
-// New constructs an ingestion service with a validated detection policy.
-func New(repository Repository, rule Rule, targets []string) (*Service, error) {
-	return NewWithPolicy(repository, rule, targets, bans.Policy{})
-}
-
-// NewWithPolicy constructs ingestion with explicit enforcement admission policy.
-func NewWithPolicy(
-	repository Repository,
-	rule Rule,
-	targets []string,
-	policy bans.Policy,
-) (*Service, error) {
+// New constructs ingestion with validated named detection rules.
+func New(repository Repository, rules []detection.Rule, targets []string, policy bans.Policy) (*Service, error) {
 	if repository == nil {
 		return nil, errors.New("ingestion repository is required")
 	}
 
-	if err := rule.Validate(); err != nil {
+	if err := detection.ValidateRules(rules); err != nil {
 		return nil, err
 	}
 
+	rules = slices.Clone(rules)
+	for i := range rules {
+		rules[i].Selector.Events = slices.Clone(rules[i].Selector.Events)
+		rules[i].Selector.Operations = slices.Clone(rules[i].Selector.Operations)
+		rules[i].Selector.Resources = slices.Clone(rules[i].Selector.Resources)
+		rules[i].Actions.Notify = slices.Clone(rules[i].Actions.Notify)
+	}
+
+	slices.SortFunc(rules, func(a, b detection.Rule) int { return strings.Compare(a.Name, b.Name) })
+
 	return &Service{
 		repository: repository,
-		rule:       rule,
+		rules:      rules,
 		targets:    slices.Clone(targets),
 		policy:     policy,
 	}, nil
@@ -79,34 +76,44 @@ func NewWithPolicy(
 func (s *Service) Process(
 	ctx context.Context,
 	envelope events.Envelope,
-	now time.Time,
+	clock func() time.Time,
 ) (result Result, err error) {
-	event, err := normalize(envelope)
+	event, err := events.Normalize(envelope)
 	if err != nil {
 		return Result{}, err
 	}
 
-	result = Result{Outcome: OutcomeIgnored}
-	if event.IP.IsValid() {
-		result.IP = event.IP.String()
-	}
+	result = Result{Outcome: OutcomeIgnored, IP: event.Address()}
+	matching := make([]detection.Rule, 0, len(s.rules))
+	protected := s.policy.Protection.Contains(event.IPAddress())
+	excluded := false
 
-	if !s.rule.Matches(event) {
-		result.Reason = "unsupported_event_type"
-		if !event.IP.IsValid() {
-			result.Reason = "missing_ip"
+	for _, rule := range s.rules {
+		if !rule.Matches(event) {
+			continue
 		}
-		return result, nil
+
+		if rule.Actions.Ban > 0 && protected {
+			excluded = true
+			continue
+		}
+		matching = append(matching, rule)
 	}
 
-	if s.policy.Protection.Contains(event.IP) {
-		result.Outcome = OutcomeProtected
+	if len(matching) == 0 {
+		if excluded {
+			result.Outcome = OutcomeProtected
+		} else if s.missingIP(event) {
+			result.Reason = "missing_ip"
+		} else {
+			result.Reason = "unsupported_event_type"
+		}
 		return result, nil
 	}
 
 	err = s.repository.TransactObservation(ctx, func(tx Transaction) error {
 		var processErr error
-		result, processErr = s.processFailure(ctx, tx, event, now)
+		result, processErr = s.processMatches(ctx, tx, event, matching, clock(), !protected)
 		return processErr
 	})
 	if err != nil {
@@ -115,18 +122,31 @@ func (s *Service) Process(
 	return result, nil
 }
 
-// processFailure records an accepted observation and applies the detection rule in one transaction.
-func (s *Service) processFailure(
-	ctx context.Context,
-	tx Transaction,
-	event events.Event,
-	now time.Time,
-) (Result, error) {
-	result := Result{
-		IP: event.IP.String(),
+// missingIP reports whether an otherwise matching rule requires a missing IP.
+func (s *Service) missingIP(event events.Envelope) bool {
+	if event.IPAddress().IsValid() {
+		return false
+	}
+	for _, rule := range s.rules {
+		if rule.Aggregation.RequiresIP() && rule.Selector.Matches(event) {
+			return true
+		}
 	}
 
-	inserted, err := tx.RecordFailure(ctx, event, now)
+	return false
+}
+
+// processMatches evaluates every matching rule and reconciles at most one ban.
+func (s *Service) processMatches(
+	ctx context.Context,
+	tx Transaction,
+	event events.Envelope,
+	rules []detection.Rule,
+	now time.Time,
+	banEligible bool,
+) (Result, error) {
+	result := Result{IP: event.Address(), Outcome: OutcomeBelowThreshold}
+	inserted, err := tx.RecordEvent(ctx, event, now, banEligible)
 	if err != nil {
 		return Result{}, err
 	}
@@ -135,86 +155,141 @@ func (s *Service) processFailure(
 		return result, nil
 	}
 
-	count, err := tx.CountFailures(ctx, result.IP, now.Add(-s.rule.Window))
-	if err != nil {
-		return Result{}, err
-	}
-	result.Failures = count
-	result.Threshold = s.rule.Threshold
+	var longest time.Duration
+	notificationDestinations := make(map[string][]string)
+	for _, rule := range rules {
+		query := rule.Query(event, now)
 
-	if !s.rule.Triggered(count) {
-		result.Outcome = OutcomeBelowThreshold
-		return result, nil
-	}
-
-	if s.policy.ObserveOnly {
-		if err := tx.RecordObservation(ctx, model.Observation{
-			Source:    event.Source,
-			EventID:   event.ID,
-			IP:        result.IP,
-			At:        now,
-			ExpiresAt: now.Add(s.rule.Ban),
-			Failures:  count,
-			Threshold: s.rule.Threshold,
-		}); err != nil {
+		count, err := tx.CountMatches(ctx, query)
+		if err != nil {
 			return Result{}, err
 		}
+		result.Evaluations = append(result.Evaluations, detection.Evaluation{
+			Rule:      rule.Name,
+			Count:     count,
+			Threshold: rule.Aggregation.Threshold,
+		})
+
+		if !rule.Triggered(count) {
+			continue
+		}
+
+		if result.Outcome == OutcomeBelowThreshold {
+			result.Outcome = OutcomeThresholdMet
+		}
+
+		crossing, err := detection.Crossed(ctx, tx, rule, query, event.ID)
+		if err != nil {
+			return Result{}, err
+		}
+
+		if crossing {
+			result.Outcome = OutcomeIncident
+			result.Incidents = append(result.Incidents, newIncident(rule, event, now, count, s.policy.ObserveOnly))
+			if len(rule.Actions.Notify) > 0 {
+				notificationDestinations[rule.Name] = rule.Actions.Notify
+			}
+		}
+
+		if rule.Actions.Ban > longest {
+			longest = rule.Actions.Ban
+		}
+	}
+
+	var effective *model.Decision
+	if longest > 0 {
+		result, effective, err = s.applyBan(ctx, tx, result, now, longest)
+		if err != nil {
+			return Result{}, err
+		}
+	}
+
+	for i := range result.Incidents {
+		incident := &result.Incidents[i]
+		if incident.BanUntil != nil && longest > 0 {
+			expiry := now.Add(longest).UTC()
+			incident.EffectiveBanUntil = &expiry
+
+			if effective != nil {
+				incident.DecisionID = effective.ID
+				incident.DecisionRevision = effective.Revision
+			}
+		}
+
+		id, err := tx.RecordIncident(ctx, *incident, notificationDestinations[incident.Rule])
+		if err != nil {
+			return Result{}, err
+		}
+
+		incident.ID = id
+	}
+
+	return result, nil
+}
+
+// applyBan records or reconciles the longest qualifying automatic ban.
+func (s *Service) applyBan(
+	ctx context.Context,
+	tx Transaction,
+	result Result,
+	now time.Time,
+	duration time.Duration,
+) (Result, *model.Decision, error) {
+	if s.policy.ObserveOnly {
 		result.Outcome = OutcomeObserved
-		return result, nil
+		return result, nil, nil
 	}
 
-	if err := bans.ExtendSource(ctx, tx, result.IP, model.Source{
-		Kind:      model.SourceAutomatic,
-		ExpiresAt: now.Add(s.rule.Ban),
-	}); err != nil {
-		return Result{}, err
-	}
-
-	decision, changed, err := bans.ReconcileDecisionWithCause(ctx, tx, result.IP, now, s.targets, model.ChangeAutomatic)
+	decision, changed, err := bans.ApplyAutomaticBan(ctx, tx, result.IP, now.Add(duration), now, s.targets)
 	if err != nil {
-		return Result{}, err
+		return Result{}, nil, err
 	}
 	if !changed {
 		result.Outcome = OutcomeUnchanged
-		return result, nil
+		return result, &decision, nil
 	}
 
 	result.Outcome = OutcomeUpdated
 	result.Decision = &decision
 
-	return result, nil
+	return result, &decision, nil
 }
 
-// normalize validates and canonicalizes a Snitch event.
-func normalize(p events.Envelope) (event events.Event, err error) {
-	if p.Version != events.SchemaVersion || p.Source != events.SourceKeycloak {
-		return events.Event{}, ErrInvalidEvent
+// newIncident snapshots a named rule hit without storing arbitrary event details.
+func newIncident(rule detection.Rule, event events.Envelope, now time.Time, count int, observeOnly bool) model.Incident {
+	query := rule.Query(event, now)
+
+	incident := model.Incident{
+		Rule:          rule.Name,
+		GroupBy:       query.GroupBy,
+		GroupKey:      query.Key,
+		IdentityRealm: query.IdentityRealm,
+		Distinct:      query.Distinct,
+		Window:        rule.Aggregation.Window.String(),
+		Source:        event.Source,
+		EventID:       event.ID,
+		EventKind:     event.Kind,
+		EventType:     event.EventType(),
+		RealmID:       event.RealmID(),
+		ActorRealmID:  event.ActorRealmID(),
+		UserID:        event.UserID(),
+		ClientID:      event.ClientID(),
+		IP:            event.Address(),
+		Error:         event.ErrorCode(),
+		OperationType: event.OperationType(),
+		ResourceType:  event.ResourceType(),
+		ResourcePath:  event.ResourcePath(),
+		EventAt:       event.Timestamp,
+		At:            now,
+		Count:         count,
+		Threshold:     rule.Aggregation.Threshold,
+		ObserveOnly:   observeOnly && rule.Actions.Ban > 0,
 	}
 
-	if !hasRequiredEventFields(p) {
-		return events.Event{}, ErrInvalidEvent
+	if rule.Actions.Ban > 0 {
+		expiry := now.Add(rule.Actions.Ban).UTC()
+		incident.BanUntil = &expiry
 	}
 
-	event = events.Event{
-		ID:     p.ID,
-		Source: p.Source,
-		Kind:   p.Kind,
-	}
-
-	if p.IP != "" {
-		ip, err := ipaddress.ParseUnicast(p.IP)
-		if err != nil {
-			return events.Event{}, ErrInvalidEvent
-		}
-		event.IP = ip.Unmap()
-	}
-
-	return event, nil
-}
-
-// hasRequiredEventFields checks the identity, native event type and producer timestamp.
-func hasRequiredEventFields(event events.Envelope) bool {
-	return strings.TrimSpace(event.ID) != "" &&
-		strings.TrimSpace(event.Kind) != "" &&
-		!event.Timestamp.IsZero()
+	return incident
 }

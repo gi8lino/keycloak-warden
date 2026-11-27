@@ -28,14 +28,34 @@ func (s *Store) ListRevisions(ctx context.Context, bounds overview.Query, ip str
 		}
 	}
 
-	rows, err := tx.QueryContext(ctx, `
-SELECT d.id, r.ip, r.revision, r.state, r.expires, r.changed_at, r.sources_json, r.cause
+	rows, err := tx.QueryContext(
+		ctx,
+		`
+SELECT
+    d.id,
+    r.ip,
+    r.revision,
+    r.state,
+    r.expires,
+    r.changed_at,
+    r.sources_json,
+    r.cause
 FROM decision_revisions AS r
 JOIN decisions AS d ON d.ip = r.ip
-WHERE r.sequence <= ? AND (? = '' OR r.ip = ?) AND (? = '' OR r.state = ?)
+WHERE r.sequence <= ?
+    AND (? = '' OR r.ip = ?)
+    AND (? = '' OR r.state = ?)
 ORDER BY r.sequence DESC
 LIMIT ? OFFSET ?
-`, result.ThroughSequence, ip, ip, state, state, bounds.Limit+1, bounds.Offset)
+`,
+		result.ThroughSequence,
+		ip,
+		ip,
+		state,
+		state,
+		bounds.Limit+1,
+		bounds.Offset,
+	)
 	if err != nil {
 		return result, err
 	}
@@ -43,7 +63,16 @@ LIMIT ? OFFSET ?
 		var item model.Revision
 		var expires, changed int64
 		var sources string
-		if err := rows.Scan(&item.DecisionID, &item.IPAddress, &item.Revision, &item.State, &expires, &changed, &sources, &item.Cause); err != nil {
+		if err := rows.Scan(
+			&item.DecisionID,
+			&item.IPAddress,
+			&item.Revision,
+			&item.State,
+			&expires,
+			&changed,
+			&sources,
+			&item.Cause,
+		); err != nil {
 			_ = rows.Close()
 			return result, err
 		}
@@ -82,27 +111,62 @@ func (s *Store) ListDeliveries(ctx context.Context, bounds overview.Query, statu
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, `
-SELECT d.id, h.ip, h.revision, d.state, h.destination, h.status,
-       CASE WHEN h.status = 'delivered' THEN h.revision ELSE COALESCE(q.acknowledged, 0) END,
-       (SELECT COUNT(*) FROM delivery_attempts a
-        WHERE a.ip = h.ip AND a.revision = h.revision AND a.destination = h.destination),
-       r.changed_at,
-       (SELECT MAX(a.completed_at) FROM delivery_attempts a
-        WHERE a.ip = h.ip AND a.revision = h.revision AND a.destination = h.destination),
-       CASE WHEN h.status = 'retrying' THEN MAX(COALESCE(q.retry_at, 0), COALESCE(b.retry_at, 0)) END,
-       (SELECT SUBSTR(a.error, 1, 512) FROM delivery_attempts a
-        WHERE a.ip = h.ip AND a.revision = h.revision AND a.destination = h.destination
-        ORDER BY a.number DESC LIMIT 1)
+	rows, err := tx.QueryContext(
+		ctx,
+		`
+SELECT
+    d.id,
+    h.ip,
+    h.revision,
+    d.state,
+    h.destination,
+    h.status,
+    CASE WHEN h.status = 'delivered' THEN h.revision ELSE COALESCE(q.acknowledged, 0) END,
+    (
+        SELECT COUNT(*)
+        FROM delivery_attempts a
+        WHERE a.ip = h.ip
+            AND a.revision = h.revision
+            AND a.destination = h.destination
+    ),
+    r.changed_at,
+    (
+        SELECT MAX(a.completed_at)
+        FROM delivery_attempts a
+        WHERE a.ip = h.ip
+            AND a.revision = h.revision
+            AND a.destination = h.destination
+    ),
+    CASE WHEN h.status = 'retrying' THEN MAX(COALESCE(q.retry_at, 0), COALESCE(b.retry_at, 0)) END,
+    (
+        SELECT SUBSTR(a.error, 1, 512)
+        FROM delivery_attempts a
+        WHERE a.ip = h.ip
+            AND a.revision = h.revision
+            AND a.destination = h.destination
+        ORDER BY a.number DESC
+        LIMIT 1
+    )
 FROM delivery_history AS h
-JOIN decisions AS d ON d.ip = h.ip AND d.revision = h.revision
-LEFT JOIN decision_revisions AS r ON r.ip = h.ip AND r.revision = h.revision
-LEFT JOIN deliveries AS q ON q.ip = h.ip AND q.destination = h.destination
+JOIN decisions AS d ON d.ip = h.ip
+    AND d.revision = h.revision
+LEFT JOIN decision_revisions AS r ON r.ip = h.ip
+    AND r.revision = h.revision
+LEFT JOIN deliveries AS q ON q.ip = h.ip
+    AND q.destination = h.destination
 LEFT JOIN destination_backoff AS b ON b.destination = h.destination
-WHERE (? = '' OR h.status = ?) AND (? = '' OR h.destination = ?)
+WHERE (? = '' OR h.status = ?)
+    AND (? = '' OR h.destination = ?)
 ORDER BY COALESCE(r.changed_at, 0) DESC, h.ip, h.destination
 LIMIT ? OFFSET ?
-`, status, status, destination, destination, bounds.Limit+1, bounds.Offset)
+`,
+		status,
+		status,
+		destination,
+		destination,
+		bounds.Limit+1,
+		bounds.Offset,
+	)
 	if err != nil {
 		return result, err
 	}
@@ -110,7 +174,20 @@ LIMIT ? OFFSET ?
 		var item model.DeliveryOverview
 		var changed, last, next sql.NullInt64
 		var diagnostic sql.NullString
-		if err := rows.Scan(&item.DecisionID, &item.IPAddress, &item.Revision, &item.DesiredState, &item.Destination, &item.Status, &item.AcknowledgedRevision, &item.AttemptCount, &changed, &last, &next, &diagnostic); err != nil {
+		if err := rows.Scan(
+			&item.DecisionID,
+			&item.IPAddress,
+			&item.Revision,
+			&item.DesiredState,
+			&item.Destination,
+			&item.Status,
+			&item.AcknowledgedRevision,
+			&item.AttemptCount,
+			&changed,
+			&last,
+			&next,
+			&diagnostic,
+		); err != nil {
 			_ = rows.Close()
 			return result, err
 		}

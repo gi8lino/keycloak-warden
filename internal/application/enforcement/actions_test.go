@@ -1,0 +1,455 @@
+package enforcement
+
+import (
+	"bytes"
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"testing/synctest"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/retry"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
+)
+
+// blockingExpirer waits for cancellation to test the worker's shutdown ordering.
+type blockingExpirer struct {
+	// started signals that the test worker entered the operation.
+	started chan struct{}
+	// stopped signals that the test worker observed cancellation.
+	stopped chan struct{}
+}
+
+// Expire blocks until cancellation so Close must wait for it to return.
+func (q *blockingExpirer) Expire(ctx context.Context, _ time.Time) ([]model.Decision, error) {
+	close(q.started)
+	<-ctx.Done()
+	close(q.stopped)
+	return nil, ctx.Err()
+}
+
+func TestStart(t *testing.T) {
+	t.Parallel()
+
+	t.Run("starts worker and can close concurrently", func(t *testing.T) {
+		t.Parallel()
+
+		expirer := &blockingExpirer{started: make(chan struct{}), stopped: make(chan struct{})}
+		q := &scriptedQueue{}
+		runner := Start(t.Context(), q, expirer, nil, retry.DefaultRetryPolicy(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+		defer func() { require.NoError(t, runner.Close()) }()
+		select {
+		case <-expirer.started:
+		case <-time.After(3 * time.Second):
+			require.FailNow(t, "worker did not start maintenance")
+		}
+		var closes sync.WaitGroup
+		closeErrors := make(chan error, 2)
+		for range 2 {
+			closes.Go(func() { closeErrors <- runner.Close() })
+		}
+		closes.Wait()
+		close(closeErrors)
+		for err := range closeErrors {
+			require.NoError(t, err)
+		}
+		require.NoError(t, runner.Wait())
+		select {
+		case <-runner.Done():
+		default:
+			require.FailNow(t, "Done did not close after Close returned")
+		}
+		select {
+		case <-expirer.stopped:
+		default:
+			require.FailNow(t, "Close returned while worker still used the queue")
+		}
+	})
+}
+
+func TestRunnerWait(t *testing.T) {
+	t.Parallel()
+
+	t.Run("wait blocks until completion", func(t *testing.T) {
+		t.Parallel()
+
+		expirer := &blockingExpirer{started: make(chan struct{}), stopped: make(chan struct{})}
+		q := &scriptedQueue{}
+		runner := Start(t.Context(), q, expirer, nil, retry.DefaultRetryPolicy(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+		defer func() { require.NoError(t, runner.Close()) }()
+		<-expirer.started
+		waitResult := make(chan error, 1)
+		go func() { waitResult <- runner.Wait() }()
+		select {
+		case <-runner.Done():
+			require.FailNow(t, "worker exited without cancellation")
+		case err := <-waitResult:
+			require.FailNow(t, "Wait returned before worker stopped", "returned error: %v", err)
+		default:
+		}
+		require.NoError(t, runner.Close())
+		require.NoError(t, <-waitResult)
+	})
+
+	t.Run("reports terminal errors to every waiter", func(t *testing.T) {
+		t.Parallel()
+
+		terminalErr := errors.New("terminal failure")
+		finished := make(chan struct{})
+		runner := &Runner{done: finished}
+		runner.err = terminalErr
+		close(finished)
+		require.ErrorIs(t, runner.Wait(), terminalErr)
+		require.ErrorIs(t, runner.Wait(), terminalErr)
+	})
+}
+
+// scriptedQueue supplies a finite batch of jobs for drainReady.
+type scriptedQueue struct {
+	// changes wakes the test worker on demand.
+	changes chan struct{}
+	// deadlines supplies successive wake times in worker order.
+	deadlines []time.Time
+	// cycles counts reads of the upcoming deadline.
+	cycles atomic.Int32
+	// jobs contains the queued jobs supplied by the test.
+	jobs []*Job
+	// finished records jobs acknowledged by the worker.
+	finished []Job
+	// limits records the attempt budgets passed by the worker.
+	limits []int
+	// delays records the retry pauses supplied by the application.
+	delays []time.Duration
+}
+
+// Changes returns the test change notification channel.
+func (q *scriptedQueue) Changes() <-chan struct{} { return q.changes }
+
+// NextDeadline counts completed cycles and supplies the test deadline.
+func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
+	cycle := int(q.cycles.Add(1))
+	if cycle > len(q.deadlines) {
+		return time.Time{}, nil
+	}
+	return q.deadlines[cycle-1], nil
+}
+
+// scriptedExpirer provides released decisions to the worker without persistence.
+type scriptedExpirer struct {
+	// expired contains the single batch of released decisions returned by the fake.
+	expired []model.Decision
+}
+
+// Expire returns a single batch of committed releases.
+func (e *scriptedExpirer) Expire(context.Context, time.Time) ([]model.Decision, error) {
+	released := e.expired
+	e.expired = nil
+	return released, nil
+}
+
+// Next returns one available job or nil when drained.
+func (q *scriptedQueue) Next(context.Context, time.Time) (*Job, error) {
+	if len(q.jobs) == 0 {
+		return nil, nil
+	}
+	job := q.jobs[0]
+	q.jobs = q.jobs[1:]
+	return job, nil
+}
+
+// Finish records successfully dispatched work.
+func (q *scriptedQueue) Finish(_ context.Context, job Job, deliveryErr error, limit AttemptLimit, _ time.Time, delay time.Duration) error {
+	q.delays = append(q.delays, delay)
+	q.limits = append(q.limits, int(limit))
+	if deliveryErr == nil {
+		q.finished = append(q.finished, job)
+	}
+	return nil
+}
+
+// acceptProvider records successful application of a decision.
+type acceptProvider struct {
+	// applied records decisions delivered to the test provider.
+	applied int
+}
+
+// Deliver records delivery and accepts the decision.
+func (p *acceptProvider) Deliver(context.Context, model.Decision) error {
+	p.applied++
+	return nil
+}
+
+func TestDrainReady(t *testing.T) {
+	t.Parallel()
+
+	t.Run("drains all ready jobs before deadline", func(t *testing.T) {
+		t.Parallel()
+
+		q := &scriptedQueue{jobs: []*Job{
+			{Decision: model.Decision{ID: "one", State: model.DecisionBanned}, Destination: "target"},
+			{Decision: model.Decision{ID: "two", State: model.DecisionBanned}, Destination: "target"},
+		}}
+		provider := &acceptProvider{}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: retry.DefaultMaxAttempts}}, retry.DefaultRetryPolicy(), logger, time.Now().Add(time.Second)))
+
+		assert.Equal(t, 2, provider.applied)
+		assert.Len(t, q.finished, 2)
+	})
+
+	t.Run("uses the limit owned by each runtime target", func(t *testing.T) {
+		t.Parallel()
+
+		q := &scriptedQueue{
+			jobs: []*Job{
+				{Decision: model.Decision{ID: "one", State: model.DecisionBanned}, Destination: "webhook.receiver"},
+				{Decision: model.Decision{ID: "two", State: model.DecisionBanned}, Destination: "cloudflare.edge"},
+			},
+		}
+		destinations := map[string]Target{
+			"webhook.receiver": {Provider: &acceptProvider{}, MaxAttempts: 5},
+			"cloudflare.edge":  {Provider: &acceptProvider{}, MaxAttempts: retry.DefaultMaxAttempts},
+		}
+
+		err := drainReady(t.Context(), q, destinations, retry.DefaultRetryPolicy(), slog.Default(), time.Now().Add(time.Second))
+
+		require.NoError(t, err)
+		assert.Equal(t, []int{5, retry.DefaultMaxAttempts}, q.limits)
+	})
+
+	t.Run("respects expired deadline", func(t *testing.T) {
+		t.Parallel()
+
+		q := &scriptedQueue{jobs: []*Job{{Decision: model.Decision{ID: "one", State: model.DecisionBanned}, Destination: "target"}}}
+		provider := &acceptProvider{}
+		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: retry.DefaultMaxAttempts}}, retry.DefaultRetryPolicy(), slog.Default(), time.Now().Add(-time.Second)))
+
+		assert.Zero(t, provider.applied)
+		assert.Empty(t, q.finished)
+	})
+}
+
+func TestWorkerWakeups(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		q := &scriptedQueue{changes: make(chan struct{}, 1), deadlines: []time.Time{{}, time.Now().Add(11 * time.Minute)}}
+		r := Start(t.Context(), q, &scriptedExpirer{}, nil, retry.DefaultRetryPolicy(), slog.Default())
+		defer func() { require.NoError(t, r.Close()) }()
+		synctest.Wait()
+		require.Equal(t, 1, int(q.cycles.Load()))
+		time.Sleep(10 * time.Minute)
+		synctest.Wait()
+		require.Equal(t, 1, int(q.cycles.Load()))
+
+		q.changes <- struct{}{}
+		synctest.Wait()
+		require.Equal(t, 2, int(q.cycles.Load()))
+		time.Sleep(time.Minute)
+		synctest.Wait()
+		require.Equal(t, 3, int(q.cycles.Load()))
+	})
+}
+
+func TestWaitUntilNoDeadline(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		changes := make(chan struct{}, 1)
+		done := make(chan struct{})
+		go func() {
+			waitUntil(ctx, changes, time.Time{})
+			close(done)
+		}()
+		synctest.Wait()
+		select {
+		case <-done:
+			require.FailNow(t, "idle worker did not wait")
+		default:
+		}
+		changes <- struct{}{}
+		synctest.Wait()
+		select {
+		case <-done:
+		default:
+			require.FailNow(t, "idle worker did not resume on change")
+		}
+	})
+}
+
+// failingProvider rejects an attempted delivery for outcome-log tests.
+type failingProvider struct{}
+
+// Deliver returns a retryable delivery error.
+func (failingProvider) Deliver(context.Context, model.Decision) error {
+	return errors.New("receiver unavailable")
+}
+
+func TestDispatchLogging(t *testing.T) {
+	t.Parallel()
+
+	job := Job{
+		Decision:    model.Decision{ID: "decision", IP: "203.0.113.5", Revision: 14, State: model.DecisionBanned},
+		Destination: "webhook.receiver",
+	}
+
+	t.Run("logs successful delivery without a start message", func(t *testing.T) {
+		t.Parallel()
+
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		queue := &scriptedQueue{}
+		provider := &acceptProvider{}
+
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: provider, MaxAttempts: retry.DefaultMaxAttempts}}, retry.DefaultRetryPolicy(), logger, job))
+		assert.Equal(t, 1, provider.applied)
+		assert.Contains(t, logs.String(), `"event":"delivery_completed"`)
+		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "successful delivery should emit one log entry")
+		assert.Contains(t, logs.String(), `"revision":14`)
+		assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
+	})
+
+	t.Run("logs delivery failure without a start message", func(t *testing.T) {
+		t.Parallel()
+
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		queue := &scriptedQueue{}
+
+		require.NoError(t, dispatch(t.Context(), queue, map[string]Target{job.Destination: {Provider: failingProvider{}, MaxAttempts: retry.DefaultMaxAttempts}}, retry.DefaultRetryPolicy(), logger, job))
+		assert.Contains(t, logs.String(), `"event":"delivery_failed"`)
+		assert.Equal(t, 1, bytes.Count(logs.Bytes(), []byte("\n")), "failed delivery should emit one log entry")
+		assert.Contains(t, logs.String(), `"level":"WARN"`)
+		assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
+	})
+
+	t.Run("rejects an invalid desired state before provider delivery", func(t *testing.T) {
+		t.Parallel()
+
+		invalid := job
+		invalid.Decision.State = "unknown"
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, nil))
+		queue := &scriptedQueue{}
+		provider := &acceptProvider{}
+		targets := map[string]Target{
+			job.Destination: {
+				Provider:    provider,
+				MaxAttempts: retry.DefaultMaxAttempts,
+			},
+		}
+
+		require.NoError(t, dispatch(t.Context(), queue, targets, retry.DefaultRetryPolicy(), logger, invalid))
+		assert.Zero(t, provider.applied)
+		assert.Empty(t, queue.finished)
+		assert.Contains(t, logs.String(), "invalid decision state")
+	})
+
+	t.Run("does not consume an attempt for an unconfigured destination", func(t *testing.T) {
+		t.Parallel()
+
+		var logs bytes.Buffer
+		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		queue := &scriptedQueue{}
+
+		err := dispatch(t.Context(), queue, nil, retry.DefaultRetryPolicy(), logger, job)
+
+		require.ErrorContains(t, err, "destination missing from configuration")
+		assert.Empty(t, queue.limits)
+		assert.Contains(t, logs.String(), `"event":"delivery_destination_missing"`)
+	})
+
+}
+
+// TestExpiryLogging logs only committed, effective releases, once per transition.
+func TestExpiryLogging(t *testing.T) {
+	t.Parallel()
+
+	var logs bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	q := &scriptedQueue{}
+	expirer := &scriptedExpirer{expired: []model.Decision{{
+		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: model.DecisionUnbanned,
+	}}}
+
+	_, err := processReady(t.Context(), q, expirer, nil, retry.DefaultRetryPolicy(), logger)
+	require.NoError(t, err)
+	assert.Contains(t, logs.String(), `"event":"ban_expired"`)
+	assert.Contains(t, logs.String(), `"decision_id":"expired-id"`)
+	assert.Contains(t, logs.String(), `"level":"INFO"`)
+	assert.NotContains(t, logs.String(), `"event":"delivery_starting"`)
+
+	logs.Reset()
+	_, err = processReady(t.Context(), q, expirer, nil, retry.DefaultRetryPolicy(), logger)
+	require.NoError(t, err)
+	assert.Empty(t, logs.String(), "expiry notification must not be emitted again")
+}
+
+func TestProcessReadyUsesExpirer(t *testing.T) {
+	t.Parallel()
+
+	t.Run("committed releases come from the expiry service", func(t *testing.T) {
+		t.Parallel()
+
+		q := &scriptedQueue{}
+		expirer := &scriptedExpirer{expired: []model.Decision{{
+			ID: "release", State: model.DecisionUnbanned,
+		}}}
+
+		_, err := processReady(t.Context(), q, expirer, nil, retry.DefaultRetryPolicy(), slog.Default())
+
+		require.NoError(t, err)
+		assert.Empty(t, expirer.expired)
+	})
+}
+
+func TestStartUsesRetryPolicy(t *testing.T) {
+	t.Parallel()
+
+	synctest.Test(t, func(t *testing.T) {
+		queue := &scriptedQueue{
+			jobs: []*Job{
+				{
+					Decision:    model.Decision{ID: "one", State: model.DecisionBanned},
+					Destination: "target",
+				},
+				{
+					Decision:      model.Decision{ID: "two", State: model.DecisionBanned},
+					Destination:   "target",
+					PreviousDelay: 3 * time.Second,
+				},
+				{
+					Decision:      model.Decision{ID: "three", State: model.DecisionBanned},
+					Destination:   "target",
+					PreviousDelay: 6 * time.Second,
+				},
+			},
+		}
+		targets := map[string]Target{
+			"target": {
+				Provider:    failingProvider{},
+				MaxAttempts: retry.DefaultMaxAttempts,
+			},
+		}
+		policy := retry.RetryPolicy{
+			InitialDelay: 3 * time.Second,
+			MaxDelay:     10 * time.Second,
+		}
+		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+		runner := Start(t.Context(), queue, &scriptedExpirer{}, targets, policy, logger)
+		synctest.Wait()
+		require.NoError(t, runner.Close())
+
+		assert.Equal(t, []time.Duration{3 * time.Second, 6 * time.Second, 10 * time.Second}, queue.delays)
+		assert.Equal(t, []int{retry.DefaultMaxAttempts, retry.DefaultMaxAttempts, retry.DefaultMaxAttempts}, queue.limits)
+	})
+}

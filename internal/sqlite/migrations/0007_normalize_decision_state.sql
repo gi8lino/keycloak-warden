@@ -32,7 +32,7 @@ CREATE TABLE deliveries (
 );
 
 CREATE TABLE delivery_history (
-    ip TEXT NOT NULL REFERENCES decisions(ip) ON DELETE CASCADE,
+    ip TEXT NOT NULL REFERENCES decisions (ip) ON DELETE CASCADE,
     revision INTEGER NOT NULL,
     destination TEXT NOT NULL,
     desired_state TEXT,
@@ -51,21 +51,41 @@ CREATE TABLE delivery_attempts (
     error TEXT,
     PRIMARY KEY (ip, revision, destination, number),
     FOREIGN KEY (ip, revision, destination)
-        REFERENCES delivery_history(ip, revision, destination) ON DELETE CASCADE
+        REFERENCES delivery_history (ip, revision, destination) ON DELETE CASCADE
 );
 
-WITH previous(ip, id, revision, state_value, expires, failure_generation) AS (
-    SELECT * FROM old_decisions
+WITH previous (ip, id, revision, state_value, expires, failure_generation) AS (
+    SELECT *
+    FROM old_decisions
 )
-INSERT INTO decisions (ip, id, revision, state, expires, failure_generation)
-SELECT ip, id, revision,
-       CASE state_value WHEN 1 THEN 'banned' WHEN 0 THEN 'unbanned' ELSE state_value END,
-       expires, failure_generation
+INSERT INTO decisions (
+    ip,
+    id,
+    revision,
+    state,
+    expires,
+    failure_generation
+)
+SELECT
+    ip,
+    id,
+    revision,
+    CASE state_value WHEN 1 THEN 'banned' WHEN 0 THEN 'unbanned' ELSE state_value END,
+    expires,
+    failure_generation
 FROM previous;
-INSERT INTO ban_sources SELECT * FROM old_ban_sources;
-INSERT INTO deliveries SELECT * FROM old_deliveries;
-INSERT INTO delivery_history SELECT * FROM old_delivery_history;
-INSERT INTO delivery_attempts SELECT * FROM old_delivery_attempts;
+INSERT INTO ban_sources
+SELECT *
+FROM old_ban_sources;
+INSERT INTO deliveries
+SELECT *
+FROM old_deliveries;
+INSERT INTO delivery_history
+SELECT *
+FROM old_delivery_history;
+INSERT INTO delivery_attempts
+SELECT *
+FROM old_delivery_attempts;
 
 DROP TABLE old_delivery_attempts;
 DROP TABLE old_delivery_history;

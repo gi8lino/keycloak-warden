@@ -13,7 +13,7 @@ services:
     volumes:
       - state:/data
       - ./warden${SLACK_AUTHORIZATION:+-slack}.yaml:/config/warden.yaml:ro
-      - ../../deploy/kubernetes/templates/slack-bot.json.tmpl:/config/templates/slack-bot.json.tmpl:ro
+      - ../../deploy/kubernetes/templates/incident-slack-bot.json.tmpl:/config/templates/incident-slack-bot.json.tmpl:ro
     environment:
       SLACK_CHANNEL: ${SLACK_CHANNEL:-test}
       SLACK_AUTHORIZATION: ${SLACK_AUTHORIZATION:-}
@@ -54,7 +54,7 @@ services:
       context: .
       dockerfile: Dockerfile.keycloak
       args:
-        SNITCH_VERSION: ${SNITCH_RELEASE:-1.0.0}
+        SNITCH_VERSION: ${SNITCH_RELEASE:-2.0.0}
     command: ["start-dev", "--import-realm"]
     ports:
       - "127.0.0.1:${E2E_KC_PORT:-18080}:8080"
@@ -67,6 +67,7 @@ services:
       KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_URL: http://warden:8080/events
       KC_SPI_EVENTS_LISTENER__SNITCH__WEBHOOK_SECRET: development-snitch-secret
       KC_SPI_EVENTS_LISTENER__SNITCH__EVENT_TYPES: LOGIN_ERROR
+      KC_SPI_EVENTS_LISTENER__SNITCH__ADMIN_EVENTS: "true"
     depends_on:
       receiver:
         condition: service_started

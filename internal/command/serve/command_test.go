@@ -11,20 +11,28 @@ import (
 	"testing"
 
 	"github.com/containeroo/tinyflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 )
 
 // startupLogs executes the registered command against an occupied port and captures all startup logs.
 func startupLogs(t *testing.T, args ...string) string {
 	t.Helper()
 	config := `
-rule:
-  threshold: 2
-  window: 1m
-  ban: 1m
-targets:
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 1m
+enforcements:
   webhook:
     local:
       url: http://127.0.0.1:8090/hook
@@ -242,22 +250,10 @@ func TestServeFlagValidation(t *testing.T) {
 		require.NoError(t, parse("--snitch-secret", "secret", "--prune-interval=15m", "--optimize-interval=6h"))
 	})
 
-	t.Run("accepts retry delay overrides", func(t *testing.T) {
+	t.Run("rejects retry delay flags", func(t *testing.T) {
 		t.Parallel()
 
-		require.NoError(t, parse("--snitch-secret", "secret", "--retry-initial-delay=2s", "--retry-max-delay=30s"))
-	})
-
-	t.Run("rejects zero initial retry delay", func(t *testing.T) {
-		t.Parallel()
-
-		require.ErrorContains(t, parse("--snitch-secret", "secret", "--retry-initial-delay=0s"), "retry-initial-delay")
-	})
-
-	t.Run("rejects negative maximum retry delay", func(t *testing.T) {
-		t.Parallel()
-
-		require.ErrorContains(t, parse("--snitch-secret", "secret", "--retry-max-delay=-1s"), "retry-max-delay")
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--retry-initial-delay=2s"), "retry-initial-delay")
 	})
 
 	t.Run("rejects zero prune interval", func(t *testing.T) {
@@ -328,10 +324,17 @@ func TestMaintenanceIntervalEnvironment(t *testing.T) {
 
 // observeOnlyConfig is a valid detection rule without action destinations.
 const observeOnlyConfig = `
-rule:
-  threshold: 2
-  window: 1m
-  ban: 1m
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 1m
 `
 
 func TestObserveOnlyFlag(t *testing.T) {
@@ -341,7 +344,7 @@ func TestObserveOnlyFlag(t *testing.T) {
 		t.Parallel()
 
 		_, err := runServeCommand(t, observeOnlyConfig)
-		require.ErrorContains(t, err, "at least one webhook or cloudflare target is required")
+		require.ErrorContains(t, err, "automatic ban rules require at least one enforcement destination")
 	})
 
 	t.Run("allows startup without destinations", func(t *testing.T) {
@@ -355,7 +358,7 @@ func TestObserveOnlyFlag(t *testing.T) {
 	t.Run("does not resolve configured provider credentials", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := observeOnlyConfig + `targets:
+		cfg := observeOnlyConfig + `enforcements:
   webhook:
     local:
       url: file:/nonexistent/warden-observe-only-url
@@ -367,7 +370,7 @@ func TestObserveOnlyFlag(t *testing.T) {
 	t.Run("still rejects invalid target structure", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := observeOnlyConfig + `targets:
+		cfg := observeOnlyConfig + `enforcements:
   webhook:
     local:
       url: ""
@@ -386,10 +389,10 @@ func TestObserveOnlyEnvironment(t *testing.T) {
 	assert.Contains(t, logs, `"observe_only":true`)
 
 	_, err = runServeCommand(t, observeOnlyConfig, "--observe-only=false")
-	require.ErrorContains(t, err, "at least one webhook or cloudflare target is required")
+	require.ErrorContains(t, err, "automatic ban rules require at least one enforcement destination")
 }
 
-func TestRetryDelayFlags(t *testing.T) {
+func TestRetryDelayConfiguration(t *testing.T) {
 	t.Parallel()
 
 	t.Run("uses defaults", func(t *testing.T) {
@@ -398,41 +401,45 @@ func TestRetryDelayFlags(t *testing.T) {
 		line := startupLog(t)
 		assert.Contains(t, line, `"retry_initial_delay":"10s"`)
 		assert.Contains(t, line, `"retry_max_delay":"5m0s"`)
+		assert.Contains(t, line, `"notification_retry_initial_delay":"10s"`)
 	})
 
-	t.Run("uses explicit overrides", func(t *testing.T) {
+	t.Run("uses independent YAML overrides", func(t *testing.T) {
 		t.Parallel()
 
-		line := startupLog(t, "--retry-initial-delay=2s", "--retry-max-delay=30s")
-		assert.Contains(t, line, `"retry_initial_delay":"2s"`)
-		assert.Contains(t, line, `"retry_max_delay":"30s"`)
+		cfg := observeOnlyConfig + `enforcements:
+  retry-initial-delay: 2s
+  retry-max-delay: 30s
+notifications:
+  retry-initial-delay: 4s
+  retry-max-delay: 1m
+`
+		logs, err := runServeCommand(t, cfg, "--observe-only")
+		require.ErrorContains(t, err, "address already in use")
+		assert.Contains(t, logs, `"retry_initial_delay":"2s"`)
+		assert.Contains(t, logs, `"retry_max_delay":"30s"`)
+		assert.Contains(t, logs, `"notification_retry_initial_delay":"4s"`)
+		assert.Contains(t, logs, `"notification_retry_max_delay":"1m0s"`)
 	})
 
 	t.Run("rejects inverted delays before starting listeners", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := runServeCommand(t, observeOnlyConfig, "--observe-only", "--retry-initial-delay=20s", "--retry-max-delay=10s")
+		cfg := observeOnlyConfig + `enforcements:
+  retry-initial-delay: 20s
+  retry-max-delay: 10s
+`
+		_, err := runServeCommand(t, cfg, "--observe-only")
 		require.ErrorContains(t, err, "must not be less than retry-initial-delay")
 	})
 
 	t.Run("rejects submillisecond delays", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := runServeCommand(t, observeOnlyConfig, "--observe-only", "--retry-initial-delay=500us")
+		cfg := observeOnlyConfig + `enforcements:
+  retry-initial-delay: 500us
+`
+		_, err := runServeCommand(t, cfg, "--observe-only")
 		require.ErrorContains(t, err, "positive whole number of milliseconds")
 	})
-}
-
-func TestRetryDelayEnvironment(t *testing.T) {
-	// Environment changes are process-wide and cannot be used in parallel tests.
-	t.Setenv("WARDEN__RETRY_INITIAL_DELAY", "3s")
-	t.Setenv("WARDEN__RETRY_MAX_DELAY", "45s")
-
-	line := startupLog(t)
-	assert.Contains(t, line, `"retry_initial_delay":"3s"`)
-	assert.Contains(t, line, `"retry_max_delay":"45s"`)
-
-	line = startupLog(t, "--retry-initial-delay=4s", "--retry-max-delay=1m")
-	assert.Contains(t, line, `"retry_initial_delay":"4s"`)
-	assert.Contains(t, line, `"retry_max_delay":"1m0s"`)
 }

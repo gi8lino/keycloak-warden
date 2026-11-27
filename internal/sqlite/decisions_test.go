@@ -34,7 +34,7 @@ func TestDecisionIDsUseUUIDv7(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"))
 		defer store.Close() //nolint:errcheck
 
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)

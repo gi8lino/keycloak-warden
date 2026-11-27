@@ -26,11 +26,18 @@ func TestLoad(t *testing.T) {
 		t.Parallel()
 
 		cfg, err := Load(writeConfig(t, `
-rule:
-  threshold: 2
-  window: 1m
-  ban: 3m
-targets:
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 3m
+enforcements:
   webhook:
     ops:
       url: env:WEBHOOK_URL
@@ -46,25 +53,71 @@ targets:
 
 		require.NoError(t, err)
 		require.NoError(t, cfg.Validate())
-		assert.Equal(t, 2, cfg.Rule.Threshold)
-		assert.Equal(t, 3*time.Minute, cfg.Rule.Ban)
-		assert.Equal(t, "env:WEBHOOK_URL", cfg.Targets.Webhook["ops"].URL)
-		assert.Equal(t, "file:/config/slack.tmpl", cfg.Targets.Webhook["ops"].BodyTemplate)
-		assert.Equal(t, "env:WEBHOOK_AUTHORIZATION", cfg.Targets.Webhook["ops"].Headers["Authorization"])
-		assert.Equal(t, "warden", cfg.Targets.Webhook["ops"].Headers["X-Source"])
-		assert.Equal(t, "env:CLOUDFLARE_ZONE_ID", cfg.Targets.Cloudflare["primary"].ZoneID)
-		assert.Equal(t, "env:CLOUDFLARE_API_TOKEN", cfg.Targets.Cloudflare["primary"].APIToken)
+		assert.Equal(t, 2, cfg.Rules["brute-force"].Aggregation.Threshold)
+		assert.Equal(t, 3*time.Minute, cfg.Rules["brute-force"].Actions.Ban)
+		assert.Equal(t, "env:WEBHOOK_URL", cfg.Enforcements.Webhook["ops"].URL)
+		assert.Equal(t, "file:/config/slack.tmpl", cfg.Enforcements.Webhook["ops"].BodyTemplate)
+		assert.Equal(t, "env:WEBHOOK_AUTHORIZATION", cfg.Enforcements.Webhook["ops"].Headers["Authorization"])
+		assert.Equal(t, "warden", cfg.Enforcements.Webhook["ops"].Headers["X-Source"])
+		assert.Equal(t, "env:CLOUDFLARE_ZONE_ID", cfg.Enforcements.Cloudflare["primary"].ZoneID)
+		assert.Equal(t, "env:CLOUDFLARE_API_TOKEN", cfg.Enforcements.Cloudflare["primary"].APIToken)
+	})
+
+	t.Run("accepts a quoted rule name with punctuation", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := Load(writeConfig(t, `
+rules:
+  "Auth/Login.Errors":
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+`))
+
+		require.NoError(t, err)
+		require.NoError(t, cfg.Validate())
+		assert.Equal(t, "Auth/Login.Errors", cfg.Rules.Ordered()[0].Name)
+	})
+
+	t.Run("rejects a quoted rule name with whitespace during validation", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := Load(writeConfig(t, `
+rules:
+  "login errors":
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+`))
+
+		require.NoError(t, err)
+		require.ErrorContains(t, cfg.Validate(), "rule name")
 	})
 
 	t.Run("loaded configuration validates headers before provider construction", func(t *testing.T) {
 		t.Parallel()
 
 		cfg, err := Load(writeConfig(t, `
-rule:
-  threshold: 2
-  window: 1m
-  ban: 3m
-targets:
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 3m
+enforcements:
   webhook:
     ops:
       url: https://example.org
@@ -78,28 +131,28 @@ targets:
 	t.Run("rejects old flat target format", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "targets:\n  edge:\n    provider: cloudflare\n    zone-id: example\n"))
+		_, err := Load(writeConfig(t, "enforcements:\n  edge:\n    provider: cloudflare\n    zone-id: example\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects provider fields inside webhook", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "targets:\n  webhook:\n    ops:\n      url: https://example.org\n      provider: webhook\n"))
+		_, err := Load(writeConfig(t, "enforcements:\n  webhook:\n    ops:\n      url: https://example.org\n      provider: webhook\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects signing secret field", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "targets:\n  webhook:\n    ops:\n      url: https://example.org\n      signing-secret: old\n"))
+		_, err := Load(writeConfig(t, "enforcements:\n  webhook:\n    ops:\n      url: https://example.org\n      signing-secret: old\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects unknown provider group", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "targets:\n  other:\n    edge:\n      url: https://example.org\n"))
+		_, err := Load(writeConfig(t, "enforcements:\n  other:\n    edge:\n      url: https://example.org\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
@@ -113,28 +166,28 @@ targets:
 	t.Run("rejects duplicate keys", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "rule: {}\nrule: {}\n"))
+		_, err := Load(writeConfig(t, "rules: {}\nrules: {}\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects duplicate nested keys", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "targets:\n  webhook:\n    ops:\n      headers:\n        X-Key: a\n        X-Key: b\n"))
+		_, err := Load(writeConfig(t, "enforcements:\n  webhook:\n    ops:\n      headers:\n        X-Key: a\n        X-Key: b\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
 	t.Run("rejects multiple documents", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "rule: {}\n---\nrule: {}\n"))
+		_, err := Load(writeConfig(t, "rules: {}\n---\nrules: {}\n"))
 		require.ErrorContains(t, err, "expected one YAML document")
 	})
 
 	t.Run("rejects invalid duration", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := Load(writeConfig(t, "rule:\n  window: not-a-duration\n"))
+		_, err := Load(writeConfig(t, "rules:\n  brute-force:\n    selector:\n      kind: user\n      events: [LOGIN_ERROR]\n    aggregation:\n      group-by: ip\n      threshold: 2\n      window: not-a-duration\n    actions:\n      ban: 15m\n"))
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
@@ -169,10 +222,10 @@ targets:
 	t.Run("does not silently default detection rule", func(t *testing.T) {
 		t.Parallel()
 
-		cfg, err := Load(writeConfig(t, "targets: {}\n"))
+		cfg, err := Load(writeConfig(t, "enforcements: {}\n"))
 		require.NoError(t, err)
-		assert.Zero(t, cfg.Rule.Threshold)
-		require.ErrorContains(t, cfg.Rule.Validate(), "threshold")
+		assert.Empty(t, cfg.Rules)
+		require.ErrorContains(t, cfg.Validate(), "configure between one and 64 rules")
 	})
 
 	t.Run("rejects missing file", func(t *testing.T) {
@@ -188,7 +241,7 @@ func TestAttemptLimits(t *testing.T) {
 	t.Run("inherits and overrides the YAML budget by named destination", func(t *testing.T) {
 		t.Parallel()
 		cfg, err := Load(writeConfig(t, `
-targets:
+enforcements:
   max-attempts: 4
   webhook:
     receiver:
@@ -203,20 +256,20 @@ targets:
       max-attempts: 1
 `))
 		require.NoError(t, err)
-		require.NoError(t, cfg.Targets.Validate())
-		require.NotNil(t, cfg.Targets.MaxAttempts)
-		assert.Equal(t, 4, *cfg.Targets.MaxAttempts)
-		assert.Nil(t, cfg.Targets.Webhook["receiver"].MaxAttempts)
-		require.NotNil(t, cfg.Targets.Webhook["slack"].MaxAttempts)
-		assert.Equal(t, 2, *cfg.Targets.Webhook["slack"].MaxAttempts)
-		require.NotNil(t, cfg.Targets.Cloudflare["edge"].MaxAttempts)
-		assert.Equal(t, 1, *cfg.Targets.Cloudflare["edge"].MaxAttempts)
+		require.NoError(t, cfg.Enforcements.Validate())
+		require.NotNil(t, cfg.Enforcements.MaxAttempts)
+		assert.Equal(t, 4, *cfg.Enforcements.MaxAttempts)
+		assert.Nil(t, cfg.Enforcements.Webhook["receiver"].MaxAttempts)
+		require.NotNil(t, cfg.Enforcements.Webhook["slack"].MaxAttempts)
+		assert.Equal(t, 2, *cfg.Enforcements.Webhook["slack"].MaxAttempts)
+		require.NotNil(t, cfg.Enforcements.Cloudflare["edge"].MaxAttempts)
+		assert.Equal(t, 1, *cfg.Enforcements.Cloudflare["edge"].MaxAttempts)
 	})
 	t.Run("rejects an explicit zero", func(t *testing.T) {
 		t.Parallel()
-		cfg, err := Load(writeConfig(t, "targets:\n  max-attempts: 0\n  webhook:\n    receiver:\n      url: https://example.org\n"))
+		cfg, err := Load(writeConfig(t, "enforcements:\n  max-attempts: 0\n  webhook:\n    receiver:\n      url: https://example.org\n"))
 		require.NoError(t, err)
-		require.ErrorContains(t, cfg.Targets.Validate(), "max-attempts")
+		require.ErrorContains(t, cfg.Enforcements.Validate(), "max-attempts")
 	})
 }
 
@@ -228,10 +281,17 @@ func TestAdmissionConfiguration(t *testing.T) {
 		cfg, err := Load(writeConfig(t, `protected-ips:
   - 203.0.113.0/24
   - 2001:db8::1
-rule:
-  threshold: 2
-  window: 1m
-  ban: 15m
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 15m
 `))
 		require.NoError(t, err)
 		require.NoError(t, cfg.Validate())
@@ -248,12 +308,103 @@ rule:
 	t.Run("invalid protection fails startup", func(t *testing.T) {
 		t.Parallel()
 		cfg, err := Load(writeConfig(t, `protected-ips: [bad-address]
-rule:
-  threshold: 2
-  window: 1m
-  ban: 15m
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 15m
 `))
 		require.NoError(t, err)
 		require.ErrorContains(t, cfg.Validate(), "invalid protected IP or CIDR")
+	})
+}
+
+func TestLoadNamedRules(t *testing.T) {
+	t.Parallel()
+
+	t.Run("loads independent named rules and longest observation window", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, `
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 5
+      window: 1m
+    actions:
+      ban: 15m
+  role-changes:
+    selector:
+      kind: admin
+      resources: [REALM_ROLE_MAPPING]
+      operations: [CREATE]
+      success-only: true
+    aggregation:
+      group-by: realm
+      threshold: 1
+      window: 2m
+`))
+		require.NoError(t, err)
+		require.NoError(t, cfg.Validate())
+		require.Len(t, cfg.Rules, 2)
+		assert.Contains(t, cfg.Rules, "brute-force")
+		assert.Equal(t, 2*time.Minute, cfg.ObservationWindow())
+	})
+
+	t.Run("rejects singular rule configuration", func(t *testing.T) {
+		t.Parallel()
+		_, err := Load(writeConfig(t, "rule: {}\n"))
+		require.ErrorContains(t, err, "invalid Warden YAML")
+	})
+
+	t.Run("rejects a ban outside actions", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := Load(writeConfig(t, `rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    ban: 15m
+`))
+		require.ErrorContains(t, err, "invalid Warden YAML")
+	})
+
+	t.Run("accepts missing actions for monitoring", func(t *testing.T) {
+		t.Parallel()
+
+		cfg, err := Load(writeConfig(t, `rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+`))
+		require.NoError(t, err)
+		require.NoError(t, cfg.Validate())
+		assert.False(t, cfg.Rules.RequiresEnforcement())
+	})
+
+	t.Run("rejects an explicitly empty rules map", func(t *testing.T) {
+		t.Parallel()
+		cfg, err := Load(writeConfig(t, "rules: {}\n"))
+		require.NoError(t, err)
+		require.Error(t, cfg.Validate())
 	})
 }

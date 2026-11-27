@@ -8,7 +8,7 @@ on:
     paths:
       - "docs/**"
       - "Makefile"
-      - ".github/workflows/docs.yml"
+      - ".github/workflows/pages.yml"
   push:
     branches:
       - main

@@ -19,11 +19,11 @@ func Health() http.HandlerFunc {
 	}
 }
 
-// Ready reports whether the database and action worker are operational.
-func Ready(prober ReadinessProber, workerDone <-chan struct{}) http.HandlerFunc {
-	if workerDone == nil {
+// Ready reports whether the database and enforcement worker are operational.
+func Ready(prober ReadinessProber, enforcementDone <-chan struct{}, optionalWorkers ...<-chan struct{}) http.HandlerFunc {
+	if enforcementDone == nil {
 		return func(w http.ResponseWriter, _ *http.Request) {
-			httpresponse.Problem(w, http.StatusServiceUnavailable, "Action worker unavailable.")
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "Enforcement worker unavailable.")
 		}
 	}
 
@@ -35,10 +35,19 @@ func Ready(prober ReadinessProber, workerDone <-chan struct{}) http.HandlerFunc 
 
 	return func(w http.ResponseWriter, r *http.Request) {
 		select {
-		case <-workerDone:
-			httpresponse.Problem(w, http.StatusServiceUnavailable, "Action worker unavailable.")
+		case <-enforcementDone:
+			httpresponse.Problem(w, http.StatusServiceUnavailable, "Enforcement worker unavailable.")
 			return
 		default:
+		}
+
+		for _, done := range optionalWorkers {
+			select {
+			case <-done:
+				httpresponse.Problem(w, http.StatusServiceUnavailable, "Notification worker unavailable.")
+				return
+			default:
+			}
 		}
 
 		if err := prober.Ping(r.Context()); err != nil {

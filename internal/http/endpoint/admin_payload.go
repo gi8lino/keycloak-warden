@@ -21,20 +21,24 @@ func decodeAdminPayload(w http.ResponseWriter, r *http.Request, target any, inva
 		httpresponse.Problem(w, http.StatusUnsupportedMediaType, "Expected application/json.")
 		return false
 	}
+
 	controller := http.NewResponseController(w)
 	if err := controller.SetReadDeadline(time.Now().Add(5 * time.Second)); err == nil {
 		defer func() { _ = controller.SetReadDeadline(time.Time{}) }()
 	}
+
 	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxAdminBodyBytes))
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(target); err != nil {
 		writeAdminDecodeError(w, err, invalidMessage, largeMessage)
 		return false
 	}
+
 	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
 		writeAdminDecodeError(w, err, "Expected exactly one JSON object.", largeMessage)
 		return false
 	}
+
 	return true
 }
 

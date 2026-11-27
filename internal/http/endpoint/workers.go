@@ -11,7 +11,7 @@ import (
 
 // WorkerStatus supplies the aggregated read-only worker snapshot.
 type WorkerStatus interface {
-	// Snapshot gathers action and maintenance state without changing schedules.
+	// Snapshot gathers enforcement and maintenance state without changing schedules.
 	Snapshot(context.Context) (model.Workers, error)
 }
 

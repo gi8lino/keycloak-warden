@@ -10,6 +10,7 @@ on:
     paths:
       - "cmd/**"
       - "internal/**"
+      - "pkg/**"
       - "test/**"
       - "go.mod"
       - "go.sum"

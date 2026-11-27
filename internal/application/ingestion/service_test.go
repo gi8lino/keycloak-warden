@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
@@ -51,21 +52,26 @@ type fakeTx struct {
 	until time.Time
 }
 
-// RecordFailure validates the test address and returns the configured insert result.
-func (tx *fakeTx) RecordFailure(_ context.Context, event events.Event, _ time.Time) (bool, error) {
-	if event.IP != netip.MustParseAddr("203.0.113.5") {
+// RecordEvent validates the test address and returns the configured insert result.
+func (tx *fakeTx) RecordEvent(_ context.Context, event events.Envelope, _ time.Time, _ bool) (bool, error) {
+	if event.IPAddress() != netip.MustParseAddr("203.0.113.5") {
 		return false, errors.New("unexpected IP")
 	}
 	return tx.inserted, nil
 }
 
-// CountFailures returns the configured failure count.
-func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, error) {
+// CountMatches returns the configured failure count.
+func (tx *fakeTx) CountMatches(_ context.Context, q detection.MatchQuery) (int, error) {
+	if q.ExcludeEventID != "" {
+		return max(0, tx.count-1), nil
+	}
 	return tx.count, nil
 }
 
-// RecordObservation accepts hypothetical threshold hits in tests.
-func (tx *fakeTx) RecordObservation(context.Context, model.Observation) error { return nil }
+// RecordIncident accepts named threshold hits.
+func (tx *fakeTx) RecordIncident(context.Context, model.Incident, []string) (int64, error) {
+	return 1, nil
+}
 
 // EnsureDecision records that ingestion requested an automatic source.
 func (tx *fakeTx) EnsureDecision(context.Context, string) error {
@@ -112,11 +118,21 @@ func TestNew(t *testing.T) {
 	t.Run("rejects missing repository", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ingestion.New(nil, ingestion.Rule{
-			Threshold: 1,
-			Window:    time.Minute,
-			Ban:       time.Minute,
-		}, nil)
+		_, err := ingestion.New(nil, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 1,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: time.Minute,
+			},
+		}}, nil, bans.Policy{})
 
 		require.ErrorContains(t, err, "repository")
 	})
@@ -124,7 +140,7 @@ func TestNew(t *testing.T) {
 	t.Run("rejects invalid rule", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ingestion.New(&fakeRepository{}, ingestion.Rule{}, nil)
+		_, err := ingestion.New(&fakeRepository{}, []detection.Rule{{}}, nil, bans.Policy{})
 
 		require.ErrorContains(t, err, "threshold")
 	})
@@ -136,9 +152,12 @@ func validEvent() events.Envelope {
 		Version:   events.SchemaVersion,
 		ID:        "a",
 		Source:    events.SourceKeycloak,
-		Kind:      events.KindLoginError,
-		IP:        "203.0.113.5",
+		Kind:      events.KindUser,
 		Timestamp: time.Now(),
+		User: &events.UserEvent{
+			Type: events.TypeLoginError,
+			IP:   "203.0.113.5",
+		},
 	}
 }
 
@@ -147,14 +166,24 @@ func processEvent(t *testing.T, event events.Envelope, count int, inserted bool)
 	t.Helper()
 	tx := &fakeTx{inserted: inserted, count: count}
 	repo := &fakeRepository{tx: tx}
-	service, err := ingestion.New(repo, ingestion.Rule{
-		Threshold: 5,
-		Window:    time.Minute,
-		Ban:       15 * time.Minute,
-	}, nil)
+	service, err := ingestion.New(repo, []detection.Rule{{
+		Name: "brute-force",
+		Selector: detection.Selector{
+			Kind:   events.KindUser,
+			Events: []string{events.TypeLoginError},
+		},
+		Aggregation: detection.Aggregation{
+			GroupBy:   detection.GroupIP,
+			Threshold: 5,
+			Window:    time.Minute,
+		},
+		Actions: detection.Actions{
+			Ban: 15 * time.Minute,
+		},
+	}}, nil, bans.Policy{})
 
 	require.NoError(t, err)
-	result, err := service.Process(t.Context(), event, time.Now())
+	result, err := service.Process(t.Context(), event, time.Now)
 	return result.Decision, repo, tx, err
 }
 
@@ -198,10 +227,10 @@ func TestServiceProcess(t *testing.T) {
 		t.Parallel()
 
 		event := validEvent()
-		event.IP = "bad"
+		event.User.IP = "bad"
 		decision, repo, tx, err := processEvent(t, event, 0, true)
 
-		require.ErrorIs(t, err, ingestion.ErrInvalidEvent)
+		require.ErrorIs(t, err, events.ErrInvalidEvent)
 		assert.Nil(t, decision)
 		assert.Zero(t, repo.calls)
 		assert.False(t, tx.blocked)
@@ -214,7 +243,20 @@ func TestServiceProcess(t *testing.T) {
 		event.Version = events.SchemaVersion + 1
 		decision, repo, tx, err := processEvent(t, event, 0, true)
 
-		require.ErrorIs(t, err, ingestion.ErrInvalidEvent)
+		require.ErrorIs(t, err, events.ErrInvalidEvent)
+		assert.Nil(t, decision)
+		assert.Zero(t, repo.calls)
+		assert.False(t, tx.blocked)
+	})
+
+	t.Run("rejects schema version 1 before persistence", func(t *testing.T) {
+		t.Parallel()
+
+		event := validEvent()
+		event.Version = 1
+		decision, repo, tx, err := processEvent(t, event, 5, true)
+
+		require.ErrorIs(t, err, events.ErrInvalidEvent)
 		assert.Nil(t, decision)
 		assert.Zero(t, repo.calls)
 		assert.False(t, tx.blocked)
@@ -224,7 +266,7 @@ func TestServiceProcess(t *testing.T) {
 		t.Parallel()
 
 		event := validEvent()
-		event.IP = ""
+		event.User.IP = ""
 		decision, repo, tx, err := processEvent(t, event, 0, true)
 
 		require.NoError(t, err)
@@ -237,7 +279,7 @@ func TestServiceProcess(t *testing.T) {
 		t.Parallel()
 
 		event := validEvent()
-		event.Kind = "LOGIN"
+		event.User.Type = "LOGIN"
 		decision, repo, tx, err := processEvent(t, event, 0, true)
 
 		require.NoError(t, err)
@@ -257,17 +299,27 @@ func assertProcessingOutcome(t *testing.T, kind, ip string, inserted bool, count
 		unchanged: unchanged,
 	}
 	repo := &fakeRepository{tx: tx}
-	service, err := ingestion.New(repo, ingestion.Rule{
-		Threshold: 5,
-		Window:    time.Minute,
-		Ban:       15 * time.Minute,
-	}, nil)
+	service, err := ingestion.New(repo, []detection.Rule{{
+		Name: "brute-force",
+		Selector: detection.Selector{
+			Kind:   events.KindUser,
+			Events: []string{events.TypeLoginError},
+		},
+		Aggregation: detection.Aggregation{
+			GroupBy:   detection.GroupIP,
+			Threshold: 5,
+			Window:    time.Minute,
+		},
+		Actions: detection.Actions{
+			Ban: 15 * time.Minute,
+		},
+	}}, nil, bans.Policy{})
 	require.NoError(t, err)
 
 	event := validEvent()
-	event.Kind = kind
-	event.IP = ip
-	result, err := service.Process(t.Context(), event, time.Now())
+	event.User.Type = kind
+	event.User.IP = ip
+	result, err := service.Process(t.Context(), event, time.Now)
 
 	require.NoError(t, err)
 	assert.Equal(t, outcome, result.Outcome)
@@ -277,9 +329,15 @@ func assertProcessingOutcome(t *testing.T, kind, ip string, inserted bool, count
 	} else {
 		assert.Nil(t, result.Decision)
 	}
+	if (outcome == ingestion.OutcomeUpdated || outcome == ingestion.OutcomeUnchanged) && count == 5 {
+		require.Len(t, result.Incidents, 1)
+		assert.Equal(t, "brute-force", result.Incidents[0].Rule)
+	} else {
+		assert.Empty(t, result.Incidents)
+	}
 	if outcome == ingestion.OutcomeBelowThreshold || outcome == ingestion.OutcomeUpdated || outcome == ingestion.OutcomeUnchanged {
-		assert.Equal(t, count, result.Failures)
-		assert.Equal(t, 5, result.Threshold)
+		assert.Equal(t, count, result.Evaluations[0].Count)
+		assert.Equal(t, 5, result.Evaluations[0].Threshold)
 	}
 }
 
@@ -296,31 +354,31 @@ func TestProcessingOutcomes(t *testing.T) {
 	t.Run("missing address", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, events.KindLoginError, "", false, 0, false, ingestion.OutcomeIgnored, "missing_ip")
+		assertProcessingOutcome(t, events.TypeLoginError, "", false, 0, false, ingestion.OutcomeIgnored, "missing_ip")
 	})
 
 	t.Run("duplicate", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", false, 0, false, ingestion.OutcomeDuplicate, "")
+		assertProcessingOutcome(t, events.TypeLoginError, "203.0.113.5", false, 0, false, ingestion.OutcomeDuplicate, "")
 	})
 
 	t.Run("below threshold", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", true, 4, false, ingestion.OutcomeBelowThreshold, "")
+		assertProcessingOutcome(t, events.TypeLoginError, "203.0.113.5", true, 4, false, ingestion.OutcomeBelowThreshold, "")
 	})
 
 	t.Run("threshold met", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", true, 5, false, ingestion.OutcomeUpdated, "")
+		assertProcessingOutcome(t, events.TypeLoginError, "203.0.113.5", true, 5, false, ingestion.OutcomeUpdated, "")
 	})
 
 	t.Run("unchanged decision", func(t *testing.T) {
 		t.Parallel()
 
-		assertProcessingOutcome(t, events.KindLoginError, "203.0.113.5", true, 5, true, ingestion.OutcomeUnchanged, "")
+		assertProcessingOutcome(t, events.TypeLoginError, "203.0.113.5", true, 5, true, ingestion.OutcomeUnchanged, "")
 	})
 }
 
@@ -333,15 +391,25 @@ func TestServicePassesTargetsToStorage(t *testing.T) {
 		tx := &fakeTx{inserted: true, count: 1}
 		repo := &fakeRepository{tx: tx}
 		targets := []string{"cloudflare.edge", "webhook.slack"}
-		service, err := ingestion.New(repo, ingestion.Rule{
-			Threshold: 1,
-			Window:    time.Minute,
-			Ban:       15 * time.Minute,
-		}, targets)
+		service, err := ingestion.New(repo, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 1,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: 15 * time.Minute,
+			},
+		}}, targets, bans.Policy{})
 		require.NoError(t, err)
 
 		targets[0] = "modified"
-		_, err = service.Process(t.Context(), validEvent(), time.Now())
+		_, err = service.Process(t.Context(), validEvent(), time.Now)
 
 		require.NoError(t, err)
 		assert.Equal(t, []string{"cloudflare.edge", "webhook.slack"}, tx.targets)
@@ -356,14 +424,24 @@ func TestServiceProcessCommitFailure(t *testing.T) {
 
 		tx := &fakeTx{inserted: true, count: 5}
 		repository := &fakeRepository{tx: tx, commitErr: errors.New("commit failed")}
-		service, err := ingestion.New(repository, ingestion.Rule{
-			Threshold: 5,
-			Window:    time.Minute,
-			Ban:       time.Minute,
-		}, []string{"edge"})
+		service, err := ingestion.New(repository, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 5,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: time.Minute,
+			},
+		}}, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 
-		result, err := service.Process(t.Context(), validEvent(), time.Now())
+		result, err := service.Process(t.Context(), validEvent(), time.Now)
 
 		require.ErrorContains(t, err, "commit failed")
 		assert.Equal(t, ingestion.Result{}, result)
@@ -383,14 +461,24 @@ func TestProtectedEvents(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 1}}
-		service, err := ingestion.NewWithPolicy(repo, ingestion.Rule{
-			Threshold: 5,
-			Window:    time.Minute,
-			Ban:       15 * time.Minute,
-		}, nil, bans.Policy{Protection: protection})
+		service, err := ingestion.New(repo, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 5,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: 15 * time.Minute,
+			},
+		}}, nil, bans.Policy{Protection: protection})
 		require.NoError(t, err)
 
-		result, err := service.Process(t.Context(), validEvent(), time.Now())
+		result, err := service.Process(t.Context(), validEvent(), time.Now)
 
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.Result{
@@ -407,19 +495,29 @@ func TestProtectedEvents(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 5}}
-		service, err := ingestion.NewWithPolicy(repo, ingestion.Rule{
-			Threshold: 5,
-			Window:    time.Minute,
-			Ban:       15 * time.Minute,
-		}, nil, bans.Policy{
+		service, err := ingestion.New(repo, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 5,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: 15 * time.Minute,
+			},
+		}}, nil, bans.Policy{
 			Protection:  protection,
 			ObserveOnly: true,
 		})
 		require.NoError(t, err)
 
 		event := validEvent()
-		event.IP = "::ffff:203.0.113.5"
-		result, err := service.Process(t.Context(), event, time.Now())
+		event.User.IP = "::ffff:203.0.113.5"
+		result, err := service.Process(t.Context(), event, time.Now)
 
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.Result{
@@ -436,21 +534,30 @@ func TestProtectedEvents(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 4}}
-		service, err := ingestion.NewWithPolicy(repo, ingestion.Rule{
-			Threshold: 5,
-			Window:    time.Minute,
-			Ban:       15 * time.Minute,
-		}, nil, bans.Policy{Protection: protection})
+		service, err := ingestion.New(repo, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 5,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: 15 * time.Minute,
+			},
+		}}, nil, bans.Policy{Protection: protection})
 		require.NoError(t, err)
 
-		result, err := service.Process(t.Context(), validEvent(), time.Now())
+		result, err := service.Process(t.Context(), validEvent(), time.Now)
 
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.Result{
-			Outcome:   ingestion.OutcomeBelowThreshold,
-			IP:        "203.0.113.5",
-			Failures:  4,
-			Threshold: 5,
+			Outcome:     ingestion.OutcomeBelowThreshold,
+			IP:          "203.0.113.5",
+			Evaluations: []detection.Evaluation{{Rule: "brute-force", Count: 4, Threshold: 5}},
 		}, result)
 		assert.Equal(t, 1, repo.calls)
 	})

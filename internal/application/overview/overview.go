@@ -39,11 +39,17 @@ func NewQuery(page int) (Query, error) {
 	if page < 1 || int64(page-1) > math.MaxInt64/PageSize {
 		return Query{}, fmt.Errorf("%w: page must be positive and within range", ErrInvalid)
 	}
-	return Query{Page: page, Offset: int64(page-1) * PageSize, Limit: PageSize}, nil
+
+	return Query{
+		Page:   page,
+		Offset: int64(page-1) * PageSize,
+		Limit:  PageSize,
+	}, nil
 }
 
 // Store performs the read-only queries in one SQLite snapshot per call.
 type Store interface {
+	OperationsStore
 	// ListRevisions retrieves a bounded page of immutable decision changes.
 	ListRevisions(context.Context, Query, string, model.DecisionState) (model.RevisionPage, error)
 	// ListDeliveries retrieves only the latest destination revision per decision.
@@ -65,7 +71,12 @@ func NewService(store Store) (*Service, error) {
 }
 
 // Revisions returns immutable decision transitions, including releases and extensions.
-func (s *Service) Revisions(ctx context.Context, page int, ip string, state model.DecisionState) (model.RevisionPage, error) {
+func (s *Service) Revisions(
+	ctx context.Context,
+	page int,
+	ip string,
+	state model.DecisionState,
+) (model.RevisionPage, error) {
 	return s.RevisionsThrough(ctx, page, ip, state, 0)
 }
 
@@ -103,7 +114,12 @@ func (s *Service) RevisionsThrough(
 }
 
 // Deliveries returns current-revision destination progress, including failed releases.
-func (s *Service) Deliveries(ctx context.Context, page int, status model.DeliveryStatus, destination string) (model.DeliveryOverviewPage, error) {
+func (s *Service) Deliveries(
+	ctx context.Context,
+	page int,
+	status model.DeliveryStatus,
+	destination string,
+) (model.DeliveryOverviewPage, error) {
 	bounds, err := NewQuery(page)
 	if err != nil {
 		return model.DeliveryOverviewPage{}, err

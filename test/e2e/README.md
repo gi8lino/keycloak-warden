@@ -2,7 +2,7 @@
 
 This is a **development-only** Docker Compose setup. It exercises real Keycloak logins, the actual [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch) JAR, Warden's detection engine, and [Hookglass](https://github.com/gi8lino/hookglass), which verifies Warden's configurable outbound `X-API-Key` header and logs accepted requests.
 
-No Snitch checkout, Maven, fake event injection, or Python smoke harness is needed.
+A schema-version-2 Snitch JAR is required. No fake event injection or Python smoke harness is needed.
 
 ## Start
 
@@ -16,7 +16,7 @@ make e2e-down             # stop containers; preserve the E2E SQLite volume
 make e2e-reset            # stop containers and delete the E2E SQLite volume
 ```
 
-The Snitch JAR is downloaded by `make snitch-download` (also run by `make download` and `make e2e-up`). The Makefile pins `SNITCH_VERSION`; override it with, for example, `make e2e-up SNITCH_VERSION=v0.0.4` to select that release. The versioned JAR is cached under `test/e2e/snitch/` and ignored by Git. The Keycloak image version in `Dockerfile.keycloak` must remain compatible with the Snitch release.
+The Snitch JAR is downloaded by `make snitch-download` (also run by `make download` and `make e2e-up`). The Makefile pins `SNITCH_VERSION`; override it with `make e2e-up SNITCH_VERSION=vX.Y.Z`, substituting a released Snitch version that emits schema version 2. The default pin is `v2.0.0`. Until that release is published, build Snitch locally and copy the schema-version-2 JAR to `test/e2e/snitch/keycloak-snitch-2.0.0.jar` before starting Compose. The versioned JAR is cached under `test/e2e/snitch/` and ignored by Git. The Keycloak image version in `Dockerfile.keycloak` must remain compatible with the Snitch release.
 
 ## Include Slack in the end-to-end test
 
@@ -27,7 +27,7 @@ SLACK_AUTHORIZATION="Bearer xoxb-your-test-bot-token"
 SLACK_CHANNEL=C0123456789
 ```
 
-Set `SLACK_CHANNEL` in the same file to your test channel ID (default: `test`) and invite the bot to that channel. The bot needs the `chat:write` scope. Run `make e2e-test` from the Warden root. A nonempty token enables the Slack Bot API destination alongside Hookglass. The smoke script waits for Slack to acknowledge the ban before releasing the IP, then checks the release acknowledgement. Both messages should appear in the test channel. Warden treats Slack's HTTP 200 with `ok: false` as a delivery failure. Check `make e2e-logs` for the Slack error.
+Set `SLACK_CHANNEL` in the same file to your test channel ID (default: `test`) and invite the bot to that channel. The bot needs the `chat:write` scope. Run `make e2e-test` from the Warden root. A nonempty token enables the Slack Bot API destination alongside Hookglass. The smoke script waits for Slack to acknowledge the brute-force incident independently of enforcement. One incident message should appear in the test channel. Warden treats Slack's HTTP 200 with `ok: false` as a delivery failure. Check `make e2e-logs` for the Slack error.
 
 Leave `SLACK_AUTHORIZATION` empty for the Hookglass-only setup. The local env file is ignored by Git and excluded from the Warden image build context.
 

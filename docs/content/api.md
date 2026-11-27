@@ -10,6 +10,55 @@ Request bodies are limited to **64 KiB**. Larger requests are rejected with HTTP
 
 A successfully processed event returns HTTP `204 No Content`. An event is not necessarily a new ban: the configured detection threshold decides when a new desired state is recorded.
 
+The envelope requires `schemaVersion: 2`, `id`, `source: "keycloak"`, `kind` and `timestamp`, plus exactly one non-null event object matching the kind. Unknown fields are rejected. User events carry their native type in `user.type`; administrative events carry operation and resource metadata in `admin`, with the administrator identity in `admin.actor`. The actor may be null. Representations and arbitrary event details are not accepted.
+
+### User event
+
+```json
+{
+  "schemaVersion": 2,
+  "id": "bb685023-a081-4423-be47-0d40fe4aa59c",
+  "source": "keycloak",
+  "kind": "user",
+  "timestamp": "2026-11-05T14:30:00Z",
+  "user": {
+    "type": "LOGIN_ERROR",
+    "realmId": "example",
+    "clientId": "application",
+    "userId": null,
+    "ipAddress": "203.0.113.42",
+    "error": "invalid_user_credentials"
+  }
+}
+```
+
+### Administrative event
+
+```json
+{
+  "schemaVersion": 2,
+  "id": "ea9fc922-39e3-48d5-8d80-ef3aa801c36f",
+  "source": "keycloak",
+  "kind": "admin",
+  "timestamp": "2026-11-05T14:35:00Z",
+  "admin": {
+    "realmId": "example",
+    "operationType": "CREATE",
+    "resourceType": "REALM_ROLE_MAPPING",
+    "resourcePath": "users/example-user/role-mappings/realm",
+    "actor": {
+      "realmId": "master",
+      "clientId": "admin-client-id",
+      "userId": "administrator-id",
+      "ipAddress": "203.0.113.42"
+    },
+    "error": null
+  }
+}
+```
+
+`admin.realmId` identifies the affected realm; `admin.actor.realmId` identifies the authentication realm. Admin client IDs are native Keycloak identifiers.
+
 ## Administrative endpoints
 
 When `--admin-token` is set, Warden registers these authenticated routes:
@@ -74,7 +123,7 @@ Warden also exposes two authenticated, read-only cross-decision endpoints, using
 
 - `GET /decisions/history` lists **committed effective decision changes** (including extensions and releases), newest first. Each entry includes the stable decision ID, canonical IP, revision, desired state, expiry, UTC commit timestamp, cause (`automatic`, `manual`, `release`, `expiry`, or `reconciled`), and the active source snapshot (kind, reason, expiry) evaluated for that revision. Use `page=2`, `through-sequence=<first response throughSequence>` to pin subsequent pages against new inserts, `ip=203.0.113.42` (exact canonical IP), and `state=banned|unbanned` to filter.
 - `GET /deliveries` lists **only the current revision** for each persisted decision/destination, including released decisions whose unban delivery has not been acknowledged. Each row includes desired and acknowledged revision, state, status, attempt count, optional latest provider error and retry time. Use `page=2`, `status=pending|retrying|delivered|exhausted`, and `destination=cloudflare.edge` to filter.
-- `GET /workers` reports the action and maintenance worker lifecycles, current-revision delivery counts, active bans, the next source-expiry/delivery deadline, latest completed delivery attempt, and maintenance task outcomes. It is read-only and requires the same administrator token.
+- `GET /workers` reports the enforcement, notification and maintenance worker lifecycles, current-revision delivery counts, active bans, the next source-expiry/delivery deadline, latest completed delivery attempt, and maintenance task outcomes. It is read-only and requires the same administrator token.
 
 Both responses use `{ "items": [...], "page": 1, "nextPage": 2 }`, with a maximum of 20 entries per page. `nextPage` is omitted for the last page. Filters are single-valued; invalid/duplicate parameters return HTTP 400. Navigation is ordered by revision commit time (and deterministic tie-breakers), with SQL LIMIT/OFFSET; new changes can shift page boundaries between requests. Use the decision detail endpoint for complete delivery attempts.
 
@@ -84,9 +133,9 @@ A `delivered` status confirms acceptance of a notification, not necessarily that
 
 ## Worker status
 
-`GET /workers` returns one read-only snapshot of the two Warden background workers. It is authenticated with the same bearer token as bans and maintenance. The **actions** worker reports its runtime lifecycle (`idle`, `processing`, `stopped`) and persisted delivery counts for the current revision of each decision, plus the next persisted wake-up deadline and the last completed attempt. The **maintenance** worker reports its runtime state and the existing prune/optimize task statuses. The same maintenance snapshot, including `state` and `startedAt`, is also returned by `GET /maintenance`.
+`GET /workers` returns one read-only snapshot of the Warden background workers. It is authenticated with the same bearer token as bans and maintenance. The **enforcement** worker reports its runtime lifecycle (`idle`, `processing`, `stopped`) and persisted delivery counts for the current revision of each decision, plus the next persisted wake-up deadline and the last completed attempt. The **maintenance** worker reports its runtime state and the existing prune/optimize task statuses. The same maintenance snapshot, including `state` and `startedAt`, is also returned by `GET /maintenance`.
 
-The Go client provides `Client.WorkerStatus(ctx)` with typed results. The endpoint uses the application route prefix. Worker states and database counts are collected separately, so this is not a transactional snapshot.
+The Go client provides `Client.WorkerStatus(ctx)` with typed results. The endpoint uses the application route prefix. The response has `enforcement`, `notifications`, and `maintenance` fields. Notifications include pending, retrying, delivered and exhausted counts, the next eligible deadline, the last recorded attempt time and an optional `runtime` object (absent if no worker is configured). Worker states and database counts are collected separately, so this is not a transactional snapshot.
 
 ## Go administration client
 
@@ -106,9 +155,9 @@ The same option is accepted by URL validation: `client.ValidateURL(address, clie
 
 **Security:** HTTP does not encrypt the administrator bearer token in transit. Restrict access to Warden's application Service using Kubernetes network policies or equivalent controls. The opt-in affects **only the Go client**, not the Warden server, administrative CLI commands, outgoing webhook targets, TLS certificate verification, or redirect handling.
 
-## Webhook delivery
+## Enforcement webhook delivery
 
-Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry. A target with `body-template` renders a custom JSON body using those fields.
+Configured `enforcements.webhook` targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry. A target with `body-template` renders a custom JSON body using those fields.
 
 Webhook responses in the `2xx` range acknowledge a delivery by default. Individual targets may optionally configure a `response` rule for allowed HTTP status codes and plain-text or JSON body matching (including nested JSON error extraction). A rejected response is retried; a successful webhook response means the **receiver accepted the notification**, not necessarily that an external firewall has already reconciled the state. See [Configuration](configuration.md) for response rules.
 
@@ -146,7 +195,6 @@ These authenticated application endpoints use the existing admin bearer token an
 | GET    | `/deliveries/health`         | Aggregate current-revision status counts per destination, including failed and exhausted releases. |
 | POST   | `/deliveries/retry`          | Requeue one exhausted current-revision delivery.                                                   |
 | GET    | `/bans/{id}/timeline?page=1` | Paginated newest-first source, revision, delivery attempt and retry activity.                      |
-| GET    | `/observations?page=1`       | Paginated hypothetical automatic ban outcomes.                                                     |
 
 A retry request contains `decisionId`, positive `revision`, `destination`, and nonblank `actor` (at most 512 bytes):
 
@@ -161,4 +209,26 @@ A retry request contains `decisionId`, positive `revision`, `destination`, and n
 
 HTTP 202 with `{"queued":true}` acknowledges queue admission, not delivery success. HTTP 409 rejects stale revisions, already queued or delivered work, expired bans, or unavailable destinations. The request, identity, and number of previously completed attempts are stored atomically with queue admission. The configured attempt budget starts again, but attempt numbers and previous errors are never erased. Shared destination backoff remains in force. A shared admin token cannot authenticate individual human identities; the direct API caller asserts `actor`, whereas WebUI supplies its authenticated account name server-side.
 
-Health is based on current persisted delivery status, not a provider connectivity probe. It includes destinations with recorded current history, even for released decisions. Failed unbans are retrying or exhausted current releases; exhausted unbans are a subset. Timeline and observation pages contain up to 20 records and reflect live data (new inserts can shift pages). The timeline reports recorded timestamps, causes, source edits, delivery attempts and explicit retries. Scheduled expiry is not proof of release.
+Health is based on current persisted delivery status, not a provider connectivity probe. It includes destinations with recorded current history, even for released decisions. Failed unbans are retrying or exhausted current releases; exhausted unbans are a subset. Timeline pages contain up to 20 records and reflect live data (new inserts can shift pages). The timeline reports recorded timestamps, causes, source edits, delivery attempts and explicit retries. Scheduled expiry is not proof of release.
+
+## Detection incidents
+
+`GET /incidents` returns named rule threshold hits, newest first, with `items` and optional `nextBeforeId`. Pass that cursor as `before-id` to retrieve the next page; optional `rule` and `kind` filters must remain the same across pages. It requires the administrative bearer token and uses the application route prefix. Each item includes the incident ID, rule name, triggering event identity and metadata (`eventKind` is `user` or `admin`; `eventType` is present only for user events), producer and processing timestamps, count, threshold, aggregation context (`groupBy`, `groupKey`, `identityRealm`, `distinct`, `window`), optional `banUntil` and longest requested `effectiveBanUntil`, optional resulting decision ID/revision, and `observeOnly`. The expiry is the requested rule expiry, not an external delivery acknowledgement. This endpoint is not a complete administrative audit log: only qualifying named rules record incidents. Incidents expire under the independent `incident-retention` policy.
+
+## Incident notifications
+
+Generic `notifications.webhook` destinations receive the incident item JSON returned by `/incidents`, including its stable incident ID, rule, event metadata, count, threshold and requested ban information. All webhooks support optional templates, including the supplied Slack and Teams examples. Notification delivery does not change the enforcement API, delivery history or acknowledgement semantics.
+
+### Notification delivery administration
+
+These endpoints use the authenticated application listener and its route prefix:
+
+| Method | Path                                            | Purpose                                                      |
+| ------ | ----------------------------------------------- | ------------------------------------------------------------ |
+| GET    | `/notifications?before-id=123`                  | List retained occurrence deliveries, newest first.           |
+| GET    | `/notifications/{id}/attempts?before-number=10` | List recorded send attempts, newest first.                   |
+| POST   | `/notifications/{id}/retry`                     | Requeue one exhausted delivery using a fresh attempt budget. |
+
+Each list returns up to 20 `items`; omit the cursor for the first page, then use `nextBeforeId` or `nextBeforeNumber` if present. The delivery list includes destination, incident ID, lifetime attempt count, status, latest error and scheduling timestamps. Attempt history is recorded from migration 0015; older attempts are not fabricated. A missing attempt history returns an empty list.
+
+Retry requires `{"actor":"operator"}` and returns HTTP 202 with `{"queued":true}`; unavailable, reassigned, unknown-identity or non-exhausted deliveries return 409. The operator identity is asserted by the authenticated caller. The retry journal and prior attempts remain in SQLite until the retained delivery is pruned. The Go client exposes `ListNotifications`, `NotificationAttempts` and `RetryNotification`.

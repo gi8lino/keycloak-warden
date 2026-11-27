@@ -13,11 +13,13 @@ type WorkerStore interface {
 	WorkerStats(context.Context, time.Time) (model.QueueStats, error)
 	// NextDeadline returns the earliest due source expiry or delivery retry.
 	NextDeadline(context.Context) (time.Time, error)
+	// NotificationStats returns incident delivery counts and deadlines.
+	NotificationStats(context.Context) (model.NotificationWorker, error)
 }
 
-// ActionSnapshot supplies read-only action worker lifecycle information.
-type ActionSnapshot interface {
-	// Snapshot returns the current action worker state.
+// RuntimeSnapshot supplies read-only delivery worker lifecycle information.
+type RuntimeSnapshot interface {
+	// Snapshot returns the current delivery worker state.
 	Snapshot() model.RuntimeStatus
 }
 
@@ -29,8 +31,10 @@ type MaintenanceSnapshot interface {
 
 // WorkerService collects worker lifecycle and queue statistics.
 type WorkerService struct {
-	// actions observes the action worker lifecycle.
-	actions ActionSnapshot
+	// enforcement observes the enforcement worker lifecycle.
+	enforcement RuntimeSnapshot
+	// notifications observes the optional notification worker.
+	notifications RuntimeSnapshot
 	// maintenance observes the maintenance scheduler.
 	maintenance MaintenanceSnapshot
 	// store is the persistent work queue.
@@ -39,14 +43,16 @@ type WorkerService struct {
 
 // NewWorkerService creates a worker status service.
 func NewWorkerService(
-	actionRunner ActionSnapshot,
+	enforcementRunner RuntimeSnapshot,
+	notificationRunner RuntimeSnapshot,
 	maintenanceRunner MaintenanceSnapshot,
 	store WorkerStore,
 ) *WorkerService {
 	return &WorkerService{
-		actions:     actionRunner,
-		maintenance: maintenanceRunner,
-		store:       store,
+		enforcement:   enforcementRunner,
+		notifications: notificationRunner,
+		maintenance:   maintenanceRunner,
+		store:         store,
 	}
 }
 
@@ -62,16 +68,26 @@ func (s *WorkerService) Snapshot(ctx context.Context) (model.Workers, error) {
 		return model.Workers{}, err
 	}
 
+	notificationStats, err := s.store.NotificationStats(ctx)
+	if err != nil {
+		return model.Workers{}, err
+	}
+	if s.notifications != nil {
+		status := s.notifications.Snapshot()
+		notificationStats.Runtime = &status
+	}
+
 	result := model.Workers{
-		Actions: model.ActionWorker{
-			RuntimeStatus: s.actions.Snapshot(),
+		Notifications: notificationStats,
+		Enforcement: model.EnforcementWorker{
+			RuntimeStatus: s.enforcement.Snapshot(),
 			QueueStats:    stats,
 		},
 		Maintenance: s.maintenance.Snapshot(),
 	}
 
 	if !deadline.IsZero() {
-		result.Actions.NextDeadline = new(deadline.UTC())
+		result.Enforcement.NextDeadline = new(deadline.UTC())
 	}
 
 	return result, nil

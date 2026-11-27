@@ -5,7 +5,9 @@ import "net/http"
 // EventMetrics records successfully processed Snitch events and automatic decisions.
 type EventMetrics interface {
 	// RecordProcessedEvent attributes an event and optional ban decision to its source realm.
-	RecordProcessedEvent(realmID, eventType string, automaticBan bool)
+	RecordProcessedEvent(realmID, eventKind, eventType string, automaticBan bool)
+	// RecordIncident counts a committed rule threshold hit.
+	RecordIncident(rule string)
 }
 
 // Metrics supplies Prometheus exposition, event counts, and HTTP request instrumentation.

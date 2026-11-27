@@ -1,36 +1,186 @@
+incident-retention: 720h
+
 protected-ips:
   - 192.0.2.10
   - 198.51.100.0/24
   - 2001:db8:1234::/48
 
-rule:
-  threshold: 5
-  window: 1m
-  ban: 15m
+# See docs/content/detection-rules.md for rule fields and Snitch event settings.
+# Optional examples are disabled until explicitly uncommented.
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 5
+      window: 1m
+    actions:
+      ban: 15m
+      notify: [slack-security, slack-bot]
 
-targets:
+  # Password spraying (record-only).
+  # password-spraying:
+  #   selector:
+  #     kind: user
+  #     events: [LOGIN_ERROR]
+  #   aggregation:
+  #     group-by: ip
+  #     distinct: user-id
+  #     threshold: 10
+  #     window: 5m
+
+  # Distributed account attack (record-only).
+  # distributed-attack:
+  #   selector:
+  #     kind: user
+  #     events: [LOGIN_ERROR]
+  #   aggregation:
+  #     group-by: user-id
+  #     distinct: ip
+  #     threshold: 10
+  #     window: 5m
+
+  # Credential changes (record-only).
+  # credential-changes:
+  #   selector:
+  #     kind: user
+  #     events: [UPDATE_CREDENTIAL, REMOVE_CREDENTIAL, RESET_PASSWORD]
+  #     success-only: true
+  #   aggregation:
+  #     group-by: user-id
+  #     threshold: 1
+  #     window: 1m
+
+  # Client authentication failures (record-only).
+  # client-auth-failures:
+  #   selector:
+  #     kind: user
+  #     events: [CLIENT_LOGIN_ERROR]
+  #   aggregation:
+  #     group-by: ip
+  #     threshold: 20
+  #     window: 5m
+
+  # Identity provider errors (record-only).
+  # idp-error-spike:
+  #   selector:
+  #     kind: user
+  #     events: [IDENTITY_PROVIDER_LOGIN_ERROR, IDENTITY_PROVIDER_RESPONSE_ERROR]
+  #   aggregation:
+  #     group-by: realm
+  #     threshold: 20
+  #     window: 5m
+
+  # Realm-wide source spike (record-only).
+  # realm-source-spike:
+  #   selector:
+  #     kind: user
+  #     events: [LOGIN_ERROR]
+  #   aggregation:
+  #     group-by: realm
+  #     distinct: ip
+  #     threshold: 50
+  #     window: 5m
+
+  # Realm-wide account spike (record-only).
+  # realm-account-spike:
+  #   selector:
+  #     kind: user
+  #     events: [LOGIN_ERROR]
+  #   aggregation:
+  #     group-by: realm
+  #     distinct: user-id
+  #     threshold: 25
+  #     window: 5m
+
+  # Role and group changes (record-only).
+  # role-changes:
+  #   selector:
+  #     kind: admin
+  #     resources: [REALM_ROLE_MAPPING, CLIENT_ROLE_MAPPING, GROUP_MEMBERSHIP]
+  #     operations: [CREATE, UPDATE, DELETE]
+  #     success-only: true
+  #   aggregation:
+  #     group-by: realm
+  #     threshold: 1
+  #     window: 1m
+
+  # Authentication configuration changes (record-only).
+  # auth-config-changes:
+  #   selector:
+  #     kind: admin
+  #     resources:
+  #       - AUTH_FLOW
+  #       - AUTH_EXECUTION
+  #       - AUTH_EXECUTION_FLOW
+  #       - AUTHENTICATOR_CONFIG
+  #       - CLIENT
+  #       - IDENTITY_PROVIDER
+  #       - REQUIRED_ACTION
+  #     operations: [CREATE, UPDATE, DELETE]
+  #     success-only: true
+  #   aggregation:
+  #     group-by: realm
+  #     threshold: 1
+  #     window: 1m
+
+  # Administrator activity burst (record-only).
+  # admin-activity-burst:
+  #   selector:
+  #     kind: admin
+  #     operations: [CREATE, UPDATE, DELETE, ACTION]
+  #   aggregation:
+  #     group-by: user-id
+  #     threshold: 30
+  #     window: 5m
+
+enforcements:
   cloudflare:
     edge:
       zone-id: env:CLOUDFLARE_ZONE_ID
       api-token: env:CLOUDFLARE_API_TOKEN
+
+  # Optional ban/unban message destinations (separate from incident notifications).
+  # webhook:
+  #   slack-security:
+  #     url: env:SLACK_WEBHOOK_URL
+  #     body-template: file:/config/templates/ban-slack-api.json.tmpl
+  #   slack-bot:
+  #     url: https://slack.com/api/chat.postMessage
+  #     headers:
+  #       Authorization: env:SLACK_AUTHORIZATION
+  #     template-vars:
+  #       channel: env:SLACK_CHANNEL
+  #     body-template: file:/config/templates/ban-slack-bot.json.tmpl
+  #     response:
+  #       json:
+  #         pointer: /ok
+  #         equals: true
+  #         error-pointer: /error
+  #   msteams:
+  #     url: env:MSTEAMS_WEBHOOK_URL
+  #     body-template: file:/config/templates/ban-msteams.json.tmpl
+
+notifications:
   webhook:
-    slack-api:
+    slack-security:
       url: env:SLACK_WEBHOOK_URL
-      body-template: file:/config/templates/slack-api.json.tmpl
+      body-template: file:/config/templates/incident-slack-api.json.tmpl
     slack-bot:
       url: https://slack.com/api/chat.postMessage
       headers:
         Authorization: env:SLACK_AUTHORIZATION
       template-vars:
         channel: env:SLACK_CHANNEL
-      body-template: file:/config/templates/slack-bot.json.tmpl
+      body-template: file:/config/templates/incident-slack-bot.json.tmpl
       response:
         json:
           pointer: /ok
           equals: true
           error-pointer: /error
-    # Optional: enable Microsoft Teams after adding MSTEAMS_WEBHOOK_URL
-    # to the keycloak-warden Secret. The template is already mounted.
-    # msteams:
+    # Optional Teams Workflow destination: add msteams-administrators to a rule's notify list.
+    # msteams-administrators:
     #   url: env:MSTEAMS_WEBHOOK_URL
-    #   body-template: file:/config/templates/msteams.json.tmpl
+    #   body-template: file:/config/templates/incident-msteams.json.tmpl

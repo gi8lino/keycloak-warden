@@ -25,10 +25,12 @@ func TestDestinations(t *testing.T) {
 	t.Run("groups use stable provider-qualified names", func(t *testing.T) {
 		t.Parallel()
 
-		providers, names, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"edge": {URL: "https://example.org/a"},
-				"ops":  {URL: "https://example.org/b"},
+		providers, names, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"edge": {URL: "https://example.org/a"},
+					"ops":  {URL: "https://example.org/b"},
+				},
 			},
 			Cloudflare: map[string]config.CloudflareTarget{
 				"edge": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
@@ -36,17 +38,19 @@ func TestDestinations(t *testing.T) {
 		})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"cloudflare.edge", "webhook.edge", "webhook.ops"}, names)
-		assert.IsType(t, webhook.Provider{}, providers["webhook.edge"].Provider)
+		assert.IsType(t, webhook.Provider[model.Decision]{}, providers["webhook.edge"].Provider)
 		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.edge"].Provider)
 	})
 
 	t.Run("supports custom names and dot-separated identifiers", func(t *testing.T) {
 		t.Parallel()
 
-		providers, names, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"custom-name-a": {URL: "https://example.org/a"},
-				"custom-name-b": {URL: "https://example.org/b"},
+		providers, names, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"custom-name-a": {URL: "https://example.org/a"},
+					"custom-name-b": {URL: "https://example.org/b"},
+				},
 			},
 			Cloudflare: map[string]config.CloudflareTarget{
 				"primary-domain": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
@@ -58,7 +62,7 @@ func TestDestinations(t *testing.T) {
 			"cloudflare.backup-domain", "cloudflare.primary-domain",
 			"webhook.custom-name-a", "webhook.custom-name-b",
 		}, names)
-		assert.IsType(t, webhook.Provider{}, providers["webhook.custom-name-a"].Provider)
+		assert.IsType(t, webhook.Provider[model.Decision]{}, providers["webhook.custom-name-a"].Provider)
 		assert.IsType(t, cloudflare.Provider{}, providers["cloudflare.primary-domain"].Provider)
 	})
 
@@ -95,18 +99,22 @@ func TestDestinations(t *testing.T) {
 	t.Run("accepts slashes in webhook target names", func(t *testing.T) {
 		t.Parallel()
 
-		providers, names, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"ops/alerts": {URL: "https://example.org/events"},
-		}})
+		providers, names, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"ops/alerts": {URL: "https://example.org/events"},
+				},
+			},
+		})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"webhook.ops/alerts"}, names)
-		assert.IsType(t, webhook.Provider{}, providers["webhook.ops/alerts"].Provider)
+		assert.IsType(t, webhook.Provider[model.Decision]{}, providers["webhook.ops/alerts"].Provider)
 	})
 
 	t.Run("accepts slashes in cloudflare target names", func(t *testing.T) {
 		t.Parallel()
 
-		providers, names, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+		providers, names, err := Destinations(config.Enforcements{Cloudflare: map[string]config.CloudflareTarget{
 			"primary/zone": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
 		}})
 		require.NoError(t, err)
@@ -118,9 +126,13 @@ func TestDestinations(t *testing.T) {
 // assertInvalidWebhookTargetName checks that invalid destination identifiers fail validation.
 func assertInvalidWebhookTargetName(t *testing.T, name string) {
 	t.Helper()
-	_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-		name: {URL: "https://example.org"},
-	}})
+	_, _, err := Destinations(config.Enforcements{
+		Delivery: config.Delivery{
+			Webhook: map[string]config.WebhookTarget{
+				name: {URL: "https://example.org"},
+			},
+		},
+	})
 	require.ErrorContains(t, err, "name")
 }
 
@@ -148,9 +160,13 @@ func TestResolveWebhookURL(t *testing.T) {
 	t.Run("rejects unknown URL reference scheme", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {URL: "htps://example.org/events"},
-		}})
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"edge": {URL: "htps://example.org/events"},
+				},
+			},
+		})
 		require.ErrorContains(t, err, `url: resolver: not found`)
 	})
 }
@@ -158,11 +174,15 @@ func TestResolveWebhookURL(t *testing.T) {
 // assertResolvedWebhookURL checks the effective URL of a constructed webhook provider.
 func assertResolvedWebhookURL(t *testing.T, reference, want string) {
 	t.Helper()
-	providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-		"edge": {URL: reference},
-	}})
+	providers, _, err := Destinations(config.Enforcements{
+		Delivery: config.Delivery{
+			Webhook: map[string]config.WebhookTarget{
+				"edge": {URL: reference},
+			},
+		},
+	})
 	require.NoError(t, err)
-	assert.Equal(t, want, providers["webhook.edge"].Provider.(webhook.Provider).URL)
+	assert.Equal(t, want, providers["webhook.edge"].Provider.(webhook.Provider[model.Decision]).URL)
 }
 
 func TestAllowedWebhook(t *testing.T) {
@@ -238,20 +258,22 @@ func TestDestinationsValueResolution(t *testing.T) {
 	require.NoError(t, os.WriteFile(secretFile, []byte(" secondary-token \r\n"), 0o600))
 	require.NoError(t, os.WriteFile(headerFile, []byte("file-header-value\n"), 0o600))
 
-	providers, names, err := Destinations(config.Targets{
+	providers, names, err := Destinations(config.Enforcements{
+		Delivery: config.Delivery{
+			Webhook: map[string]config.WebhookTarget{
+				"notification": {
+					URL: "env:WARDEN_TEST_WEBHOOK_URL",
+					Headers: map[string]string{
+						"Authorization": "env:WARDEN_TEST_WEBHOOK_HEADER",
+						"X-API-Key":     "secret:" + headerFile,
+						"X-Source":      "literal:custom:source",
+					},
+				},
+			},
+		},
 		Cloudflare: map[string]config.CloudflareTarget{
 			"primary":   {ZoneID: "env:WARDEN_TEST_CF_PRIMARY_ZONE", APIToken: "env:WARDEN_TEST_CF_PRIMARY_TOKEN"},
 			"secondary": {ZoneID: "secret:" + zoneFile, APIToken: "secret:" + secretFile},
-		},
-		Webhook: map[string]config.WebhookTarget{
-			"notification": {
-				URL: "env:WARDEN_TEST_WEBHOOK_URL",
-				Headers: map[string]string{
-					"Authorization": "env:WARDEN_TEST_WEBHOOK_HEADER",
-					"X-API-Key":     "secret:" + headerFile,
-					"X-Source":      "literal:custom:source",
-				},
-			},
 		},
 	})
 	require.NoError(t, err)
@@ -260,7 +282,7 @@ func TestDestinationsValueResolution(t *testing.T) {
 	assert.Contains(t, providers["cloudflare.primary"].Provider.(cloudflare.Provider).RulesURL, strings.Repeat("a", 32))
 	assert.Equal(t, " secondary-token ", providers["cloudflare.secondary"].Provider.(cloudflare.Provider).Token)
 	assert.Contains(t, providers["cloudflare.secondary"].Provider.(cloudflare.Provider).RulesURL, strings.Repeat("b", 32))
-	p := providers["webhook.notification"].Provider.(webhook.Provider)
+	p := providers["webhook.notification"].Provider.(webhook.Provider[model.Decision])
 	assert.Equal(t, "https://hooks.example.com/warden", p.URL)
 	assert.Equal(t, "Bearer secret", p.Headers.Get("Authorization"))
 	assert.Equal(t, "file-header-value", p.Headers.Get("X-API-Key"))
@@ -376,7 +398,7 @@ func TestDestinationsInvalidReferences(t *testing.T) {
 // assertInvalidAPIToken checks resolver failures for Cloudflare API credentials.
 func assertInvalidAPIToken(t *testing.T, reference string) {
 	t.Helper()
-	_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+	_, _, err := Destinations(config.Enforcements{Cloudflare: map[string]config.CloudflareTarget{
 		"edge": {ZoneID: strings.Repeat("a", 32), APIToken: reference},
 	}})
 	require.ErrorContains(t, err, `target "cloudflare.edge": api-token:`)
@@ -385,25 +407,33 @@ func assertInvalidAPIToken(t *testing.T, reference string) {
 // assertInvalidWebhookURL checks resolver failures for webhook endpoints.
 func assertInvalidWebhookURL(t *testing.T, reference string) {
 	t.Helper()
-	_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-		"receiver": {URL: reference},
-	}})
+	_, _, err := Destinations(config.Enforcements{
+		Delivery: config.Delivery{
+			Webhook: map[string]config.WebhookTarget{
+				"receiver": {URL: reference},
+			},
+		},
+	})
 	require.ErrorContains(t, err, `target "webhook.receiver": url:`)
 }
 
 // assertInvalidWebhookHeader checks resolver failures for outgoing header values.
 func assertInvalidWebhookHeader(t *testing.T, reference string) {
 	t.Helper()
-	_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-		"receiver": {URL: "https://example.org/events", Headers: map[string]string{"X-API-Key": reference}},
-	}})
+	_, _, err := Destinations(config.Enforcements{
+		Delivery: config.Delivery{
+			Webhook: map[string]config.WebhookTarget{
+				"receiver": {URL: "https://example.org/events", Headers: map[string]string{"X-API-Key": reference}},
+			},
+		},
+	})
 	require.ErrorContains(t, err, `headers X-API-Key:`)
 }
 
 // assertInvalidZoneID checks resolver failures for Cloudflare zone identifiers.
 func assertInvalidZoneID(t *testing.T, reference string) {
 	t.Helper()
-	_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+	_, _, err := Destinations(config.Enforcements{Cloudflare: map[string]config.CloudflareTarget{
 		"edge": {ZoneID: reference, APIToken: "literal:valid:token"},
 	}})
 	require.ErrorContains(t, err, `target "cloudflare.edge": zone-id:`)
@@ -415,7 +445,7 @@ func TestDestinationsProviderValidation(t *testing.T) {
 	t.Run("invalid Cloudflare zone ID is reported before token lookup", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{Cloudflare: map[string]config.CloudflareTarget{
+		_, _, err := Destinations(config.Enforcements{Cloudflare: map[string]config.CloudflareTarget{
 			"edge": {ZoneID: "invalid", APIToken: "env:WARDEN_TEST_UNDEFINED_TOKEN"},
 		}})
 		require.ErrorContains(t, err, "zone-id: expected a 32-character hexadecimal")
@@ -424,9 +454,13 @@ func TestDestinationsProviderValidation(t *testing.T) {
 	t.Run("webhook URL must use an allowed transport", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"receiver": {URL: "http://remote.example/events"},
-		}})
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"receiver": {URL: "http://remote.example/events"},
+				},
+			},
+		})
 		require.ErrorContains(t, err, "url: expected HTTPS")
 	})
 }
@@ -453,13 +487,17 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 	t.Run("allows transport-related headers other than Content-Type", func(t *testing.T) {
 		t.Parallel()
 
-		providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {URL: "https://example.org", Headers: map[string]string{
-				"Host": "example.org", "Content-Length": "123", "Transfer-Encoding": "chunked",
-			}},
-		}})
+		providers, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"edge": {URL: "https://example.org", Headers: map[string]string{
+						"Host": "example.org", "Content-Length": "123", "Transfer-Encoding": "chunked",
+					}},
+				},
+			},
+		})
 		require.NoError(t, err)
-		p := providers["webhook.edge"].Provider.(webhook.Provider)
+		p := providers["webhook.edge"].Provider.(webhook.Provider[model.Decision])
 		assert.Equal(t, "example.org", p.Headers.Get("Host"))
 		assert.Equal(t, "123", p.Headers.Get("Content-Length"))
 		assert.Equal(t, "chunked", p.Headers.Get("Transfer-Encoding"))
@@ -468,35 +506,47 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 	t.Run("accepts tabs in resolved header values", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {
-				URL:     "https://example.org",
-				Headers: map[string]string{"X-Key": "abc\tdef"},
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"edge": {
+						URL:     "https://example.org",
+						Headers: map[string]string{"X-Key": "abc\tdef"},
+					},
+				},
 			},
-		}})
+		})
 		require.NoError(t, err)
 	})
 
 	t.Run("validates resolved header value", func(t *testing.T) {
 		t.Setenv("WARDEN_TEST_BAD_HEADER_VALUE", "oops\r\nInjected: yes")
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {
-				URL:     "https://example.org",
-				Headers: map[string]string{"X-Key": "env:WARDEN_TEST_BAD_HEADER_VALUE"},
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"edge": {
+						URL:     "https://example.org",
+						Headers: map[string]string{"X-Key": "env:WARDEN_TEST_BAD_HEADER_VALUE"},
+					},
+				},
 			},
-		}})
+		})
 		require.ErrorContains(t, err, "invalid HTTP header value")
 	})
 
 	t.Run("direct initialization rejects malformed struct configuration", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"edge": {
-				URL:     "https://example.org",
-				Headers: map[string]string{"Content-Type": "text/plain"},
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"edge": {
+						URL:     "https://example.org",
+						Headers: map[string]string{"Content-Type": "text/plain"},
+					},
+				},
 			},
-		}})
+		})
 		require.ErrorContains(t, err, "Content-Type is reserved")
 	})
 }
@@ -504,37 +554,45 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 // assertInvalidHeaderValue checks that invalid outbound HTTP header bytes are rejected.
 func assertInvalidHeaderValue(t *testing.T, value string) {
 	t.Helper()
-	_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-		"edge": {
-			URL:     "https://example.org",
-			Headers: map[string]string{"X-API-Key": value},
+	_, _, err := Destinations(config.Enforcements{
+		Delivery: config.Delivery{
+			Webhook: map[string]config.WebhookTarget{
+				"edge": {
+					URL:     "https://example.org",
+					Headers: map[string]string{"X-API-Key": value},
+				},
+			},
 		},
-	}})
+	})
 	require.ErrorContains(t, err, "invalid HTTP header value")
 }
 
 func TestDeterministicDestinations(t *testing.T) {
 	t.Parallel()
 
-	t.Run("rejects an empty target configuration", func(t *testing.T) {
+	t.Run("accepts an empty target configuration", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{})
-		require.ErrorContains(t, err, "at least one")
+		_, _, err := Destinations(config.Enforcements{})
+		require.NoError(t, err)
 	})
 
 	t.Run("reports the alphabetically first invalid destination", func(t *testing.T) {
 		t.Parallel()
 
-		targets := config.Targets{Webhook: map[string]config.WebhookTarget{
-			"zeta": {
-				URL: "bad://example.org",
+		targets := config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"zeta": {
+						URL: "bad://example.org",
+					},
+					"alpha": {
+						URL:     "https://example.org",
+						Headers: map[string]string{"X-Key": "env:WARDEN_TEST_UNKNOWN_ALPHA_201"},
+					},
+				},
 			},
-			"alpha": {
-				URL:     "https://example.org",
-				Headers: map[string]string{"X-Key": "env:WARDEN_TEST_UNKNOWN_ALPHA_201"},
-			},
-		}}
+		}
 		_, _, err := Destinations(targets)
 		require.ErrorContains(t, err, `target "webhook.alpha"`)
 	})
@@ -542,15 +600,19 @@ func TestDeterministicDestinations(t *testing.T) {
 	t.Run("reports the alphabetically first invalid header", func(t *testing.T) {
 		t.Parallel()
 
-		targets := config.Targets{Webhook: map[string]config.WebhookTarget{
-			"ops": {
-				URL: "https://example.org",
-				Headers: map[string]string{
-					"Z-Key": "env:WARDEN_TEST_UNKNOWN_Z_202",
-					"A-Key": "env:WARDEN_TEST_UNKNOWN_A_203",
+		targets := config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"ops": {
+						URL: "https://example.org",
+						Headers: map[string]string{
+							"Z-Key": "env:WARDEN_TEST_UNKNOWN_Z_202",
+							"A-Key": "env:WARDEN_TEST_UNKNOWN_A_203",
+						},
+					},
 				},
 			},
-		}}
+		}
 		_, _, err := Destinations(targets)
 		require.ErrorContains(t, err, "headers A-Key:")
 	})
@@ -563,29 +625,31 @@ func TestWebhookBodyTemplate(t *testing.T) {
 		t.Parallel()
 
 		path := filepath.Join(t.TempDir(), "slack.json.tmpl")
-		require.NoError(t, os.WriteFile(path, []byte(`{"text": {{ json .IP }}}`), 0o600))
+		require.NoError(t, os.WriteFile(path, []byte(`{"text": {{ json .Payload.IP }}}`), 0o600))
 
-		providers, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"slack": {
-					URL:          "https://example.org/webhook",
-					BodyTemplate: "file:" + path,
+		providers, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {
+						URL:          "https://example.org/webhook",
+						BodyTemplate: "file:" + path,
+					},
 				},
 			},
 		})
 		require.NoError(t, err)
 
-		provider, ok := providers["webhook.slack"].Provider.(webhook.Provider)
+		provider, ok := providers["webhook.slack"].Provider.(webhook.Provider[model.Decision])
 		require.True(t, ok)
 		require.NotNil(t, provider.Template)
 
-		body, err := provider.Template.Render(model.Decision{IP: "203.0.113.42"})
+		body, err := provider.Template.Render(map[string]any{"Payload": model.Decision{IP: "203.0.113.42"}})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
 
 		// Templates are compiled at startup, not re-read on delivery.
 		require.NoError(t, os.WriteFile(path, []byte(`{"text":"changed"}`), 0o600))
-		body, err = provider.Template.Render(model.Decision{IP: "203.0.113.42"})
+		body, err = provider.Template.Render(map[string]any{"Payload": model.Decision{IP: "203.0.113.42"}})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
 	})
@@ -593,19 +657,21 @@ func TestWebhookBodyTemplate(t *testing.T) {
 	t.Run("accepts an explicit literal template", func(t *testing.T) {
 		t.Parallel()
 
-		providers, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"slack": {
-					URL:          "https://example.org/webhook",
-					BodyTemplate: `literal:{"text": {{ json .IP }}}`,
+		providers, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {
+						URL:          "https://example.org/webhook",
+						BodyTemplate: `literal:{"text": {{ json .Payload.IP }}}`,
+					},
 				},
 			},
 		})
 		require.NoError(t, err)
 
-		provider := providers["webhook.slack"].Provider.(webhook.Provider)
+		provider := providers["webhook.slack"].Provider.(webhook.Provider[model.Decision])
 		require.NotNil(t, provider.Template)
-		body, err := provider.Template.Render(model.Decision{IP: "203.0.113.42"})
+		body, err := provider.Template.Render(map[string]any{"Payload": model.Decision{IP: "203.0.113.42"}})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
 	})
@@ -613,23 +679,27 @@ func TestWebhookBodyTemplate(t *testing.T) {
 	t.Run("does not require a template", func(t *testing.T) {
 		t.Parallel()
 
-		providers, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"plain": {URL: "https://example.org/webhook"},
+		providers, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"plain": {URL: "https://example.org/webhook"},
+				},
 			},
 		})
 		require.NoError(t, err)
-		assert.Nil(t, providers["webhook.plain"].Provider.(webhook.Provider).Template)
+		assert.Nil(t, providers["webhook.plain"].Provider.(webhook.Provider[model.Decision]).Template)
 	})
 
 	t.Run("rejects an unreadable template file", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"slack": {
-					URL:          "https://example.org/webhook",
-					BodyTemplate: "file:" + filepath.Join(t.TempDir(), "missing.tmpl"),
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {
+						URL:          "https://example.org/webhook",
+						BodyTemplate: "file:" + filepath.Join(t.TempDir(), "missing.tmpl"),
+					},
 				},
 			},
 		})
@@ -640,11 +710,13 @@ func TestWebhookBodyTemplate(t *testing.T) {
 	t.Run("rejects a malformed template", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"slack": {
-					URL:          "https://example.org/webhook",
-					BodyTemplate: `literal:{{ if .IP }}`,
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {
+						URL:          "https://example.org/webhook",
+						BodyTemplate: `literal:{{ if .Payload.IP }}`,
+					},
 				},
 			},
 		})
@@ -654,11 +726,13 @@ func TestWebhookBodyTemplate(t *testing.T) {
 	t.Run("rejects invalid rendered JSON at startup", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"slack": {
-					URL:          "https://example.org/webhook",
-					BodyTemplate: `literal:{"text":`,
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {
+						URL:          "https://example.org/webhook",
+						BodyTemplate: `literal:{"text":`,
+					},
 				},
 			},
 		})
@@ -669,11 +743,13 @@ func TestWebhookBodyTemplate(t *testing.T) {
 	t.Run("rejects blank optional template source", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"slack": {
-					URL:          "https://example.org/webhook",
-					BodyTemplate: "   ",
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {
+						URL:          "https://example.org/webhook",
+						BodyTemplate: "   ",
+					},
 				},
 			},
 		})
@@ -687,14 +763,16 @@ func TestDestinationsResponse(t *testing.T) {
 	t.Run("does not configure response matching by default", func(t *testing.T) {
 		t.Parallel()
 
-		providers, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"ops": {URL: "https://example.org/notifications"},
+		providers, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"ops": {URL: "https://example.org/notifications"},
+				},
 			},
 		})
 		require.NoError(t, err)
 
-		provider := providers["webhook.ops"].Provider.(webhook.Provider)
+		provider := providers["webhook.ops"].Provider.(webhook.Provider[model.Decision])
 		assert.Nil(t, provider.Response)
 	})
 
@@ -703,11 +781,18 @@ func TestDestinationsResponse(t *testing.T) {
 
 		path := filepath.Join(t.TempDir(), "warden.yaml")
 		body := `
-rule:
-  threshold: 2
-  window: 1m
-  ban: 15m
-targets:
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 15m
+enforcements:
   webhook:
     slack-bot:
       url: https://slack.com/api/chat.postMessage
@@ -723,10 +808,10 @@ targets:
 		cfg, err := config.Load(path)
 		require.NoError(t, err)
 
-		providers, _, err := Destinations(cfg.Targets)
+		providers, _, err := Destinations(cfg.Enforcements)
 		require.NoError(t, err)
 
-		provider := providers["webhook.slack-bot"].Provider.(webhook.Provider)
+		provider := providers["webhook.slack-bot"].Provider.(webhook.Provider[model.Decision])
 		require.NotNil(t, provider.Response)
 		assert.Equal(t, []int{200, 201, 202}, provider.Response.StatusCodes)
 		assert.NoError(t, provider.Response.Evaluate(200, []byte(`{"ok":true}`)))
@@ -735,9 +820,12 @@ targets:
 }
 
 func TestWebhookTemplateVars(t *testing.T) {
-	t.Run("renders the Slack channel resolved at startup", func(t *testing.T) {
+	t.Run("renders a template variable resolved at startup", func(t *testing.T) {
 		const channel = "test-\"channel\""
 		t.Setenv("WARDEN_TEST_CHANNEL", channel)
+
+		path := filepath.Join(t.TempDir(), "webhook.json.tmpl")
+		require.NoError(t, os.WriteFile(path, []byte(`{"channel":{{ .Vars.channel | json }}}`), 0o600))
 		received := make(chan string, 1)
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			var payload map[string]any
@@ -750,28 +838,40 @@ func TestWebhookTemplateVars(t *testing.T) {
 		}))
 		defer server.Close()
 
-		providers, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"slack": {URL: server.URL, BodyTemplate: "file:../../deploy/kubernetes/templates/slack-bot.json.tmpl", TemplateVars: map[string]string{"channel": "env:WARDEN_TEST_CHANNEL"}},
-		}})
+		providers, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {URL: server.URL, BodyTemplate: "file:" + path, TemplateVars: map[string]string{"channel": "env:WARDEN_TEST_CHANNEL"}},
+				},
+			},
+		})
 		require.NoError(t, err)
 		t.Setenv("WARDEN_TEST_CHANNEL", "changed")
-		require.NoError(t, providers["webhook.slack"].Provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned, IP: "192.0.2.1"}))
+		require.NoError(t, providers["webhook.slack"].Provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned, IP: "192.0.2.1"}))
 		assert.Equal(t, channel, <-received)
 	})
 
 	t.Run("rejects a missing environment reference", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`, TemplateVars: map[string]string{"channel": "env:WARDEN_TEST_MISSING_SLACK_CHANNEL_42"}},
-		}})
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`, TemplateVars: map[string]string{"channel": "env:WARDEN_TEST_MISSING_SLACK_CHANNEL_42"}},
+				},
+			},
+		})
 		require.ErrorContains(t, err, `template-vars "channel"`)
 	})
 
 	t.Run("rejects an undeclared template variable", func(t *testing.T) {
 		t.Parallel()
-		_, _, err := Destinations(config.Targets{Webhook: map[string]config.WebhookTarget{
-			"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`},
-		}})
+		_, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"slack": {URL: "https://example.org", BodyTemplate: `literal:{"channel":{{ .Vars.channel | json }}}`},
+				},
+			},
+		})
 		require.ErrorContains(t, err, "channel")
 	})
 }
@@ -783,9 +883,11 @@ func TestDestinationAttemptLimits(t *testing.T) {
 	t.Run("defaults both providers to three attempts", func(t *testing.T) {
 		t.Parallel()
 
-		destinations, _, err := Destinations(config.Targets{
-			Webhook: map[string]config.WebhookTarget{
-				"receiver": {URL: "https://example.org/events"},
+		destinations, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				Webhook: map[string]config.WebhookTarget{
+					"receiver": {URL: "https://example.org/events"},
+				},
 			},
 			Cloudflare: map[string]config.CloudflareTarget{
 				"edge": {ZoneID: strings.Repeat("a", 32), APIToken: "token"},
@@ -803,13 +905,15 @@ func TestDestinationAttemptLimits(t *testing.T) {
 		global := 4
 		slack := 2
 		edge := 1
-		destinations, _, err := Destinations(config.Targets{
-			MaxAttempts: &global,
-			Webhook: map[string]config.WebhookTarget{
-				"receiver": {URL: "https://example.org/events"},
-				"slack": {
-					URL:         "https://example.org/slack",
-					MaxAttempts: &slack,
+		destinations, _, err := Destinations(config.Enforcements{
+			Delivery: config.Delivery{
+				MaxAttempts: &global,
+				Webhook: map[string]config.WebhookTarget{
+					"receiver": {URL: "https://example.org/events"},
+					"slack": {
+						URL:         "https://example.org/slack",
+						MaxAttempts: &slack,
+					},
 				},
 			},
 			Cloudflare: map[string]config.CloudflareTarget{

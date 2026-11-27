@@ -14,11 +14,29 @@ import (
 
 // EnsureDecision creates a stable UUIDv7 identity before attaching ban sources.
 func (t *transaction) EnsureDecision(ctx context.Context, ip string) error {
-	_, err := t.tx.ExecContext(ctx, `
-INSERT INTO decisions (ip, id, revision, state, expires)
-VALUES (?, ?, 0, ?, 0)
+	_, err := t.tx.ExecContext(
+		ctx,
+		`
+INSERT INTO decisions (
+    ip,
+    id,
+    revision,
+    state,
+    expires
+)
+VALUES (
+    ?,
+    ?,
+    0,
+    ?,
+    0
+)
 ON CONFLICT (ip) DO NOTHING
-`, ip, uuid.NewV7().String(), model.DecisionUnbanned)
+`,
+		ip,
+		uuid.NewV7().String(),
+		model.DecisionUnbanned,
+	)
 	return err
 }
 
@@ -39,12 +57,21 @@ func (t *transaction) SaveDecision(
 ) error {
 	if changed {
 		t.changed = true
-		if _, err := t.tx.ExecContext(ctx, `
+		if _, err := t.tx.ExecContext(
+			ctx,
+			`
 UPDATE decisions
-SET revision = ?, state = ?, expires = ?
+SET
+    revision = ?,
+    state = ?,
+    expires = ?
 WHERE ip = ?
-`, decision.Revision, decision.State,
-			decision.ExpiresAt.UnixMilli(), decision.IP); err != nil {
+`,
+			decision.Revision,
+			decision.State,
+			decision.ExpiresAt.UnixMilli(),
+			decision.IP,
+		); err != nil {
 			return err
 		}
 		// Record the source snapshot used for this revision.
@@ -55,29 +82,68 @@ WHERE ip = ?
 		if err != nil {
 			return err
 		}
-		if _, err := t.tx.ExecContext(ctx, `
-INSERT INTO decision_revisions (ip, revision, state, expires, changed_at, sources_json, cause)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-`, decision.IP, decision.Revision, decision.State, decision.ExpiresAt.UnixMilli(), time.Now().UTC().UnixMilli(), string(snapshot), cause); err != nil {
+		if _, err := t.tx.ExecContext(
+			ctx,
+			`
+INSERT INTO decision_revisions (
+    ip,
+    revision,
+    state,
+    expires,
+    changed_at,
+    sources_json,
+    cause
+)
+VALUES (
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?,
+    ?
+)
+`,
+			decision.IP,
+			decision.Revision,
+			decision.State,
+			decision.ExpiresAt.UnixMilli(),
+			time.Now().UTC().UnixMilli(),
+			string(snapshot),
+			cause,
+		); err != nil {
 			return err
 		}
 	}
 
 	// A fully acknowledged release no longer owns a destination, whereas an
 	// unacknowledged release must remain queued until accepted externally.
-	if _, err := t.tx.ExecContext(ctx, `
+	if _, err := t.tx.ExecContext(
+		ctx,
+		`
 DELETE FROM deliveries
-WHERE ip = ? AND acknowledged = ? AND ? = 1
-`, decision.IP, previous.Revision, previous.State == model.DecisionUnbanned); err != nil {
+WHERE ip = ?
+    AND acknowledged = ?
+    AND ? = 1
+`,
+		decision.IP,
+		previous.Revision,
+		previous.State == model.DecisionUnbanned,
+	); err != nil {
 		return err
 	}
 
 	for _, name := range targets {
-		if _, err := t.tx.ExecContext(ctx, `
+		if _, err := t.tx.ExecContext(
+			ctx,
+			`
 INSERT INTO deliveries (ip, destination)
 VALUES (?, ?)
 ON CONFLICT (ip, destination) DO NOTHING
-`, decision.IP, name); err != nil {
+`,
+			decision.IP,
+			name,
+		); err != nil {
 			return err
 		}
 	}
@@ -88,9 +154,19 @@ ON CONFLICT (ip, destination) DO NOTHING
 func readDecisionByIP(ctx context.Context, tx *sql.Tx, ip string) (model.Decision, error) {
 	var result model.Decision
 	var expires int64
-	err := tx.QueryRowContext(ctx, `
-SELECT id, revision, state, expires FROM decisions WHERE ip = ?
-`, ip).Scan(&result.ID, &result.Revision, &result.State, &expires)
+	err := tx.QueryRowContext(
+		ctx,
+		`
+SELECT
+    id,
+    revision,
+    state,
+    expires
+FROM decisions
+WHERE ip = ?
+`,
+		ip,
+	).Scan(&result.ID, &result.Revision, &result.State, &expires)
 	if err != nil {
 		return model.Decision{}, err
 	}

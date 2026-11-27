@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -45,7 +46,12 @@ func (c *Client) doWithTimeout(
 	destination := *c.url
 	// Preserve the optional, URL-encoded inspection history page.
 	pathPart, query, hasQuery := strings.Cut(path, "?")
-	destination.Path = c.url.Path + pathPart
+	decodedPath, err := url.PathUnescape(pathPart)
+	if err != nil {
+		return fmt.Errorf("invalid administrative request path: %w", err)
+	}
+	destination.Path = c.url.Path + decodedPath
+	destination.RawPath = c.url.EscapedPath() + pathPart
 	if hasQuery {
 		destination.RawQuery = query
 	}

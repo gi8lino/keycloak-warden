@@ -11,8 +11,6 @@ import (
 )
 
 const (
-	// FormatText is a compatibility alias for human-readable YAML output.
-	FormatText = "text"
 	// FormatJSON renders a single JSON document.
 	FormatJSON = "json"
 	// FormatYAML renders a single YAML document.
@@ -39,7 +37,7 @@ func encode(format *string, writer io.Writer, value any) error {
 		encoder.SetIndent("", "  ")
 		return encoder.Encode(value)
 
-	case FormatText, FormatYAML:
+	case FormatYAML:
 		dumper, err := yaml.NewDumper(
 			writer,
 			yaml.WithIndent(2),

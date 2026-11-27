@@ -11,6 +11,7 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -30,7 +31,7 @@ type fakeStore struct {
 }
 
 // Prune records a cleanup attempt and optionally injects a transient failure.
-func (s *fakeStore) Prune(_ context.Context, cutoff time.Time) error {
+func (s *fakeStore) Prune(_ context.Context, cutoff, _ time.Time) error {
 	s.lastCutoffMillis.Store(cutoff.UnixMilli())
 	attempt := s.pruneCalls.Add(1)
 	if s.pruneFailure && attempt == 1 {
@@ -108,7 +109,7 @@ func TestRecurringMaintenance(t *testing.T) {
 
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
-		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Minute, OptimizeInterval: 2 * time.Minute}, 24*time.Hour, discardLogger())
+		runner := Start(t.Context(), store, Schedule{PruneInterval: time.Minute, OptimizeInterval: 2 * time.Minute}, Retention{Observations: 24 * time.Hour, Incidents: 30 * 24 * time.Hour}, discardLogger())
 		defer runner.Close()
 
 		synctest.Wait()
@@ -139,7 +140,7 @@ func TestMaintenanceRetry(t *testing.T) {
 			PruneInterval:    time.Hour,
 			OptimizeInterval: time.Second,
 		}
-		runner := Start(t.Context(), store, sched, 24*time.Hour, discardLogger())
+		runner := Start(t.Context(), store, sched, Retention{Observations: 24 * time.Hour, Incidents: 30 * 24 * time.Hour}, discardLogger())
 		defer runner.Close()
 
 		synctest.Wait()
@@ -166,7 +167,7 @@ func TestMaintenanceClose(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		store := &fakeStore{}
 		sched := Schedule{PruneInterval: time.Hour, OptimizeInterval: time.Hour}
-		runner := Start(t.Context(), store, sched, 24*time.Hour, discardLogger())
+		runner := Start(t.Context(), store, sched, Retention{Observations: 24 * time.Hour, Incidents: 30 * 24 * time.Hour}, discardLogger())
 		synctest.Wait()
 		runner.Close()
 		runner.Close()
@@ -185,7 +186,7 @@ func TestPruneRetention(t *testing.T) {
 		runner := &Runner{
 			logger:    discardLogger(),
 			store:     store,
-			retention: 48 * time.Hour,
+			retention: Retention{Observations: 48 * time.Hour, Incidents: 30 * time.Hour},
 			schedule: Schedule{
 				PruneInterval:    time.Hour,
 				OptimizeInterval: time.Hour,
@@ -212,7 +213,7 @@ type manualStore struct {
 }
 
 // Prune blocks until released, allowing a concurrent maintenance request.
-func (s *manualStore) Prune(ctx context.Context, _ time.Time) error {
+func (s *manualStore) Prune(ctx context.Context, _, _ time.Time) error {
 	select {
 	case s.started <- struct{}{}:
 	default:
@@ -304,7 +305,7 @@ func TestManualMaintenance(t *testing.T) {
 		runner := Start(t.Context(), store, Schedule{
 			PruneInterval:    time.Hour,
 			OptimizeInterval: time.Hour,
-		}, 24*time.Hour, discardLogger())
+		}, Retention{Observations: 24 * time.Hour, Incidents: 30 * 24 * time.Hour}, discardLogger())
 		defer func() {
 			close(store.release)
 			runner.Close()
@@ -337,7 +338,7 @@ func TestMaintenanceOutcomeLogs(t *testing.T) {
 	t.Run("scheduled completion uses the same outcome record", func(t *testing.T) {
 		t.Parallel()
 		var output bytes.Buffer
-		runner := &Runner{store: &fakeStore{}, retention: time.Hour, logger: slog.New(slog.NewJSONHandler(&output, nil))}
+		runner := &Runner{store: &fakeStore{}, retention: Retention{Observations: time.Hour, Incidents: 30 * 24 * time.Hour}, logger: slog.New(slog.NewJSONHandler(&output, nil))}
 		require.NoError(t, runner.execute(t.Context(), OperationPrune, "scheduled"))
 		assert.Contains(t, output.String(), `"event":"database_maintenance_completed"`)
 		assert.Contains(t, output.String(), `"trigger":"scheduled"`)
@@ -352,5 +353,68 @@ func TestMaintenanceOutcomeLogs(t *testing.T) {
 		assert.Contains(t, output.String(), `"outcome":"failed"`)
 		assert.Contains(t, output.String(), `"level":"WARN"`)
 		assert.NotContains(t, output.String(), "database_maintenance_completed")
+	})
+}
+
+// TestSnapshotWorkerLifecycle verifies lifecycle and task state share one snapshot.
+func TestSnapshotWorkerLifecycle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("reports idle with task schedules", func(t *testing.T) {
+		t.Parallel()
+
+		started := time.Now().UTC()
+		runner := &Runner{
+			startedAt: started,
+			done:      make(chan struct{}),
+			schedule: Schedule{
+				PruneInterval:    time.Hour,
+				OptimizeInterval: 24 * time.Hour,
+			},
+		}
+
+		status := runner.Snapshot()
+
+		assert.Equal(t, model.WorkerIdle, status.State)
+		assert.Equal(t, started, status.StartedAt)
+		assert.Equal(t, "1h0m0s", status.PruneInterval)
+		assert.Equal(t, "24h0m0s", status.OptimizeInterval)
+		assert.False(t, status.Prune.Running)
+	})
+
+	t.Run("reports processing and current task state together", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &Runner{done: make(chan struct{})}
+		runner.pruneStatus.Running = true
+
+		status := runner.Snapshot()
+
+		assert.Equal(t, model.WorkerProcessing, status.State)
+		assert.True(t, status.Prune.Running)
+		assert.False(t, status.Optimize.Running)
+	})
+
+	t.Run("reports optimization as processing", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &Runner{done: make(chan struct{})}
+		runner.optimizeStatus.Running = true
+
+		status := runner.Snapshot()
+
+		assert.Equal(t, model.WorkerProcessing, status.State)
+		assert.True(t, status.Optimize.Running)
+	})
+
+	t.Run("reports stopped after completion", func(t *testing.T) {
+		t.Parallel()
+
+		runner := &Runner{done: make(chan struct{})}
+		close(runner.done)
+
+		status := runner.Snapshot()
+
+		assert.Equal(t, model.WorkerStopped, status.State)
 	})
 }

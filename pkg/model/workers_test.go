@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestWorkersJSON(t *testing.T) {
@@ -13,22 +16,22 @@ func TestWorkersJSON(t *testing.T) {
 		t.Parallel()
 
 		var workers Workers
-		data := []byte(`{"actions":{"state":"idle","startedAt":"2026-11-25T08:00:00Z","pendingDeliveries":3,"activeBans":2},"maintenance":{"state":"processing","startedAt":"2026-11-25T08:00:00Z","prune":{"running":true},"pruneInterval":"1h0m0s"}}`)
-		if err := json.Unmarshal(data, &workers); err != nil {
-			t.Fatal(err)
-		}
-		if workers.Actions.State != WorkerIdle || workers.Actions.PendingDeliveries != 3 || workers.Actions.ActiveBans != 2 {
-			t.Fatalf("unexpected action worker: %+v", workers.Actions)
-		}
-		if workers.Maintenance.State != WorkerProcessing || !workers.Maintenance.Prune.Running || workers.Maintenance.PruneInterval != "1h0m0s" {
-			t.Fatalf("unexpected maintenance worker: %+v", workers.Maintenance)
-		}
+		data := []byte(`{"enforcement":{"state":"idle","startedAt":"2026-11-25T08:00:00Z","pendingDeliveries":3,"activeBans":2},"maintenance":{"state":"processing","startedAt":"2026-11-25T08:00:00Z","prune":{"running":true},"pruneInterval":"1h0m0s"}}`)
+		require.NoError(t, json.Unmarshal(data, &workers))
+
+		assert.Equal(t, WorkerIdle, workers.Enforcement.State)
+		assert.Equal(t, 3, workers.Enforcement.PendingDeliveries)
+		assert.Equal(t, 2, workers.Enforcement.ActiveBans)
+
+		assert.Equal(t, WorkerProcessing, workers.Maintenance.State)
+		assert.True(t, workers.Maintenance.Prune.Running)
+		assert.Equal(t, "1h0m0s", workers.Maintenance.PruneInterval)
 	})
 
 	t.Run("encodes embedded action fields at the top level", func(t *testing.T) {
 		t.Parallel()
 
-		worker := ActionWorker{
+		worker := EnforcementWorker{
 			RuntimeStatus: RuntimeStatus{
 				State:     WorkerIdle,
 				StartedAt: time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
@@ -40,13 +43,9 @@ func TestWorkersJSON(t *testing.T) {
 		}
 
 		encoded, err := json.Marshal(worker)
-		if err != nil {
-			t.Fatal(err)
-		}
+		require.NoError(t, err)
 
 		const want = `{"state":"idle","startedAt":"2026-11-25T08:00:00Z","pendingDeliveries":3,"retryingDeliveries":0,"exhaustedDeliveries":0,"activeBans":2}`
-		if string(encoded) != want {
-			t.Fatalf("got %s, want %s", encoded, want)
-		}
+		assert.JSONEq(t, want, string(encoded))
 	})
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"net/netip"
 	"path/filepath"
 	"sync"
 	"testing"
@@ -14,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
@@ -29,9 +29,9 @@ func TestTransactObservation(t *testing.T) {
 		defer store.Close() // nolint:errcheck
 		now := time.Now()
 		ok := failed("success")
-		ok.Kind = "LOGIN"
+		ok.User.Type = "LOGIN"
 		noIP := failed("missing")
-		noIP.IP = ""
+		noIP.User.IP = ""
 		decision, err := processDecision(processor, t.Context(), failed("same"), now)
 
 		require.NoError(t, err)
@@ -90,14 +90,19 @@ func TestTransactionLifecycle(t *testing.T) {
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		ip := "203.0.113.92"
-		event := events.Event{
-			ID:     "observation-1",
-			Source: events.SourceKeycloak,
-			IP:     netip.MustParseAddr(ip),
+		event := events.Envelope{
+			Version: events.SchemaVersion,
+			ID:      "observation-1",
+			Source:  events.SourceKeycloak,
+			Kind:    events.KindUser,
+			User: &events.UserEvent{
+				Type: events.TypeLoginError,
+				IP:   ip,
+			},
 		}
 
 		err := store.TransactObservation(ctx, func(tx ingestion.Transaction) error {
-			inserted, err := tx.RecordFailure(ctx, event, now)
+			inserted, err := tx.RecordEvent(ctx, event, now, true)
 			if err != nil {
 				return err
 			}
@@ -120,7 +125,21 @@ func TestTransactionLifecycle(t *testing.T) {
 		}
 
 		err = store.TransactObservation(ctx, func(tx ingestion.Transaction) error {
-			count, err := tx.CountFailures(ctx, ip, now.Add(-time.Minute))
+			count, err := tx.CountMatches(ctx, (detection.Rule{
+				Name: "brute-force",
+				Selector: detection.Selector{
+					Kind:   events.KindUser,
+					Events: []string{events.TypeLoginError},
+				},
+				Aggregation: detection.Aggregation{
+					GroupBy:   detection.GroupIP,
+					Threshold: 1,
+					Window:    time.Minute,
+				},
+				Actions: detection.Actions{
+					Ban: time.Second,
+				},
+			}).Query(event, now))
 			if err != nil {
 				return err
 			}

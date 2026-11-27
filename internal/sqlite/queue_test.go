@@ -13,9 +13,9 @@ import (
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -41,7 +41,7 @@ func TestFinishIgnoresStaleDeliveryFailure(t *testing.T) {
 	require.Greater(t, second.Decision.Revision, first.Decision.Revision)
 
 	// A failed attempt against revision 1 must not postpone revision 2.
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 	pending, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, pending)
@@ -68,15 +68,15 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("not_authed"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
-	retry, err := store.GetDecision(ctx, record.Decision.ID, now)
+	require.NoError(t, store.Finish(ctx, *job, errors.New("not_authed"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+	retryView, err := store.GetDecision(ctx, record.Decision.ID, now)
 	require.NoError(t, err)
-	require.Len(t, retry.DeliveryHistory, 1)
-	delivery := retry.DeliveryHistory[0]
+	require.Len(t, retryView.DeliveryHistory, 1)
+	delivery := retryView.DeliveryHistory[0]
 	assert.Equal(t, model.DeliveryRetrying, delivery.Status)
 	require.NotNil(t, delivery.NextAttemptAt)
 	next := *delivery.NextAttemptAt
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, next, 0))
+	require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, next, 0))
 	require.NoError(t, store.Close())
 
 	reopened, _ := openStore(t, path, "slack")
@@ -118,7 +118,7 @@ func TestFinishRetryDelay(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 
-		err = store.Finish(ctx, *job, errors.New("failure"), actions.DefaultMaxAttempts, now, 0)
+		err = store.Finish(ctx, *job, errors.New("failure"), retry.DefaultMaxAttempts, now, 0)
 		require.ErrorContains(t, err, "retry delay")
 
 		var attempts int
@@ -144,7 +144,7 @@ func TestFinishRetryDelay(t *testing.T) {
 		require.NotNil(t, job)
 
 		delay := 37 * time.Second
-		require.NoError(t, store.Finish(ctx, *job, errors.New("failure"), actions.DefaultMaxAttempts, now, delay))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("failure"), retry.DefaultMaxAttempts, now, delay))
 
 		var millis, retryAt int64
 		require.NoError(t, db.QueryRowContext(ctx,
@@ -174,12 +174,12 @@ func TestDestinationBackoff(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 
 	// A new IP shares the pause, even if the worker restarts.
 	for _, id := range []string{"three", "four"} {
 		event := failed(id)
-		event.IP = "203.0.113.2"
+		event.User.IP = "203.0.113.2"
 		_, err = processDecision(processor, ctx, event, now)
 		require.NoError(t, err)
 	}
@@ -201,7 +201,7 @@ func TestDestinationBackoff(t *testing.T) {
 		if seconds == 10 {
 			assert.Equal(t, "203.0.113.2", job.Decision.IP)
 		}
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 	}
 	now = now.Add(5 * time.Minute)
 	job, err = store.Next(ctx, now)
@@ -214,7 +214,7 @@ func TestDestinationBackoff(t *testing.T) {
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), 10, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 	pending, err := store.Next(ctx, now.Add(10*time.Second))
 	require.NoError(t, err)
 	require.NotNil(t, pending)
@@ -270,7 +270,7 @@ func TestWorkerSchedule(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 		require.NoError(t, store.Close())
 		store, _ = openStore(t, path, "receiver")
 		defer store.Close() //nolint:errcheck
@@ -286,7 +286,7 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due, 0))
+		require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, due, 0))
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
 		assert.True(t, due.IsZero())
@@ -305,7 +305,7 @@ func TestAttemptBudget(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("unavailable"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 		now = now.Add(time.Minute)
 	}
 	require.NoError(t, store.Close())
@@ -332,7 +332,7 @@ func TestAttemptBudget(t *testing.T) {
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+	require.NoError(t, store.Finish(ctx, *job, errors.New("still unavailable"), 4, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 	_, err = bans.ReleaseAllSources(ctx, store, record.Decision.ID, now, []string{"receiver"})
 	require.NoError(t, err)
 	job, err = store.Next(ctx, now.Add(5*time.Minute))
@@ -361,7 +361,7 @@ func TestFinishIgnoresStaleDeliverySuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, second.Decision.Revision, first.Decision.Revision)
 
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
+	require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now, 0))
 
 	next, err := store.Next(ctx, now)
 	require.NoError(t, err)
@@ -402,7 +402,7 @@ func TestRapidBanReleaseBanWithInflightDelivery(t *testing.T) {
 	assert.Equal(t, model.DecisionBanned, newBan.Decision.State)
 	assert.Greater(t, newBan.Decision.Revision, released.Decision.Revision)
 
-	require.NoError(t, store.Finish(ctx, *inFlight, nil, actions.DefaultMaxAttempts, now.Add(3*time.Second), 0))
+	require.NoError(t, store.Finish(ctx, *inFlight, nil, retry.DefaultMaxAttempts, now.Add(3*time.Second), 0))
 
 	next, err := store.Next(ctx, now.Add(3*time.Second))
 	require.NoError(t, err)

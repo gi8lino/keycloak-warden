@@ -77,3 +77,13 @@ func TestValidation(t *testing.T) {
 		require.ErrorIs(t, err, ErrInvalid)
 	})
 }
+
+func (s *queryStore) DestinationHealth(context.Context) ([]model.DestinationHealth, error) {
+	return nil, nil
+}
+func (s *queryStore) Timeline(context.Context, string, Query) (model.TimelinePage, error) {
+	return model.TimelinePage{}, nil
+}
+func (s *queryStore) Incidents(context.Context, IncidentQuery) (model.IncidentPage, error) {
+	return model.IncidentPage{}, nil
+}

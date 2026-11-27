@@ -13,13 +13,28 @@ func logEventOutcome(
 	envelope events.Envelope,
 	result ingestion.Result,
 ) {
+	for _, incident := range result.Incidents {
+		logger.Info("detection threshold reached",
+			"event", "security_incident",
+			"incident_id", incident.ID,
+			"rule", incident.Rule,
+			"event_id", incident.EventID,
+			"event_kind", incident.EventKind,
+			"event_type", incident.EventType,
+			"realm_id", incident.RealmID,
+			"count", incident.Count,
+			"threshold", incident.Threshold,
+			"observe_only", incident.ObserveOnly,
+		)
+	}
 	switch result.Outcome {
 	case ingestion.OutcomeIgnored:
 		logger.Debug("security event ignored",
 			"event", "security_event_ignored",
 			"event_id", envelope.ID,
-			"event_type", envelope.Kind,
-			"realm_id", envelope.RealmID,
+			"event_kind", envelope.Kind,
+			"event_type", envelope.EventType(),
+			"realm_id", envelope.RealmID(),
 			"reason", result.Reason,
 		)
 
@@ -27,7 +42,7 @@ func logEventOutcome(
 		logger.Debug("duplicate security event ignored",
 			"event", "security_event_duplicate",
 			"event_id", envelope.ID,
-			"realm_id", envelope.RealmID,
+			"realm_id", envelope.RealmID(),
 			"ip", result.IP,
 		)
 
@@ -36,8 +51,7 @@ func logEventOutcome(
 			"event", "detection_threshold_not_reached",
 			"event_id", envelope.ID,
 			"ip", result.IP,
-			"failures", result.Failures,
-			"threshold", result.Threshold,
+			"evaluations", result.Evaluations,
 		)
 
 	case ingestion.OutcomeUnchanged:
@@ -45,8 +59,7 @@ func logEventOutcome(
 			"event", "decision_unchanged",
 			"event_id", envelope.ID,
 			"ip", result.IP,
-			"failures", result.Failures,
-			"threshold", result.Threshold,
+			"evaluations", result.Evaluations,
 		)
 
 	case ingestion.OutcomeProtected:
@@ -61,8 +74,7 @@ func logEventOutcome(
 			"event", string(result.Outcome),
 			"event_id", envelope.ID,
 			"ip", result.IP,
-			"failures", result.Failures,
-			"threshold", result.Threshold,
+			"evaluations", result.Evaluations,
 		)
 
 	case ingestion.OutcomeUpdated:
@@ -72,7 +84,7 @@ func logEventOutcome(
 				"decision_id", decision.ID,
 				"revision", decision.Revision,
 				"trigger_event_id", envelope.ID,
-				"trigger_realm_id", envelope.RealmID,
+				"trigger_realm_id", envelope.RealmID(),
 				"ip", decision.IP,
 				"expires_at", decision.ExpiresAt,
 			)

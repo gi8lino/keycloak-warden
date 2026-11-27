@@ -7,6 +7,7 @@ import (
 
 	httpkitmiddleware "github.com/containeroo/httpkit/middleware"
 	httpkitresponse "github.com/containeroo/httpkit/response"
+
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 )
 

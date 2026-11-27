@@ -162,8 +162,8 @@ func (p *policyTx) DeleteSources(context.Context, string) error {
 	return nil
 }
 
-// ResetFailures accepts the observation generation change in the test transaction.
-func (p *policyTx) ResetFailures(context.Context, string) error { return nil }
+// AdvanceBanGeneration accepts the observation generation change in the test transaction.
+func (p *policyTx) AdvanceBanGeneration(context.Context, string) error { return nil }
 
 // ExpiredSourceIPs returns addresses with elapsed reasons in the test transaction.
 func (p *policyTx) ExpiredSourceIPs(context.Context, time.Time) ([]string, error) {

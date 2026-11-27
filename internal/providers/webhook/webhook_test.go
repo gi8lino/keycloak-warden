@@ -25,7 +25,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
-func TestProviderApply(t *testing.T) {
+func TestProviderDeliver(t *testing.T) {
 	t.Parallel()
 
 	t.Run("sends configured headers and desired revision", func(t *testing.T) {
@@ -57,12 +57,12 @@ func TestProviderApply(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer server.Close()
-		p := Provider{
+		p := Provider[model.Decision]{
 			URL:     server.URL,
 			Headers: http.Header{"Authorization": {"Bearer token"}, "X-Source": {"warden"}},
 			Client:  server.Client(),
 		}
-		require.NoError(t, p.Apply(t.Context(), want))
+		require.NoError(t, p.Deliver(t.Context(), want))
 	})
 
 	t.Run("works without headers", func(t *testing.T) {
@@ -73,15 +73,8 @@ func TestProviderApply(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer server.Close()
-		p := Provider{URL: server.URL, Client: server.Client()}
-		require.NoError(t, p.Apply(t.Context(), model.Decision{State: model.DecisionBanned}))
-	})
-
-	t.Run("rejects unknown desired state before sending webhook", func(t *testing.T) {
-		t.Parallel()
-
-		p := Provider{}
-		require.ErrorContains(t, p.Apply(t.Context(), model.Decision{}), "invalid decision state")
+		p := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		require.NoError(t, p.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
 	t.Run("non-success response propagates to dispatcher", func(t *testing.T) {
@@ -89,8 +82,8 @@ func TestProviderApply(t *testing.T) {
 
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }))
 		defer server.Close()
-		p := Provider{URL: server.URL, Client: server.Client()}
-		require.ErrorContains(t, p.Apply(t.Context(), model.Decision{State: model.DecisionBanned}), "503")
+		p := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		require.ErrorContains(t, p.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "503")
 	})
 }
 
@@ -121,8 +114,8 @@ func (privateTimeoutError) Temporary() bool { return true }
 
 // failingWebhookProvider models credentials in both the URL and headers so
 // transport error tests can verify they never appear in returned diagnostics.
-func failingWebhookProvider(err error) Provider {
-	return Provider{
+func failingWebhookProvider(err error) Provider[model.Decision] {
+	return Provider[model.Decision]{
 		URL: "http://user:password@private.example/notify?token=query-secret",
 		Headers: http.Header{
 			"Authorization": {"Bearer header-secret"},
@@ -145,7 +138,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Name:       "private.example",
 			IsNotFound: true,
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: DNS name not found")
 		assert.NotContains(t, err.Error(), "private.example")
@@ -161,7 +154,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Err:       "secret DNS error text",
 			IsTimeout: true,
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: DNS lookup timed out")
 	})
@@ -173,7 +166,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Name: "private.example",
 			Err:  "secret DNS diagnostic",
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: DNS lookup failed")
 	})
@@ -182,7 +175,7 @@ func TestProviderTransportErrors(t *testing.T) {
 		t.Parallel()
 
 		p := failingWebhookProvider(context.DeadlineExceeded)
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: request timed out: context deadline exceeded")
 		assert.ErrorIs(t, err, context.DeadlineExceeded)
@@ -195,7 +188,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Op:  "dial",
 			Err: privateTimeoutError{},
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: connection timed out")
 		assert.NotContains(t, err.Error(), "secret-token")
@@ -205,7 +198,7 @@ func TestProviderTransportErrors(t *testing.T) {
 		t.Parallel()
 
 		p := failingWebhookProvider(context.Canceled)
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: context canceled")
 		assert.ErrorIs(t, err, context.Canceled)
@@ -215,7 +208,7 @@ func TestProviderTransportErrors(t *testing.T) {
 		t.Parallel()
 
 		p := failingWebhookProvider(x509.UnknownAuthorityError{Cert: &x509.Certificate{}})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: TLS certificate authority not trusted")
 	})
@@ -227,7 +220,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Certificate: &x509.Certificate{},
 			Host:        "sensitive.internal",
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: TLS certificate hostname mismatch")
 		assert.NotContains(t, err.Error(), "sensitive.internal")
@@ -240,7 +233,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Cert:   &x509.Certificate{},
 			Reason: x509.Expired,
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: TLS certificate invalid")
 	})
@@ -249,7 +242,7 @@ func TestProviderTransportErrors(t *testing.T) {
 		t.Parallel()
 
 		p := failingWebhookProvider(tls.RecordHeaderError{Msg: "secret response bytes"})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: TLS handshake failed")
 	})
@@ -263,7 +256,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Addr: &net.TCPAddr{IP: net.ParseIP("10.0.0.45"), Port: 9000},
 			Err:  syscall.ECONNREFUSED,
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: connection refused")
 		assert.ErrorIs(t, err, syscall.ECONNREFUSED)
@@ -279,7 +272,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Op:  "dial",
 			Err: syscall.ENETUNREACH,
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: "+syscall.ENETUNREACH.Error())
 		assert.ErrorIs(t, err, syscall.ENETUNREACH)
@@ -292,7 +285,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Op:  "read",
 			Err: syscall.ECONNRESET,
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: "+syscall.ECONNRESET.Error())
 		assert.ErrorIs(t, err, syscall.ECONNRESET)
@@ -302,7 +295,7 @@ func TestProviderTransportErrors(t *testing.T) {
 		t.Parallel()
 
 		p := failingWebhookProvider(io.ErrUnexpectedEOF)
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: connection closed unexpectedly: unexpected EOF")
 		assert.ErrorIs(t, err, io.ErrUnexpectedEOF)
@@ -315,7 +308,7 @@ func TestProviderTransportErrors(t *testing.T) {
 			Op:  "dial",
 			Err: errors.New("internal address and credentials secret-token"),
 		})
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: connection error")
 		assert.NotContains(t, err.Error(), "secret-token")
@@ -325,7 +318,7 @@ func TestProviderTransportErrors(t *testing.T) {
 		t.Parallel()
 
 		p := failingWebhookProvider(errors.New("failed to dial private.example: secret header-secret private-header"))
-		err := p.Apply(t.Context(), decision)
+		err := p.Deliver(t.Context(), decision)
 
 		require.EqualError(t, err, "webhook transport failed: network error")
 		assert.NotContains(t, err.Error(), "user:password")
@@ -350,7 +343,7 @@ func TestProviderTemplate(t *testing.T) {
 			ExpiresAt: time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC),
 		}
 
-		body, err := (Provider{}).renderBody(decision)
+		body, err := (Provider[model.Decision]{}).renderBody(decision)
 		require.NoError(t, err)
 
 		want, err := json.Marshal(decision)
@@ -363,7 +356,7 @@ func TestProviderTemplate(t *testing.T) {
 
 		tmpl, err := templates.ParseTemplate(
 			"slack",
-			`{"text": {{ json (printf "Blocked %s: %s" .IP .ID) }}}`,
+			`{"text": {{ json (printf "Blocked %s: %s" .Payload.IP .Payload.ID) }}}`,
 			templates.WithDefaultFuncs(),
 		)
 		require.NoError(t, err)
@@ -386,7 +379,7 @@ func TestProviderTemplate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider{
+		provider := Provider[model.Decision]{
 			URL:      server.URL,
 			Client:   server.Client(),
 			Template: tmpl,
@@ -398,7 +391,7 @@ func TestProviderTemplate(t *testing.T) {
 			State:    model.DecisionBanned,
 		}
 
-		require.NoError(t, provider.Apply(t.Context(), decision))
+		require.NoError(t, provider.Deliver(t.Context(), decision))
 		assert.Equal(t, "Blocked 203.0.113.42: quoted \"id\"\nnew line", (<-received)["text"])
 	})
 
@@ -407,13 +400,13 @@ func TestProviderTemplate(t *testing.T) {
 
 		tmpl, err := templates.ParseTemplate(
 			"state",
-			`{"text": {{ if eq .State "banned" }}{{ json "banned" }}{{ else }}{{ json "released" }}{{ end }}}`,
+			`{"text": {{ if eq .Payload.State "banned" }}{{ json "banned" }}{{ else }}{{ json "released" }}{{ end }}}`,
 			templates.WithDefaultFuncs(),
 		)
 		require.NoError(t, err)
 
-		provider := Provider{Template: tmpl}
-		require.NoError(t, provider.ValidateTemplate())
+		provider := Provider[model.Decision]{Template: tmpl}
+		require.NoError(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}))
 
 		banBody, err := provider.renderBody(model.Decision{State: model.DecisionBanned})
 		require.NoError(t, err)
@@ -437,8 +430,8 @@ func TestProviderTemplate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider{URL: server.URL, Client: server.Client(), Template: tmpl}
-		err = provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned})
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Template: tmpl}
+		err = provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "invalid JSON")
 		assert.Zero(t, requests.Load())
 	})
@@ -452,8 +445,8 @@ func TestProviderTemplate(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		provider := Provider{Template: tmpl}
-		require.ErrorContains(t, provider.ValidateTemplate(), "64 KiB")
+		provider := Provider[model.Decision]{Template: tmpl}
+		require.ErrorContains(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "64 KiB")
 	})
 
 	t.Run("propagates template execution errors", func(t *testing.T) {
@@ -462,18 +455,18 @@ func TestProviderTemplate(t *testing.T) {
 		tmpl, err := templates.ParseTemplate("missing-field", `{"text": {{ json .MissingField }}}`, templates.WithDefaultFuncs())
 		require.NoError(t, err)
 
-		provider := Provider{Template: tmpl}
-		require.ErrorContains(t, provider.ValidateTemplate(), "render webhook body")
+		provider := Provider[model.Decision]{Template: tmpl}
+		require.ErrorContains(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "render webhook body")
 	})
 
 	t.Run("checks both states before startup", func(t *testing.T) {
 		t.Parallel()
 
-		tmpl, err := templates.ParseTemplate("only-ban-valid", `{{ if eq .State "banned" }}{}{{ else }}not-json{{ end }}`)
+		tmpl, err := templates.ParseTemplate("only-ban-valid", `{{ if eq .Payload.State "banned" }}{}{{ else }}not-json{{ end }}`)
 		require.NoError(t, err)
 
-		provider := Provider{Template: tmpl}
-		require.ErrorContains(t, provider.ValidateTemplate(), "unbanned state")
+		provider := Provider[model.Decision]{Template: tmpl}
+		require.ErrorContains(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "payload 2")
 	})
 }
 
@@ -488,8 +481,8 @@ func TestProviderResponseRule(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider{URL: server.URL, Client: server.Client()}
-		assert.NoError(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned}))
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
 	t.Run("no rule still rejects non 2xx status", func(t *testing.T) {
@@ -501,8 +494,8 @@ func TestProviderResponseRule(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider{URL: server.URL, Client: server.Client()}
-		err := provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned})
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "403")
 		assert.NotContains(t, err.Error(), "secret")
 	})
@@ -520,8 +513,8 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:       json.RawMessage(`true`),
 			ErrorPointer: "/error",
 		}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.NoError(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned}))
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
 	t.Run("rule rejects Slack HTTP 200 failure and extracts error", func(t *testing.T) {
@@ -537,8 +530,8 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:       json.RawMessage(`true`),
 			ErrorPointer: "/error",
 		}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		err := provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned})
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "channel_not_found")
 		assert.NotContains(t, err.Error(), "private-secret")
 	})
@@ -557,8 +550,8 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:       json.RawMessage(`true`),
 			ErrorPointer: "/error",
 		}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		err := provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned})
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "403")
 		assert.ErrorContains(t, err, "invalid_auth")
 		assert.NotContains(t, err.Error(), "private-secret")
@@ -576,8 +569,8 @@ func TestProviderResponseRule(t *testing.T) {
 			Pointer: "/ok",
 			Equals:  json.RawMessage(`true`),
 		}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.Error(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionUnbanned}))
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		assert.Error(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionUnbanned}))
 	})
 
 	t.Run("rule allows explicitly configured non 2xx response", func(t *testing.T) {
@@ -589,8 +582,8 @@ func TestProviderResponseRule(t *testing.T) {
 		defer server.Close()
 
 		rule := response.Rule{StatusCodes: []int{http.StatusTeapot}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.NoError(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned}))
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
 	t.Run("status-only rule rejects unconfigured 2xx response", func(t *testing.T) {
@@ -602,8 +595,8 @@ func TestProviderResponseRule(t *testing.T) {
 		defer server.Close()
 
 		rule := response.Rule{StatusCodes: []int{http.StatusAccepted}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.ErrorContains(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned}), "204")
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		assert.ErrorContains(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "204")
 	})
 
 	t.Run("text rule matches exact response", func(t *testing.T) {
@@ -616,8 +609,8 @@ func TestProviderResponseRule(t *testing.T) {
 
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.NoError(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned}))
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
 	t.Run("text rule extracts sanitized bounded error details", func(t *testing.T) {
@@ -631,8 +624,8 @@ func TestProviderResponseRule(t *testing.T) {
 
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		err := provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned})
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "Invalid key")
 		assert.NotContains(t, err.Error(), "\n")
 		assert.Less(t, len(err.Error()), 400)
@@ -648,7 +641,50 @@ func TestProviderResponseRule(t *testing.T) {
 
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
-		provider := Provider{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.ErrorContains(t, provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned}), "64 KiB")
+		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		assert.ErrorContains(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "64 KiB")
+	})
+}
+
+func TestIncidentDelivery(t *testing.T) {
+	t.Parallel()
+
+	t.Run("sends the canonical incident without a template", func(t *testing.T) {
+		t.Parallel()
+
+		incident := model.Incident{
+			ID:        42,
+			Rule:      "audit",
+			EventKind: "admin",
+		}
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			var actual model.Incident
+			assert.NoError(t, json.NewDecoder(r.Body).Decode(&actual))
+			assert.Equal(t, incident, actual)
+			assert.Equal(t, "application/json", r.Header.Get("Content-Type"))
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+
+		provider := Provider[model.Incident]{
+			URL:    server.URL,
+			Client: server.Client(),
+		}
+		require.NoError(t, provider.Deliver(t.Context(), incident))
+	})
+
+	t.Run("renders incident payload and variables through the shared provider", func(t *testing.T) {
+		t.Parallel()
+
+		tmpl, err := templates.ParseTemplate("incident", `{"rule": {{ .Payload.Rule | json }}, "channel": {{ .Vars.channel | json }}}`, templates.WithDefaultFuncs())
+		require.NoError(t, err)
+
+		provider := Provider[model.Incident]{
+			Template:     tmpl,
+			TemplateVars: map[string]string{"channel": "ops"},
+		}
+		body, err := provider.renderBody(model.Incident{Rule: "quoted \"rule\""})
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"rule":"quoted \"rule\"","channel":"ops"}`, string(body))
 	})
 }

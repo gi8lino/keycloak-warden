@@ -38,8 +38,8 @@ func (w *workflowTx) DeleteSources(context.Context, string) error {
 	return nil
 }
 
-// ResetFailures records that the observation generation was advanced.
-func (w *workflowTx) ResetFailures(context.Context, string) error {
+// AdvanceBanGeneration records that the observation generation was advanced.
+func (w *workflowTx) AdvanceBanGeneration(context.Context, string) error {
 	w.resetFailures = true
 	return nil
 }

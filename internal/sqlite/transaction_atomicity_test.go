@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -35,8 +35,7 @@ func TestApplyManualBanRollback(t *testing.T) {
 	// Fail after the decision and manual source have been inserted, but before
 	// reconciliation can commit the effective state and pending deliveries.
 	_, err := store.db.Exec(`
-CREATE TRIGGER reject_reconciliation
-BEFORE UPDATE OF revision ON decisions
+CREATE TRIGGER reject_reconciliation BEFORE UPDATE OF revision ON decisions
 BEGIN
     SELECT RAISE(ABORT, 'injected reconciliation failure');
 END
@@ -83,8 +82,7 @@ func TestReleaseAllSourcesRollback(t *testing.T) {
 	<-store.Changes()
 
 	_, err = store.db.Exec(`
-CREATE TRIGGER reject_release
-BEFORE UPDATE OF revision ON decisions
+CREATE TRIGGER reject_release BEFORE UPDATE OF revision ON decisions
 BEGIN
     SELECT RAISE(ABORT, 'injected release failure');
 END
@@ -133,8 +131,7 @@ func TestMaintainRollbackAcrossAddresses(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = store.db.Exec(`
-CREATE TRIGGER reject_second_expiry
-BEFORE UPDATE OF revision ON decisions
+CREATE TRIGGER reject_second_expiry BEFORE UPDATE OF revision ON decisions
 WHEN NEW.ip = '203.0.113.52'
 BEGIN
     SELECT RAISE(ABORT, 'injected expiry failure');
@@ -181,14 +178,13 @@ func TestFinishRollback(t *testing.T) {
 		require.NotNil(t, job)
 
 		_, err = store.db.Exec(`
-CREATE TRIGGER reject_acknowledgement
-BEFORE UPDATE OF acknowledged ON deliveries
+CREATE TRIGGER reject_acknowledgement BEFORE UPDATE OF acknowledged ON deliveries
 BEGIN
     SELECT RAISE(ABORT, 'injected acknowledgement failure');
 END
 `)
 		require.NoError(t, err)
-		require.ErrorContains(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0), "injected acknowledgement failure")
+		require.ErrorContains(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now, 0), "injected acknowledgement failure")
 
 		current, err := store.GetDecision(ctx, created.Decision.ID, now)
 		require.NoError(t, err)
@@ -201,7 +197,7 @@ END
 
 		_, err = store.db.Exec("DROP TRIGGER reject_acknowledgement")
 		require.NoError(t, err)
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
+		require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now, 0))
 		pending, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, pending)
@@ -220,14 +216,13 @@ END
 		require.NotNil(t, job)
 
 		_, err = store.db.Exec(`
-CREATE TRIGGER reject_retry
-BEFORE UPDATE OF retry_at ON deliveries
+CREATE TRIGGER reject_retry BEFORE UPDATE OF retry_at ON deliveries
 BEGIN
     SELECT RAISE(ABORT, 'injected retry failure');
 END
 `)
 		require.NoError(t, err)
-		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)), "injected retry failure")
+		require.ErrorContains(t, store.Finish(ctx, *job, errors.New("provider failure"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)), "injected retry failure")
 
 		var backoffs int
 		require.NoError(t, store.db.QueryRowContext(ctx,
@@ -240,7 +235,7 @@ END
 
 		_, err = store.db.Exec("DROP TRIGGER reject_retry")
 		require.NoError(t, err)
-		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
+		require.NoError(t, store.Finish(ctx, *job, errors.New("provider failure"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(job.PreviousDelay)))
 		pending, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, pending)

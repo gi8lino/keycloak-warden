@@ -128,13 +128,17 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 
 	for _, item := range planned {
 		var applied bool
-		if err := tx.QueryRowContext(ctx, `
+		if err := tx.QueryRowContext(
+			ctx,
+			`
 SELECT EXISTS (
     SELECT 1
     FROM schema_migrations
     WHERE version = ?
 )
-`, item.version).Scan(&applied); err != nil {
+`,
+			item.version,
+		).Scan(&applied); err != nil {
 			return err
 		}
 		if applied {
@@ -166,10 +170,15 @@ func applyMigration(ctx context.Context, tx *sql.Tx, files fs.FS, item migration
 		}
 	}
 
-	_, err := tx.ExecContext(ctx, `
+	_, err := tx.ExecContext(
+		ctx,
+		`
 INSERT INTO schema_migrations (version, applied_at)
 VALUES (?, ?)
-`, item.version, time.Now().Unix())
+`,
+		item.version,
+		time.Now().Unix(),
+	)
 	return err
 }
 

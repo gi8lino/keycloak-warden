@@ -22,13 +22,13 @@ type testWorkerStatus struct {
 	err error
 }
 
-// Snapshot provides one sample action and maintenance worker report.
+// Snapshot provides one sample enforcement and maintenance worker report.
 func (s testWorkerStatus) Snapshot(context.Context) (model.Workers, error) {
 	if s.err != nil {
 		return model.Workers{}, s.err
 	}
 	return model.Workers{
-		Actions: model.ActionWorker{
+		Enforcement: model.EnforcementWorker{
 			RuntimeStatus: model.RuntimeStatus{
 				State:     model.WorkerIdle,
 				StartedAt: time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
@@ -74,7 +74,7 @@ func TestWorkersRoute(t *testing.T) {
 		assert.Equal(t, http.StatusUnauthorized, response.Code)
 	})
 
-	t.Run("returns both workers to an administrator", func(t *testing.T) {
+	t.Run("returns all workers to an administrator", func(t *testing.T) {
 		t.Parallel()
 
 		handlers := newTestServer(server.Config{
@@ -90,6 +90,8 @@ func TestWorkersRoute(t *testing.T) {
 		require.Equal(t, http.StatusOK, response.Code)
 		assert.Contains(t, response.Body.String(), `"pendingDeliveries":2`)
 		assert.Contains(t, response.Body.String(), `"maintenance"`)
+		assert.Contains(t, response.Body.String(), `"enforcement"`)
+		assert.Contains(t, response.Body.String(), `"notifications"`)
 		assert.Contains(t, response.Body.String(), `"state":"idle"`)
 	})
 

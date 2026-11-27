@@ -17,14 +17,15 @@ import (
 
 // EventProcessor processes a source event after the HTTP middleware authenticates it.
 type EventProcessor interface {
-	Process(ctx context.Context, envelope events.Envelope, now time.Time) (ingestion.Result, error)
+	Process(ctx context.Context, envelope events.Envelope, clock func() time.Time) (ingestion.Result, error)
 }
 
-// Events processes authenticated Snitch v1 envelopes and returns an ingestion result.
+// Events processes authenticated Snitch envelopes and returns an ingestion result.
 func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var envelope events.Envelope
 		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&envelope); err != nil {
 			logger.Warn("security event rejected",
 				"event", "security_event_rejected",
@@ -44,13 +45,14 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 			return
 		}
 
-		result, err := processor.Process(r.Context(), envelope, time.Now())
-		if errors.Is(err, ingestion.ErrInvalidEvent) {
+		result, err := processor.Process(r.Context(), envelope, time.Now)
+		if errors.Is(err, events.ErrInvalidEvent) {
 			logger.Warn("security event rejected",
 				"event", "security_event_rejected",
 				"event_id", envelope.ID,
-				"event_type", envelope.Kind,
-				"realm_id", envelope.RealmID,
+				"event_kind", envelope.Kind,
+				"event_type", envelope.EventType(),
+				"realm_id", envelope.RealmID(),
 				"reason", "invalid_event",
 			)
 			httpresponse.Problem(w, http.StatusBadRequest, "Invalid security event.")
@@ -60,7 +62,7 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 		if err != nil {
 			logger.Warn("processing security event failed",
 				"event", "security_event_processing_failed",
-				"realm_id", envelope.RealmID,
+				"realm_id", envelope.RealmID(),
 				"error", err,
 			)
 			httpresponse.Problem(w, http.StatusServiceUnavailable, "Event processing unavailable.")
@@ -68,11 +70,15 @@ func Events(processor EventProcessor, logger *slog.Logger, metrics EventMetrics)
 		}
 
 		metrics.RecordProcessedEvent(
-			envelope.RealmID,
+			envelope.RealmID(),
 			envelope.Kind,
+			envelope.EventType(),
 			result.Decision != nil,
 		)
 
+		for _, incident := range result.Incidents {
+			metrics.RecordIncident(incident.Rule)
+		}
 		logEventOutcome(logger, envelope, result)
 
 		w.WriteHeader(http.StatusNoContent)

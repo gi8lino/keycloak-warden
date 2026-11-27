@@ -1,7 +1,7 @@
 -- Record every new effective decision revision, without fabricating timestamps
 -- or reasons for decisions created before this migration.
 CREATE TABLE decision_revisions (
-    ip TEXT NOT NULL REFERENCES decisions(ip) ON DELETE CASCADE,
+    ip TEXT NOT NULL REFERENCES decisions (ip) ON DELETE CASCADE,
     revision INTEGER NOT NULL CHECK (revision > 0),
     state TEXT NOT NULL CHECK (state IN ('banned', 'unbanned')),
     expires INTEGER NOT NULL,

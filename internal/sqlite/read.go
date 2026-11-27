@@ -12,11 +12,20 @@ import (
 func readDecision(ctx context.Context, tx *sql.Tx, id string) (model.Decision, error) {
 	var decision model.Decision
 	var expires int64
-	err := tx.QueryRowContext(ctx, `
-SELECT id, revision, ip, state, expires
+	err := tx.QueryRowContext(
+		ctx,
+		`
+SELECT
+    id,
+    revision,
+    ip,
+    state,
+    expires
 FROM decisions
 WHERE id = ?
-`, id).Scan(
+`,
+		id,
+	).Scan(
 		&decision.ID,
 		&decision.Revision,
 		&decision.IP,
@@ -32,12 +41,16 @@ WHERE id = ?
 
 // readDeliveries reads acknowledgements for one address in destination order.
 func readDeliveries(ctx context.Context, tx *sql.Tx, ip string) ([]model.Acknowledgement, error) {
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := tx.QueryContext(
+		ctx,
+		`
 SELECT destination, acknowledged
 FROM deliveries
 WHERE ip = ?
 ORDER BY destination
-`, ip)
+`,
+		ip,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -63,12 +76,18 @@ ORDER BY destination
 
 // readBanSources reads unexpired automatic and manual sources in kind order.
 func readBanSources(ctx context.Context, tx *sql.Tx, ip string, now time.Time) ([]model.Source, error) {
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := tx.QueryContext(
+		ctx,
+		`
 SELECT kind, expires, reason
 FROM ban_sources
-WHERE ip = ? AND expires > ?
+WHERE ip = ?
+    AND expires > ?
 ORDER BY kind
-`, ip, now.UnixMilli())
+`,
+		ip,
+		now.UnixMilli(),
+	)
 	if err != nil {
 		return nil, err
 	}

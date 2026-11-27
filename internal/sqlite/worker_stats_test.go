@@ -39,33 +39,75 @@ func TestWorkerStats(t *testing.T) {
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		future := now.Add(time.Hour).UnixMilli()
 		past := now.Add(-time.Hour).UnixMilli()
-		_, err = store.db.ExecContext(t.Context(), `
-INSERT INTO decisions (ip,id,revision,state,expires) VALUES
- ('203.0.113.1','one',2,'banned',?),
- ('203.0.113.2','two',1,'banned',?);
-`, future, past)
+		_, err = store.db.ExecContext(
+			t.Context(),
+			`
+INSERT INTO decisions (
+    ip,
+    id,
+    revision,
+    state,
+    expires
+)
+VALUES
+    ('203.0.113.1', 'one', 2, 'banned', ?),
+    ('203.0.113.2', 'two', 1, 'banned', ?);
+`,
+			future,
+			past,
+		)
+		require.NoError(t, err)
+
+		_, err = store.db.ExecContext(
+			t.Context(),
+			`
+INSERT INTO ban_sources (ip, kind, expires)
+VALUES
+    ('203.0.113.1', 'automatic', ?),
+    ('203.0.113.2', 'automatic', ?);
+`,
+			future,
+			past,
+		)
 		require.NoError(t, err)
 
 		_, err = store.db.ExecContext(t.Context(), `
-INSERT INTO ban_sources (ip,kind,expires) VALUES
- ('203.0.113.1','automatic',?),
- ('203.0.113.2','automatic',?);
-`, future, past)
-		require.NoError(t, err)
-
-		_, err = store.db.ExecContext(t.Context(), `
-INSERT INTO delivery_history (ip,revision,destination,status) VALUES
- ('203.0.113.1',1,'webhook.old','exhausted'),
- ('203.0.113.1',2,'webhook.pending','pending'),
- ('203.0.113.1',2,'webhook.retry','retrying'),
- ('203.0.113.1',2,'webhook.exhausted','exhausted');
+INSERT INTO delivery_history (
+    ip,
+    revision,
+    destination,
+    status
+)
+VALUES
+    ('203.0.113.1', 1, 'webhook.old', 'exhausted'),
+    ('203.0.113.1', 2, 'webhook.pending', 'pending'),
+    ('203.0.113.1', 2, 'webhook.retry', 'retrying'),
+    ('203.0.113.1', 2, 'webhook.exhausted', 'exhausted');
 `)
 		require.NoError(t, err)
 
-		_, err = store.db.ExecContext(t.Context(), `
-INSERT INTO delivery_attempts (ip,revision,destination,number,completed_at,error)
-VALUES ('203.0.113.1',2,'webhook.retry',1,?,'retry');
-`, now.UnixMilli())
+		_, err = store.db.ExecContext(
+			t.Context(),
+			`
+INSERT INTO delivery_attempts (
+    ip,
+    revision,
+    destination,
+    number,
+    completed_at,
+    error
+)
+VALUES (
+    '203.0.113.1',
+    2,
+    'webhook.retry',
+    1,
+    ?,
+    'retry'
+);
+`,
+			now.UnixMilli(),
+		)
 		require.NoError(t, err)
 
 		stats, err := store.WorkerStats(t.Context(), now)

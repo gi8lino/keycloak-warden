@@ -5,9 +5,10 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
@@ -27,9 +28,9 @@ func RetryDelivery(service RetryOperations, logger *slog.Logger) http.HandlerFun
 		}
 		err := service.Retry(r.Context(), request, time.Now())
 		switch {
-		case errors.Is(err, actions.ErrRetryInvalid):
+		case errors.Is(err, enforcement.ErrRetryInvalid):
 			httpresponse.Problem(w, http.StatusBadRequest, err.Error())
-		case errors.Is(err, actions.ErrRetryConflict):
+		case errors.Is(err, enforcement.ErrRetryConflict):
 			httpresponse.Problem(w, http.StatusConflict, err.Error())
 		case err != nil:
 			logger.Error("delivery retry failed", "error", err)
@@ -45,7 +46,7 @@ func RetryDelivery(service RetryOperations, logger *slog.Logger) http.HandlerFun
 type OperationalQueries interface {
 	Health(context.Context) ([]model.DestinationHealth, error)
 	Timeline(context.Context, string, int) (model.TimelinePage, error)
-	Observations(context.Context, int) (model.ObservationPage, error)
+	Incidents(context.Context, overview.IncidentQuery) (model.IncidentPage, error)
 }
 
 // DeliveryHealth returns current counts grouped by destination.
@@ -78,14 +79,25 @@ func DecisionTimeline(service OperationalQueries, logger *slog.Logger) http.Hand
 	}
 }
 
-// Observations returns hypothetical bans recorded in observe-only mode.
-func Observations(service OperationalQueries, logger *slog.Logger) http.HandlerFunc {
+// Incidents returns recorded named rule threshold hits.
+func Incidents(service OperationalQueries, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		_, page, ok := overviewQuery(w, r)
-		if !ok {
-			return
+		values := r.URL.Query()
+		var before int64
+		if raw := values.Get("before-id"); raw != "" {
+			var err error
+			before, err = strconv.ParseInt(raw, 10, 64)
+			if err != nil || before <= 0 {
+				httpresponse.Problem(w, http.StatusBadRequest, "Invalid incident cursor.")
+				return
+			}
 		}
-		result, err := service.Observations(r.Context(), page)
+		query := overview.IncidentQuery{
+			BeforeID: before,
+			Rule:     values.Get("rule"),
+			Kind:     values.Get("kind"),
+		}
+		result, err := service.Incidents(r.Context(), query)
 		if writeOverviewError(w, logger, err) {
 			return
 		}

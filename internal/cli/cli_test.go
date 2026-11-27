@@ -130,7 +130,7 @@ func TestRun(t *testing.T) {
 
 		require.NoError(t, os.WriteFile(
 			path,
-			[]byte("listen-address: 127.0.0.1:8081\nrule:\n  threshold: 2\n  window: 1m\n  ban: 15m\n"),
+			[]byte("listen-address: 127.0.0.1:8081\nrules:\n  brute-force:\n    selector:\n      kind: user\n      events: [LOGIN_ERROR]\n    aggregation:\n      group-by: ip\n      threshold: 2\n      window: 1m\n    actions:\n      ban: 15m\n"),
 			0o600,
 		))
 		var stderr bytes.Buffer
@@ -148,7 +148,7 @@ func TestRun(t *testing.T) {
 
 		path := filepath.Join(t.TempDir(), "warden.yaml")
 
-		require.NoError(t, os.WriteFile(path, []byte("rule:\n  threshold: 2\n  window: 1m\n  ban: 15m\n"), 0o600))
+		require.NoError(t, os.WriteFile(path, []byte("rules:\n  brute-force:\n    selector:\n      kind: user\n      events: [LOGIN_ERROR]\n    aggregation:\n      group-by: ip\n      threshold: 2\n      window: 1m\n    actions:\n      ban: 15m\n"), 0o600))
 		var stderr bytes.Buffer
 		err := Run(t.Context(), []string{
 			"serve",
@@ -319,6 +319,21 @@ func TestRun(t *testing.T) {
 
 		require.Error(t, err)
 		assert.Contains(t, stderr.String(), "xml")
+	})
+
+	t.Run("rejects text output during flag parsing", func(t *testing.T) {
+		t.Parallel()
+
+		var stderr bytes.Buffer
+		err := Run(t.Context(), []string{
+			"ban", "203.0.113.10",
+			"--duration", "1h",
+			"--reason", "Incident",
+			"--output", "text",
+		}, "test", io.Discard, &stderr)
+
+		require.Error(t, err)
+		assert.Contains(t, stderr.String(), "text")
 	})
 
 	t.Run("root output flag appears in help", func(t *testing.T) {

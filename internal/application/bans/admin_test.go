@@ -88,8 +88,8 @@ func (r *fakeStore) DeleteSources(context.Context, string) error {
 	return nil
 }
 
-// ResetFailures simulates advancing the observation generation.
-func (r *fakeStore) ResetFailures(context.Context, string) error { return nil }
+// AdvanceBanGeneration simulates advancing the observation generation.
+func (r *fakeStore) AdvanceBanGeneration(context.Context, string) error { return nil }
 
 // ExpiredSourceIPs returns no elapsed sources for administration tests.
 func (r *fakeStore) ExpiredSourceIPs(context.Context, time.Time) ([]string, error) {
@@ -121,7 +121,7 @@ func TestNewAdminService(t *testing.T) {
 	t.Run("accepts store", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{}, nil)
+		service, err := bans.NewAdminService(&fakeStore{}, nil, bans.Policy{})
 
 		require.NoError(t, err)
 		assert.NotNil(t, service)
@@ -130,7 +130,7 @@ func TestNewAdminService(t *testing.T) {
 	t.Run("rejects missing store", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := bans.NewAdminService(nil, nil)
+		_, err := bans.NewAdminService(nil, nil, bans.Policy{})
 
 		require.ErrorContains(t, err, "store")
 	})
@@ -142,7 +142,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 	invalid := func(t *testing.T, request bans.ManualBanRequest) {
 		t.Helper()
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		_, err = service.BanManual(t.Context(), request, time.Now())
@@ -197,7 +197,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		now := time.Now()
@@ -220,7 +220,7 @@ func TestAdminServiceRelease(t *testing.T) {
 	t.Run("rejects missing decision ID", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{}, nil)
+		service, err := bans.NewAdminService(&fakeStore{}, nil, bans.Policy{})
 
 		require.NoError(t, err)
 		_, err = service.Release(t.Context(), " ", time.Now())
@@ -232,7 +232,7 @@ func TestAdminServiceRelease(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		_, err = service.Release(t.Context(), "decision-one", time.Now())
@@ -248,7 +248,7 @@ func TestAdminServiceListActive(t *testing.T) {
 	t.Run("delegates to store", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{}, nil)
+		service, err := bans.NewAdminService(&fakeStore{}, nil, bans.Policy{})
 
 		require.NoError(t, err)
 		views, err := service.ListActive(t.Context(), time.Now())
@@ -264,7 +264,7 @@ func TestAdminServiceGetDecision(t *testing.T) {
 	t.Run("rejects missing decision ID", func(t *testing.T) {
 		t.Parallel()
 
-		service, err := bans.NewAdminService(&fakeStore{}, nil)
+		service, err := bans.NewAdminService(&fakeStore{}, nil, bans.Policy{})
 
 		require.NoError(t, err)
 		_, err = service.GetDecision(t.Context(), " ", time.Now())
@@ -276,7 +276,7 @@ func TestAdminServiceGetDecision(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		_, err = service.GetDecision(t.Context(), "decision-one", time.Now())
@@ -294,7 +294,7 @@ func TestAdminServiceTargets(t *testing.T) {
 
 		store := &fakeStore{}
 		targets := []string{"cloudflare.edge", "webhook.slack"}
-		service, err := bans.NewAdminService(store, targets)
+		service, err := bans.NewAdminService(store, targets, bans.Policy{})
 		require.NoError(t, err)
 
 		targets[0] = "modified"
@@ -312,7 +312,7 @@ func TestAdminServiceTargets(t *testing.T) {
 		t.Parallel()
 
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, []string{"webhook.slack"})
+		service, err := bans.NewAdminService(store, []string{"webhook.slack"}, bans.Policy{})
 		require.NoError(t, err)
 
 		_, err = service.Release(t.Context(), "decision-one", time.Now())
@@ -335,7 +335,7 @@ func TestAdminServiceGetDecisionPage(t *testing.T) {
 	t.Run("passes page 100 to persistence", func(t *testing.T) {
 		t.Parallel()
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 
 		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 100, 0)
@@ -347,7 +347,7 @@ func TestAdminServiceGetDecisionPage(t *testing.T) {
 	t.Run("rejects an invalid page before persistence", func(t *testing.T) {
 		t.Parallel()
 		store := &fakeStore{}
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 
 		_, err = service.GetDecisionPage(t.Context(), "one", time.Now(), 0, 0)

@@ -45,6 +45,7 @@ func execute(ctx context.Context, api *client.Client, ids []string, page int, al
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
+
 		record, err := api.GetPage(ctx, id, page)
 		if err != nil {
 			return nil, fmt.Errorf("inspect decision %q: %w", id, err)

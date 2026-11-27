@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-// RuntimeStatus describes the action worker's in-process lifecycle.
+// RuntimeStatus describes the enforcement worker's in-process lifecycle.
 type RuntimeStatus struct {
 	// State is idle, processing, or stopped.
 	State WorkerState `json:"state" yaml:"state"`
@@ -24,8 +24,8 @@ type QueueStats struct {
 	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty" yaml:"lastAttemptAt,omitempty"`
 }
 
-// ActionWorker is the action worker's runtime state and durable queue summary.
-type ActionWorker struct {
+// EnforcementWorker is the enforcement worker's runtime state and durable queue summary.
+type EnforcementWorker struct {
 	// RuntimeStatus supplies the in-process lifecycle state.
 	RuntimeStatus `yaml:",inline"`
 	// QueueStats supplies the persisted delivery and ban statistics.
@@ -34,10 +34,30 @@ type ActionWorker struct {
 	NextDeadline *time.Time `json:"nextDeadline,omitempty" yaml:"nextDeadline,omitempty"`
 }
 
+// NotificationWorker reports incident delivery state independently of enforcement.
+type NotificationWorker struct {
+	// Runtime is absent when no notification worker is configured.
+	Runtime *RuntimeStatus `json:"runtime,omitempty" yaml:"runtime,omitempty"`
+	// PendingDeliveries counts occurrences not yet attempted in their current retry cycle.
+	PendingDeliveries int `json:"pendingDeliveries" yaml:"pendingDeliveries"`
+	// RetryingDeliveries counts occurrences waiting for another attempt.
+	RetryingDeliveries int `json:"retryingDeliveries" yaml:"retryingDeliveries"`
+	// ExhaustedDeliveries counts retained terminal failures.
+	ExhaustedDeliveries int `json:"exhaustedDeliveries" yaml:"exhaustedDeliveries"`
+	// Delivered counts retained acknowledged occurrences.
+	Delivered int `json:"delivered" yaml:"delivered"`
+	// NextDeadline is the earliest eligible destination queue head.
+	NextDeadline *time.Time `json:"nextDeadline,omitempty" yaml:"nextDeadline,omitempty"`
+	// LastAttemptAt is the latest recorded send completion.
+	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty" yaml:"lastAttemptAt,omitempty"`
+}
+
 // Workers is the combined observable worker state for administrators.
 type Workers struct {
-	// Actions handles expiry, ban deliveries, and retries.
-	Actions ActionWorker `json:"actions" yaml:"actions"`
+	// Enforcement handles expiry, ban deliveries, and retries.
+	Enforcement EnforcementWorker `json:"enforcement" yaml:"enforcement"`
+	// Notifications reports independent incident delivery activity.
+	Notifications NotificationWorker `json:"notifications" yaml:"notifications"`
 	// Maintenance handles periodic observation cleanup and SQLite optimization.
 	Maintenance Maintenance `json:"maintenance" yaml:"maintenance"`
 }

@@ -31,7 +31,7 @@ func Run(ctx context.Context, args []string, version string, stdout, stderr io.W
 		Section("Output").
 		OneOfGroup("output-mode").
 		HideDefault().
-		Choices(output.FormatText, output.FormatJSON, output.FormatYAML).
+		Choices(output.FormatJSON, output.FormatYAML).
 		Short("o").
 		Value()
 

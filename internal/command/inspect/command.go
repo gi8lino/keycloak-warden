@@ -31,7 +31,7 @@ func Register(
 		Value()
 
 	command.Run(func(ctx context.Context) error {
-		return RunPage(
+		return Run(
 			ctx,
 			*adminFlags.ApplicationURL,
 			*adminFlags.AdminToken,

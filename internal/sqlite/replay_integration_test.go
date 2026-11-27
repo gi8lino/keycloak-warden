@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -73,7 +73,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, provider.Apply(ctx, job.Decision))
+		require.NoError(t, provider.Deliver(ctx, job.Decision))
 
 		// Simulate a crash after the provider succeeded but before Finish commits.
 		require.NoError(t, store.Close())
@@ -82,8 +82,8 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		job, err = store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, provider.Apply(ctx, job.Decision))
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
+		require.NoError(t, provider.Deliver(ctx, job.Decision))
+		require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now, 0))
 		mu.Lock()
 		assert.Equal(t, 1, created)
 		mu.Unlock()
@@ -97,7 +97,7 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
-		require.NoError(t, provider.Apply(ctx, job.Decision))
+		require.NoError(t, provider.Deliver(ctx, job.Decision))
 
 		// Simulate another crash after release but before acknowledgement.
 		require.NoError(t, store.Close())
@@ -106,8 +106,8 @@ func TestDeliveryReplayAfterRestart(t *testing.T) {
 		job, err = store.Next(ctx, now.Add(time.Second))
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		require.NoError(t, provider.Apply(ctx, job.Decision))
-		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now.Add(time.Second), 0))
+		require.NoError(t, provider.Deliver(ctx, job.Decision))
+		require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now.Add(time.Second), 0))
 
 		mu.Lock()
 		assert.Equal(t, 1, created)

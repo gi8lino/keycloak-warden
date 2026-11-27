@@ -2,7 +2,9 @@
 package bootstrap
 
 import (
+	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
@@ -12,35 +14,63 @@ import (
 	"strings"
 	"time"
 
-	"golang.org/x/net/http/httpguts"
-
 	"github.com/containeroo/notifykit/response"
 	"github.com/containeroo/notifykit/templates"
 	"github.com/containeroo/resolver"
+	"golang.org/x/net/http/httpguts"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
 	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/internal/urlpolicy"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // defaultClientTimeout limits the duration of outbound provider HTTP requests.
 const defaultClientTimeout = 5 * time.Second
 
 // Destinations constructs each named provider and returns stable provider-qualified names.
-func Destinations(targets config.Targets) (destinations map[string]actions.Target, names []string, err error) {
+func Destinations(targets config.Enforcements) (destinations map[string]enforcement.Target, names []string, err error) {
 	if err := targets.Validate(); err != nil {
 		return nil, nil, err
 	}
 
-	if len(targets.Webhook)+len(targets.Cloudflare) == 0 {
-		return nil, nil, errors.New("at least one webhook or cloudflare target is required")
+	destinations = make(map[string]enforcement.Target, len(targets.Webhook)+len(targets.Cloudflare))
+	defaultLimit := effectiveMaxAttempts(targets.MaxAttempts, retry.DefaultMaxAttempts)
+
+	client, registry := providerDependencies()
+
+	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
+		provider, err := buildWebhook(targets.Webhook[name], client, registry, decisionSamples()...)
+		if err != nil {
+			return nil, nil, fmt.Errorf("target %q: %w", "webhook."+name, err)
+		}
+		destinations["webhook."+name] = enforcement.Target{
+			Provider:    provider,
+			Identity:    webhookIdentity(provider),
+			MaxAttempts: effectiveMaxAttempts(targets.Webhook[name].MaxAttempts, defaultLimit),
+		}
 	}
 
-	destinations = make(map[string]actions.Target, len(targets.Webhook)+len(targets.Cloudflare))
-	defaultLimit := effectiveMaxAttempts(targets.MaxAttempts, actions.DefaultMaxAttempts)
+	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
+		provider, err := buildCloudflare(targets.Cloudflare[name], client, registry)
+		if err != nil {
+			return nil, nil, fmt.Errorf("target %q: %w", "cloudflare."+name, err)
+		}
+		destinations["cloudflare."+name] = enforcement.Target{
+			Provider:    provider,
+			Identity:    fingerprint(provider.RulesURL),
+			MaxAttempts: effectiveMaxAttempts(targets.Cloudflare[name].MaxAttempts, defaultLimit),
+		}
+	}
 
+	return destinations, slices.Sorted(maps.Keys(destinations)), nil
+}
+
+// providerDependencies constructs the common bounded transport and value resolver.
+func providerDependencies() (*http.Client, *resolver.Registry) {
 	client := &http.Client{
 		Timeout:       defaultClientTimeout,
 		CheckRedirect: noRedirect,
@@ -51,29 +81,7 @@ func Destinations(targets config.Targets) (destinations map[string]actions.Targe
 		resolver.WithUnknownSchemePolicy(resolver.ErrorOnUnknown),
 	)
 
-	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
-		provider, err := buildWebhook(targets.Webhook[name], client, registry)
-		if err != nil {
-			return nil, nil, fmt.Errorf("target %q: %w", "webhook."+name, err)
-		}
-		destinations["webhook."+name] = actions.Target{
-			Provider:    provider,
-			MaxAttempts: effectiveMaxAttempts(targets.Webhook[name].MaxAttempts, defaultLimit),
-		}
-	}
-
-	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
-		provider, err := buildCloudflare(targets.Cloudflare[name], client, registry)
-		if err != nil {
-			return nil, nil, fmt.Errorf("target %q: %w", "cloudflare."+name, err)
-		}
-		destinations["cloudflare."+name] = actions.Target{
-			Provider:    provider,
-			MaxAttempts: effectiveMaxAttempts(targets.Cloudflare[name].MaxAttempts, defaultLimit),
-		}
-	}
-
-	return destinations, slices.Sorted(maps.Keys(destinations)), nil
+	return client, registry
 }
 
 // effectiveMaxAttempts resolves a per-target override against its inherited limit.
@@ -89,42 +97,57 @@ func noRedirect(_ *http.Request, _ []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
-// buildWebhook resolves and validates endpoint settings before constructing a provider.
-func buildWebhook(
-	target config.WebhookTarget,
-	client *http.Client,
-	registry *resolver.Registry,
-) (actions.Provider, error) {
+// decisionSamples covers both desired states during template validation.
+func decisionSamples() []model.Decision {
+	return []model.Decision{
+		{
+			ID:        "startup-check",
+			Revision:  1,
+			IP:        "203.0.113.1",
+			State:     model.DecisionBanned,
+			ExpiresAt: time.Unix(0, 0).UTC(),
+		},
+		{
+			ID:       "startup-check",
+			Revision: 2,
+			IP:       "203.0.113.1",
+			State:    model.DecisionUnbanned,
+		},
+	}
+}
+
+// buildWebhook resolves shared endpoint settings and validates representative payloads.
+func buildWebhook[T any](target config.WebhookTarget, client *http.Client, registry *resolver.Registry, samples ...T) (webhook.Provider[T], error) {
 	endpoint, err := resolveWebhookURL(registry, target.URL)
 	if err != nil {
-		return nil, err
+		return webhook.Provider[T]{}, err
 	}
 
 	headers, err := resolveWebhookHeaders(registry, target.Headers)
 	if err != nil {
-		return nil, err
+		return webhook.Provider[T]{}, err
 	}
 
 	bodyTemplate, err := parseWebhookBodyTemplate(registry, target.BodyTemplate)
 	if err != nil {
-		return nil, err
+		return webhook.Provider[T]{}, err
 	}
 
 	vars, err := resolveTemplateVars(registry, target.TemplateVars)
 	if err != nil {
-		return nil, err
+		return webhook.Provider[T]{}, err
 	}
 
 	var responseRule *response.Rule
 	if target.Response != nil {
 		rule, err := target.Response.Rule()
 		if err != nil {
-			return nil, fmt.Errorf("response: %w", err)
+			return webhook.Provider[T]{}, fmt.Errorf("response: %w", err)
 		}
 		responseRule = &rule
 	}
 
-	provider := webhook.Provider{
+	provider := webhook.Provider[T]{
 		URL:          endpoint,
 		Headers:      headers,
 		Client:       client,
@@ -132,11 +155,9 @@ func buildWebhook(
 		TemplateVars: vars,
 		Response:     responseRule,
 	}
-
-	if err := provider.ValidateTemplate(); err != nil {
-		return nil, fmt.Errorf("body-template: %w", err)
+	if err := provider.ValidateTemplate(samples...); err != nil {
+		return webhook.Provider[T]{}, fmt.Errorf("body-template: %w", err)
 	}
-
 	return provider, nil
 }
 
@@ -244,23 +265,23 @@ func buildCloudflare(
 	target config.CloudflareTarget,
 	client *http.Client,
 	registry *resolver.Registry,
-) (actions.Provider, error) {
+) (cloudflare.Provider, error) {
 	zoneID, err := registry.ResolveVariable(target.ZoneID)
 	if err != nil {
-		return nil, fmt.Errorf("zone-id: %w", err)
+		return cloudflare.Provider{}, fmt.Errorf("zone-id: %w", err)
 	}
 
 	if !validZoneID(zoneID) {
-		return nil, errors.New("zone-id: expected a 32-character hexadecimal Cloudflare zone ID")
+		return cloudflare.Provider{}, errors.New("zone-id: expected a 32-character hexadecimal Cloudflare zone ID")
 	}
 
 	token, err := registry.ResolveVariable(target.APIToken)
 	if err != nil {
-		return nil, fmt.Errorf("api-token: %w", err)
+		return cloudflare.Provider{}, fmt.Errorf("api-token: %w", err)
 	}
 
 	return cloudflare.Provider{
-		RulesURL: "https://api.cloudflare.com/client/v4/zones/" + zoneID + "/firewall/access_rules/rules",
+		RulesURL: "https://api.cloudflare.com/client/v4/zones/" + strings.ToLower(zoneID) + "/firewall/access_rules/rules",
 		Token:    token,
 		Client:   client,
 	}, nil
@@ -274,4 +295,17 @@ func validZoneID(value string) bool {
 
 	_, err := hex.DecodeString(value)
 	return err == nil
+}
+
+// fingerprint avoids persisting secret-bearing webhook URLs.
+func fingerprint(endpoint string) string {
+	sum := sha256.Sum256([]byte(endpoint))
+	return hex.EncodeToString(sum[:])
+}
+
+// webhookIdentity includes routing variables as well as the endpoint; credentials stay rotatable.
+func webhookIdentity[T any](provider webhook.Provider[T]) string {
+	// Encoding a map of strings is deterministic and cannot fail.
+	encoded, _ := json.Marshal(provider.TemplateVars)
+	return fingerprint(provider.URL + "\x00" + string(encoded))
 }

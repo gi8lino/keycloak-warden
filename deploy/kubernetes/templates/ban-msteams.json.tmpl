@@ -1,0 +1,37 @@
+{{/* Microsoft Teams MessageCard payload for Keycloak Warden */}}
+{
+  "@type": "MessageCard",
+  "@context": "http://schema.org/extensions",
+  "summary": {{ if eq .Payload.State "banned" }}{{ printf "Warden banned IP %s" .Payload.IP | json }}{{ else }}{{ printf "Warden released IP %s" .Payload.IP | json }}{{ end }},
+  "themeColor": {{ if eq .Payload.State "banned" }}"D32F2F"{{ else }}"388E3C"{{ end }},
+  "title": {{ if eq .Payload.State "banned" }}{{ "🚨 IP Banned" | json }}{{ else }}{{ "✅ IP Released" | json }}{{ end }},
+  "sections": [
+    {
+      "facts": [
+        {
+          "name": "IP Address",
+          "value": {{ .Payload.IP | json }}
+        },
+        {
+          "name": "State",
+          "value": {{ .Payload.State | json }}
+        },
+        {
+          "name": "Revision",
+          "value": {{ printf "%d" .Payload.Revision | json }}
+        },
+        {
+          "name": "Decision ID",
+          "value": {{ .Payload.ID | json }}
+        }
+        {{- if eq .Payload.State "banned" }},
+        {
+          "name": "Expires At",
+          "value": {{ .Payload.ExpiresAt.UTC.Format "2006-01-02 15:04:05 UTC" | json }}
+        }
+        {{- end }}
+      ],
+      "text": "Keycloak Warden security decision"
+    }
+  ]
+}

@@ -22,6 +22,8 @@ type Store struct {
 	lock *flock.Flock
 	// changes coalesces committed decision changes until the worker observes them.
 	changes chan struct{}
+	// notificationChanges coalesces committed incident delivery admissions.
+	notificationChanges chan struct{}
 }
 
 // Open opens or creates the database and runs embedded, versioned migrations.
@@ -57,7 +59,12 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, errors.Join(err, lock.Close())
 	}
-	return &Store{db: db, lock: lock, changes: make(chan struct{}, 1)}, nil
+	return &Store{
+		db:                  db,
+		lock:                lock,
+		changes:             make(chan struct{}, 1),
+		notificationChanges: make(chan struct{}, 1),
+	}, nil
 }
 
 // openDatabase initializes SQLite after the caller has acquired exclusive Warden ownership.
@@ -86,7 +93,7 @@ func openDatabase(path string) (*sql.DB, error) {
 
 	// Include every table after opening the connection; later calls use SQLite's
 	// lightweight default optimize mode to avoid unnecessary ANALYZE work.
-	if _, err := db.ExecContext(context.Background(), "PRAGMA optimize=0x10002"); err != nil {
+	if _, err := db.ExecContext(context.Background(), "PRAGMA optimize = 0x10002"); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("optimize sqlite database: %w", err)
 	}
@@ -102,3 +109,6 @@ func (s *Store) Close() error { return errors.Join(s.db.Close(), s.lock.Close())
 
 // Changes signals that a committed decision may have changed the worker's next deadline.
 func (s *Store) Changes() <-chan struct{} { return s.changes }
+
+// NotificationChanges signals committed notification queue admissions.
+func (s *Store) NotificationChanges() <-chan struct{} { return s.notificationChanges }

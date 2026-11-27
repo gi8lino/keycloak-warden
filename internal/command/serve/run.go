@@ -4,35 +4,29 @@ import (
 	"context"
 	"errors"
 	"log/slog"
-	"time"
 
-	"github.com/containeroo/appkit/httpserver"
 	"github.com/containeroo/httpkit/grace"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
-	"github.com/gi8lino/keycloak-warden/internal/application/overview"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/internal/bootstrap"
 	"github.com/gi8lino/keycloak-warden/internal/config"
-	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
-	"github.com/gi8lino/keycloak-warden/internal/metrics"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
 // Options describes the resolved operational settings for one Warden server instance.
 type Options struct {
-	// Config contains the detection rule and destination configuration.
-	Config config.Config
-	// ObserveOnly records hypothetical bans without invoking action providers.
-	ObserveOnly bool
-	// RoutePrefix is prepended to application endpoints, but not management endpoints.
-	RoutePrefix string
 	// ListenAddress selects the application HTTP listener.
 	ListenAddress string
 	// ManagementListenAddress selects the management HTTP listener.
 	ManagementListenAddress string
+	// Config contains detection rules and destination configuration.
+	Config config.Config
+	// ObserveOnly records hypothetical bans without invoking enforcement providers.
+	ObserveOnly bool
+	// RoutePrefix is prepended to application endpoints, but not management endpoints.
+	RoutePrefix string
 	// Database is the SQLite database path.
 	Database string
 	// SnitchSecret authenticates incoming Keycloak Snitch events.
@@ -45,29 +39,27 @@ type Options struct {
 	AccessLog bool
 	// MetricsEnabled enables management metrics and instrumentation.
 	MetricsEnabled bool
-	// RetryPolicy configures destination-wide delivery backoff.
-	RetryPolicy actions.RetryPolicy
 	// Maintenance configures observation pruning and SQLite optimization.
 	Maintenance maintenance.Schedule
 	// Version labels the running build in metrics.
 	Version string
 }
 
-// Run starts Warden using resolved configuration and separate operational options.
-func Run(parent context.Context, options Options) error {
-	cfg := options.Config
-	schedule := options.Maintenance
-	logger := options.Logger
-	if err := cfg.Validate(); err != nil {
+// Validate checks operational settings before opening the database.
+func (o Options) Validate() error {
+	if err := o.Config.Validate(); err != nil {
 		return err
 	}
-	if err := schedule.Validate(); err != nil {
+	return o.Maintenance.Validate()
+}
+
+// Run prepares the server dependencies and owns the database lifecycle.
+func Run(parent context.Context, options Options) (err error) {
+	if err := options.Validate(); err != nil {
 		return err
 	}
-	if err := options.RetryPolicy.Validate(); err != nil {
-		return err
-	}
-	protection, err := bans.NewProtection(cfg.ProtectedIPs)
+
+	protection, err := bans.NewProtection(options.Config.ProtectedIPs)
 	if err != nil {
 		return err
 	}
@@ -75,99 +67,34 @@ func Run(parent context.Context, options Options) error {
 		Protection:  protection,
 		ObserveOnly: options.ObserveOnly,
 	}
-	var destinations map[string]actions.Target
+
+	var destinations map[string]enforcement.Target
 	var names []string
 	if !options.ObserveOnly {
-		destinations, names, err = bootstrap.Destinations(cfg.Targets)
+		destinations, names, err = bootstrap.Destinations(options.Config.Enforcements)
 		if err != nil {
 			return err
 		}
+		if options.Config.Rules.RequiresEnforcement() && len(names) == 0 {
+			return errors.New("automatic ban rules require at least one enforcement destination")
+		}
 	}
 
-	store, err := sqlite.Open(options.Database)
+	notificationTargets, err := bootstrap.Notifications(options.Config.Notifications)
 	if err != nil {
 		return err
-	}
-	defer store.Close() //nolint:errcheck
-
-	if err := bootstrap.ValidateAdmission(parent, store, policy, time.Now()); err != nil {
-		return err
-	}
-
-	if err := actions.ValidateTargets(parent, store, names); err != nil {
-		return err
-	}
-	if err := actions.ReconcileTargets(parent, store, destinations); err != nil {
-		return err
-	}
-
-	processor, err := ingestion.NewWithPolicy(store, cfg.Rule, names, policy)
-	if err != nil {
-		return err
-	}
-	banAdmin, err := bans.NewAdminServiceWithPolicy(store, names, policy)
-	if err != nil {
-		return err
-	}
-	overviewService, err := overview.NewService(store)
-	if err != nil {
-		return err
-	}
-	retryService, err := actions.NewRetryService(store, names)
-	if err != nil {
-		return err
-	}
-	operations, err := overview.NewOperations(store)
-	if err != nil {
-		return err
-	}
-	expirer, err := bans.NewExpiryService(store, names)
-	if err != nil {
-		return err
-	}
-
-	registry := metrics.NewRegistry(options.MetricsEnabled, options.Version)
-	for name, target := range destinations {
-		target.Provider = registry.InstrumentProvider(name, target.Provider)
-		destinations[name] = target
 	}
 
 	ctx, stop := grace.SignalContext(parent)
 	defer stop()
 
-	maintenanceRunner := maintenance.Start(ctx, store, schedule, max(maintenance.MinObservationRetention, cfg.Rule.Window), logger)
-	runner := actions.Start(ctx, store, expirer, destinations, options.RetryPolicy, logger)
-	handlers := server.New(server.Config{
-		AccessLog:      options.AccessLog,
-		MetricsEnabled: options.MetricsEnabled,
-		Metrics:        registry,
-		RoutePrefix:    options.RoutePrefix,
-		Secret:         options.SnitchSecret,
-		AdminToken:     options.AdminToken,
-		BanAdmin:       banAdmin,
-		Overview:       overviewService,
-		Retry:          retryService,
-		Operations:     operations,
-		Maintenance:    maintenanceRunner,
-		Workers:        overview.NewWorkerService(runner, maintenanceRunner, store),
-		Logger:         logger,
-		Processor:      processor,
-		Readiness:      store,
-		WorkerDone:     runner.Done(),
-	})
+	store, err := sqlite.Open(options.Database)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		err = errors.Join(err, store.Close())
+	}()
 
-	// The server owns the blocking lifecycle; stop the worker before closing SQLite.
-	err = httpserver.Run(
-		ctx,
-		options.ListenAddress,
-		options.ManagementListenAddress,
-		handlers,
-		logger.With("server", "application"),
-		logger.With("server", "management"),
-	)
-
-	workerErr := runner.Close()
-	maintenanceRunner.Close()
-
-	return errors.Join(err, workerErr)
+	return execute(ctx, options, store, policy, destinations, names, notificationTargets)
 }

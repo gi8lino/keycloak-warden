@@ -1,0 +1,31 @@
+{{- $event := .Payload.EventType -}}
+{{- if eq .Payload.EventKind "admin" -}}
+  {{- $event = printf "%s %s" .Payload.OperationType .Payload.ResourceType -}}
+{{- end -}}
+{{- $message := printf "Rule: %s\nEvent: %s\nRealm: %s\nGroup: %s = %s\nCount: %d / %d\nTime: %s" .Payload.Rule $event .Payload.RealmID .Payload.GroupBy .Payload.GroupKey .Payload.Count .Payload.Threshold (.Payload.At.UTC.Format "2006-01-02 15:04:05 UTC") -}}
+{{- if .Payload.BanUntil -}}
+  {{- if .Payload.ObserveOnly -}}
+    {{- $message = printf "%s\nHypothetical ban until: %s" $message (.Payload.BanUntil.UTC.Format "2006-01-02 15:04:05 UTC") -}}
+  {{- else -}}
+    {{- $message = printf "%s\nBan requested until: %s" $message (.Payload.BanUntil.UTC.Format "2006-01-02 15:04:05 UTC") -}}
+  {{- end -}}
+{{- end -}}
+{
+  "type": "message",
+  "attachments": [
+    {
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null,
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "type": "AdaptiveCard",
+        "version": "1.2",
+        "body": [
+          {"type": "TextBlock", "text": "Security Incident", "weight": "Bolder", "size": "Medium"},
+          {"type": "TextBlock", "text": {{ $message | json }}, "wrap": true},
+          {"type": "TextBlock", "text": {{ printf "Warden incident: %d" .Payload.ID | json }}, "isSubtle": true}
+        ]
+      }
+    }
+  ]
+}

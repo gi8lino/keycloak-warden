@@ -33,7 +33,11 @@ type Config struct {
 	Operations endpoint.OperationalQueries
 	// Maintenance exposes authenticated manual maintenance and status.
 	Maintenance endpoint.MaintenanceOperations
-	// Workers reports action and maintenance worker state to administrators.
+	// Notifications exposes occurrence delivery history.
+	Notifications endpoint.NotificationQueries
+	// NotificationRetry exposes explicit occurrence retries.
+	NotificationRetry endpoint.NotificationRetries
+	// Workers reports enforcement and maintenance worker state to administrators.
 	Workers endpoint.WorkerStatus
 	// Logger records request failures and optional access logs.
 	Logger *slog.Logger
@@ -41,8 +45,10 @@ type Config struct {
 	Processor endpoint.EventProcessor
 	// Readiness checks availability of the persistent store.
 	Readiness endpoint.ReadinessProber
-	// WorkerDone closes when the action worker stops; nil means the worker is unavailable.
-	WorkerDone <-chan struct{}
+	// EnforcementDone closes when the enforcement worker stops; nil means the worker is unavailable.
+	EnforcementDone <-chan struct{}
+	// NotificationDone closes when the optional notification worker stops.
+	NotificationDone <-chan struct{}
 }
 
 // New constructs two independent handler trees with separate listener lifetimes.

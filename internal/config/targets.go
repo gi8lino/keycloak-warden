@@ -8,19 +8,14 @@ import (
 	"slices"
 	"strings"
 	"unicode"
+
+	"golang.org/x/net/http/httpguts"
 )
 
 // Validate checks configured targets without requiring a destination to be present.
-func (targets Targets) Validate() error {
-	if err := validateMaxAttempts("targets", targets.MaxAttempts); err != nil {
+func (targets Enforcements) Validate() error {
+	if err := targets.Delivery.validate("enforcements"); err != nil {
 		return err
-	}
-
-	// Sort names so the same configuration always reports the same first error.
-	for _, name := range slices.Sorted(maps.Keys(targets.Webhook)) {
-		if err := validateWebhookTarget(name, targets.Webhook[name]); err != nil {
-			return err
-		}
 	}
 	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
 		if err := validateCloudflareTarget(name, targets.Cloudflare[name]); err != nil {
@@ -120,14 +115,8 @@ func validateTargetName(name string) error {
 
 // validateHeaderName accepts HTTP token names except Warden's JSON Content-Type.
 func validateHeaderName(name string) error {
-	if name == "" {
-		return errors.New("header name must not be empty")
-	}
-
-	for i := range len(name) {
-		if !isTokenChar(name[i]) {
-			return errors.New("invalid HTTP header name")
-		}
+	if !httpguts.ValidHeaderFieldName(name) {
+		return errors.New("invalid HTTP header name")
 	}
 
 	if strings.EqualFold(name, "Content-Type") {
@@ -135,18 +124,6 @@ func validateHeaderName(name string) error {
 	}
 
 	return nil
-}
-
-// isTokenChar implements RFC 9110 HTTP field-name token characters.
-func isTokenChar(c byte) bool {
-	return isASCIIAlphanumeric(c) || strings.ContainsRune("!#$%&'*+-.^_`|~", rune(c))
-}
-
-// isASCIIAlphanumeric reports whether c is an ASCII letter or decimal digit.
-func isASCIIAlphanumeric(c byte) bool {
-	return ('a' <= c && c <= 'z') ||
-		('A' <= c && c <= 'Z') ||
-		('0' <= c && c <= '9')
 }
 
 // validateMaxAttempts rejects explicit limits that cannot allow an initial attempt.

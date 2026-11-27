@@ -77,12 +77,12 @@ func TestProviderApply(t *testing.T) {
 			Token:    "secret",
 		}
 
-		require.NoError(t, p.Apply(t.Context(), d))
-		require.NoError(t, p.Apply(t.Context(), d))
+		require.NoError(t, p.Deliver(t.Context(), d))
+		require.NoError(t, p.Deliver(t.Context(), d))
 		d.State = model.DecisionUnbanned
 
-		require.NoError(t, p.Apply(t.Context(), d))
-		require.NoError(t, p.Apply(t.Context(), d))
+		require.NoError(t, p.Deliver(t.Context(), d))
+		require.NoError(t, p.Deliver(t.Context(), d))
 		mu.Lock()
 		defer mu.Unlock()
 
@@ -95,7 +95,7 @@ func TestProviderApply(t *testing.T) {
 		t.Parallel()
 
 		p := Provider{}
-		require.ErrorContains(t, p.Apply(t.Context(), model.Decision{IP: "203.0.113.1"}), "invalid decision state")
+		require.ErrorContains(t, p.Deliver(t.Context(), model.Decision{IP: "203.0.113.1"}), "invalid decision state")
 	})
 
 	t.Run("forbidden response includes the numeric Cloudflare code", func(t *testing.T) {
@@ -107,7 +107,7 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider{RulesURL: server.URL, Client: server.Client()}
-		require.EqualError(t, p.Apply(t.Context(), model.Decision{IP: "203.0.113.1", State: model.DecisionBanned}), "Cloudflare HTTP 403 (code 10000)")
+		require.EqualError(t, p.Deliver(t.Context(), model.Decision{IP: "203.0.113.1", State: model.DecisionBanned}), "Cloudflare HTTP 403 (code 10000)")
 	})
 
 	t.Run("API failure is retryable", func(t *testing.T) {
@@ -121,7 +121,7 @@ func TestProviderApply(t *testing.T) {
 			Token:    "secret",
 		}
 
-		require.ErrorContains(t, p.Apply(t.Context(), model.Decision{IP: "203.0.113.1", State: model.DecisionBanned}), "429")
+		require.ErrorContains(t, p.Deliver(t.Context(), model.Decision{IP: "203.0.113.1", State: model.DecisionBanned}), "429")
 	})
 }
 

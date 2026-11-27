@@ -26,7 +26,7 @@ import (
 type noopProcessor struct{}
 
 // Process accepts test events without persistence.
-func (noopProcessor) Process(context.Context, events.Envelope, time.Time) (ingestion.Result, error) {
+func (noopProcessor) Process(context.Context, events.Envelope, func() time.Time) (ingestion.Result, error) {
 	return ingestion.Result{Outcome: ingestion.OutcomeIgnored}, nil
 }
 
@@ -94,11 +94,11 @@ func TestNew(t *testing.T) {
 
 	newHandlers := func(ready bool) (http.Handler, http.Handler) {
 		h := newTestServer(server.Config{
-			Secret:     "secret",
-			Logger:     slog.Default(),
-			Processor:  noopProcessor{},
-			Readiness:  readiness(ready),
-			WorkerDone: make(chan struct{}),
+			Secret:          "secret",
+			Logger:          slog.Default(),
+			Processor:       noopProcessor{},
+			Readiness:       readiness(ready),
+			EnforcementDone: make(chan struct{}),
 		})
 		return h.Application, h.Management
 	}
@@ -123,14 +123,14 @@ func TestNew(t *testing.T) {
 		assert.Equal(t, http.StatusOK, rec.Code)
 	})
 
-	t.Run("management reports stopped action worker", func(t *testing.T) {
+	t.Run("management reports stopped enforcement worker", func(t *testing.T) {
 		t.Parallel()
 
 		done := make(chan struct{})
 		handlers := newTestServer(server.Config{
-			Logger:     slog.Default(),
-			Readiness:  readiness(true),
-			WorkerDone: done,
+			Logger:          slog.Default(),
+			Readiness:       readiness(true),
+			EnforcementDone: done,
 		})
 
 		ready := httptest.NewRecorder()
@@ -141,14 +141,14 @@ func TestNew(t *testing.T) {
 		ready = httptest.NewRecorder()
 		handlers.Management.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 		assert.Equal(t, http.StatusServiceUnavailable, ready.Code)
-		assert.Contains(t, ready.Body.String(), "Action worker unavailable")
+		assert.Contains(t, ready.Body.String(), "Enforcement worker unavailable")
 
 		live := httptest.NewRecorder()
 		handlers.Management.ServeHTTP(live, httptest.NewRequest(http.MethodGet, "/healthz", nil))
 		assert.Equal(t, http.StatusOK, live.Code)
 	})
 
-	t.Run("management rejects missing action worker", func(t *testing.T) {
+	t.Run("management rejects missing enforcement worker", func(t *testing.T) {
 		t.Parallel()
 
 		handlers := newTestServer(server.Config{
@@ -158,7 +158,7 @@ func TestNew(t *testing.T) {
 		ready := httptest.NewRecorder()
 		handlers.Management.ServeHTTP(ready, httptest.NewRequest(http.MethodGet, "/readyz", nil))
 		assert.Equal(t, http.StatusServiceUnavailable, ready.Code)
-		assert.Contains(t, ready.Body.String(), "Action worker unavailable")
+		assert.Contains(t, ready.Body.String(), "Enforcement worker unavailable")
 	})
 
 	t.Run("management rejects ingestion", func(t *testing.T) {
@@ -217,7 +217,7 @@ func TestNew(t *testing.T) {
 		t.Parallel()
 
 		application, _ := newHandlers(true)
-		payload := `{"schemaVersion":1,"id":"event","source":"keycloak","type":"LOGIN","timestamp":"2026-11-05T15:00:00Z"}`
+		payload := `{"schemaVersion":2,"id":"event","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"user","user":{"type":"LOGIN"}}`
 		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 		req := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(payload))
 		req.Header.Set("Content-Type", "application/json")
@@ -318,7 +318,7 @@ func TestNew(t *testing.T) {
 		assert.NotEqual(t, http.StatusNotFound, inside.Code)
 
 		// Prefix mounting must preserve the Snitch authentication middleware.
-		payload := `{"schemaVersion":1,"id":"prefixed-event","source":"keycloak","type":"LOGIN","timestamp":"2026-11-05T15:00:00Z"}`
+		payload := `{"schemaVersion":2,"id":"prefixed-event","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"user","user":{"type":"LOGIN"}}`
 		timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 		request := httptest.NewRequest(http.MethodPost, "/warden/events", strings.NewReader(payload))
 		request.Header.Set("Content-Type", "application/json")

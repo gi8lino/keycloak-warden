@@ -9,9 +9,10 @@ import (
 	"testing"
 
 	httpkitmiddleware "github.com/containeroo/httpkit/middleware"
-	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 )
 
 // assertFailureCorrelation verifies matching problem references in access and error logs.

@@ -1,0 +1,33 @@
+{{- $event := .Payload.EventType -}}
+{{- if eq .Payload.EventKind "admin" -}}
+  {{- $event = printf "%s %s" .Payload.OperationType .Payload.ResourceType -}}
+{{- end -}}
+{{- $message := printf "Rule: %s\nEvent: %s\nRealm: %s\nGroup: %s = %s\nCount: %d / %d\nTime: %s" .Payload.Rule $event .Payload.RealmID .Payload.GroupBy .Payload.GroupKey .Payload.Count .Payload.Threshold (.Payload.At.UTC.Format "2006-01-02 15:04:05 UTC") -}}
+{{- if .Payload.BanUntil -}}
+  {{- if .Payload.ObserveOnly -}}
+    {{- $message = printf "%s\nHypothetical ban until: %s" $message (.Payload.BanUntil.UTC.Format "2006-01-02 15:04:05 UTC") -}}
+  {{- else -}}
+    {{- $message = printf "%s\nBan requested until: %s" $message (.Payload.BanUntil.UTC.Format "2006-01-02 15:04:05 UTC") -}}
+  {{- end -}}
+{{- end -}}
+{
+  "channel": {{ .Vars.channel | json }},
+  "text": {{ printf "Warden incident #%d" .Payload.ID | json }},
+  "mrkdwn": false,
+  "blocks": [
+    {
+      "type": "header",
+      "text": {"type": "plain_text", "text": "🚨 Security Incident", "emoji": true}
+    },
+    {
+      "type": "section",
+      "text": {"type": "plain_text", "text": {{ $message | json }}}
+    },
+    {
+      "type": "context",
+      "elements": [
+        {"type": "plain_text", "text": {{ printf "Warden incident: %d" .Payload.ID | json }}}
+      ]
+    }
+  ]
+}

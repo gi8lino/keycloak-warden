@@ -29,5 +29,6 @@ func run(
 	if err := encode(batch); err != nil {
 		failures = append(failures, err)
 	}
+
 	return errors.Join(failures...)
 }

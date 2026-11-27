@@ -52,16 +52,6 @@ func TestNew(t *testing.T) {
 		assert.NotContains(t, result, "ip")
 	})
 
-	t.Run("text is a yaml alias", func(t *testing.T) {
-		t.Parallel()
-
-		value := sampleResult{IP: "203.0.113.10", Reason: "Manual review"}
-		var textOutput, yamlOutput bytes.Buffer
-		require.NoError(t, New(ptr(FormatText), &textOutput)(value))
-		require.NoError(t, New(ptr(FormatYAML), &yamlOutput)(value))
-		assert.Equal(t, yamlOutput.String(), textOutput.String())
-	})
-
 	t.Run("uses the format selected after encoder creation", func(t *testing.T) {
 		t.Parallel()
 
@@ -102,11 +92,10 @@ func TestNew(t *testing.T) {
 		require.ErrorContains(t, err, "write failed")
 	})
 
-	t.Run("propagates text write errors", func(t *testing.T) {
+	t.Run("rejects text output", func(t *testing.T) {
 		t.Parallel()
 
-		err := New(ptr(FormatText), failingWriter{})(sampleResult{IP: "203.0.113.10"})
-		require.ErrorContains(t, err, "write failed")
+		require.ErrorContains(t, New(ptr("text"), io.Discard)(sampleResult{}), "unsupported output format")
 	})
 }
 

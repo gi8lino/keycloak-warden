@@ -86,20 +86,20 @@ wait_for_webhook() {
   return 1
 }
 
-# Wait for Slack to acknowledge each revision before the next state change.
+# Wait for the optional Slack incident notification independently of enforcement.
 wait_for_slack() {
   [ "$slack_enabled" = enabled ] || return 0
-  expected=$1
   attempt=0
   while [ "$attempt" -lt 30 ]; do
-    if curl --silent --fail --max-time 3 "$warden_management/metrics" |
-      grep -Fqx "warden_delivery_attempts_total{destination=\"webhook.slack-bot\",outcome=\"success\"} $expected"; then
+    if compose logs --no-log-prefix warden 2>&1 |
+      grep -F 'event=notification_completed' |
+      grep -Fq 'destination=slack-bot'; then
       return 0
     fi
     attempt=$((attempt + 1))
     sleep 1
   done
-  printf 'Slack did not acknowledge delivery %s; check the Warden delivery log.\n' "$expected" >&2
+  printf 'Slack did not acknowledge the incident notification; check the Warden notification log.\n' >&2
   return 1
 }
 
@@ -145,7 +145,7 @@ fi
 printf 'Automatic ban: %s\n' "$ip"
 
 wait_for_webhook banned
-wait_for_slack 1
+wait_for_slack
 printf 'Verified header-authenticated banned-state webhook\n'
 
 compose exec -T warden /warden unban "$ip" \
@@ -153,7 +153,6 @@ compose exec -T warden /warden unban "$ip" \
   --output json
 
 wait_for_webhook unbanned
-wait_for_slack 2
 if active_bans | grep -Eq '"state"[[:space:]]*:[[:space:]]*"banned"'; then
   printf 'Warden still reports an active ban after unban\n' >&2
   exit 1
@@ -167,7 +166,7 @@ fi
 # a fresh ID when importing this disposable realm, so discover it from the
 # observed Snitch counter and require the decision counter to use the same ID.
 metrics=$(curl --silent --show-error --fail "$warden_management/metrics")
-realm_id=$(printf '%s\n' "$metrics" | sed -n 's/^warden_snitch_events_total{event_type="LOGIN_ERROR",realm="\([^"]*\)"} 2$/\1/p')
+realm_id=$(printf '%s\n' "$metrics" | sed -n 's/^warden_snitch_events_total{event_kind="user",event_type="LOGIN_ERROR",realm="\([^"]*\)"} 2$/\1/p')
 if [ -z "$realm_id" ] || [ "$realm_id" = unknown ]; then
   printf 'Missing realm-specific Snitch login failure counter (2 events)\n' >&2
   exit 1
@@ -177,6 +176,50 @@ if ! printf '%s\n' "$metrics" | grep -Fqx "warden_automatic_ban_decisions_total{
   exit 1
 fi
 printf 'Verified realm-specific metrics for realm ID %s\n' "$realm_id"
+
+# Verify a real administrative event without creating another enforcement decision.
+master_url="http://127.0.0.1:${E2E_KC_PORT:-18080}"
+warden_url="http://127.0.0.1:${E2E_WARDEN_PORT:-18081}"
+curl --silent --show-error --fail --max-time 10 --output "$response_file" \
+  --data-urlencode 'client_id=admin-cli' \
+  --data-urlencode 'grant_type=password' \
+  --data-urlencode 'username=dev-admin' \
+  --data-urlencode 'password=dev-admin-password' \
+  "$master_url/realms/master/protocol/openid-connect/token"
+admin_token=$(sed -n 's/.*"access_token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$response_file")
+[ -n "$admin_token" ]
+code=$(curl --silent --show-error --max-time 10 --output "$response_file" --write-out '%{http_code}' \
+  -H "Authorization: Bearer $admin_token" -H 'Content-Type: application/json' \
+  --data '{"username":"warden-admin-event-test","enabled":false}' \
+  "$master_url/admin/realms/warden-e2e/users")
+[ "$code" = 201 ]
+admin_seen=false
+for attempt in $(seq 1 30); do
+  incidents=$(curl --silent --show-error --fail --max-time 3 \
+    -H 'Authorization: Bearer development-admin-token' "$warden_url/incidents?kind=admin&rule=admin-audit")
+  if printf '%s' "$incidents" | grep -Eq '"resourceType"[[:space:]]*:[[:space:]]*"USER"'; then
+    admin_seen=true
+    break
+  fi
+  sleep 1
+done
+[ "$admin_seen" = true ]
+if active_bans | grep -Eq '"state"[[:space:]]*:[[:space:]]*"banned"'; then
+  printf 'Administrative monitoring unexpectedly created a ban\n' >&2
+  exit 1
+fi
+printf 'Verified administrative event recording\n'
+
+notification_seen=false
+for attempt in $(seq 1 30); do
+  if receiver_logs | grep -F 'event=webhook_received' | grep -F 'verified=true' | grep -Fq '\"rule\":\"admin-audit\"'; then
+    notification_seen=true
+    break
+  fi
+  sleep 1
+done
+[ "$notification_seen" = true ]
+printf 'Verified administrative incident notification without enforcement\n'
 
 success=true
 printf '\nEnd-to-end OK: real failed logins -> signed Snitch events -> automatic ban -> header-authenticated webhook -> unban -> unbanned-state webhook.\n'

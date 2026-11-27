@@ -35,7 +35,7 @@ func TestRun(t *testing.T) {
 		defer server.Close()
 
 		var records []inspection
-		err := Run(t.Context(), server.URL, "admin-secret", []string{"id-two", "id-one"}, func(value any) error {
+		err := Run(t.Context(), server.URL, "admin-secret", []string{"id-two", "id-one"}, 1, false, func(value any) error {
 			var ok bool
 			records, ok = value.([]inspection)
 			require.True(t, ok)
@@ -66,7 +66,7 @@ func TestRun(t *testing.T) {
 		defer server.Close()
 
 		encoded := false
-		err := Run(t.Context(), server.URL, "admin-secret", []string{"id-one", "id-two", "id-three"}, func(any) error {
+		err := Run(t.Context(), server.URL, "admin-secret", []string{"id-one", "id-two", "id-three"}, 1, false, func(any) error {
 			encoded = true
 			return nil
 		})
@@ -82,7 +82,7 @@ func TestRun(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		encoded := false
-		err := Run(ctx, "http://127.0.0.1:8080", "admin-secret", []string{"id-one"}, func(any) error {
+		err := Run(ctx, "http://127.0.0.1:8080", "admin-secret", []string{"id-one"}, 1, false, func(any) error {
 			encoded = true
 			return nil
 		})
@@ -100,21 +100,17 @@ func TestRun(t *testing.T) {
 		defer server.Close()
 
 		encodeErr := errors.New("output unavailable")
-		err := Run(t.Context(), server.URL, "admin-secret", []string{"id-one"}, func(any) error {
+		err := Run(t.Context(), server.URL, "admin-secret", []string{"id-one"}, 1, false, func(any) error {
 			return encodeErr
 		})
 
 		require.ErrorIs(t, err, encodeErr)
 	})
-}
-
-func TestRunClientValidation(t *testing.T) {
-	t.Parallel()
 
 	t.Run("missing token prevents encoding", func(t *testing.T) {
 		t.Parallel()
 		encoded := false
-		err := Run(t.Context(), "http://127.0.0.1:8080", "", []string{"one"}, func(any) error {
+		err := Run(t.Context(), "http://127.0.0.1:8080", "", []string{"one"}, 1, false, func(any) error {
 			encoded = true
 			return nil
 		})
@@ -125,7 +121,7 @@ func TestRunClientValidation(t *testing.T) {
 	t.Run("invalid URL prevents encoding", func(t *testing.T) {
 		t.Parallel()
 		encoded := false
-		err := Run(t.Context(), "http://warden.example.com", "admin", []string{"one"}, func(any) error {
+		err := Run(t.Context(), "http://warden.example.com", "admin", []string{"one"}, 1, false, func(any) error {
 			encoded = true
 			return nil
 		})
@@ -136,7 +132,7 @@ func TestRunClientValidation(t *testing.T) {
 	t.Run("empty IDs return an empty list without API requests", func(t *testing.T) {
 		t.Parallel()
 		called := false
-		err := Run(t.Context(), "http://127.0.0.1:8080", "admin", nil, func(value any) error {
+		err := Run(t.Context(), "http://127.0.0.1:8080", "admin", nil, 1, false, func(value any) error {
 			called = true
 			list, ok := value.([]inspection)
 			require.True(t, ok)
@@ -146,20 +142,16 @@ func TestRunClientValidation(t *testing.T) {
 		require.NoError(t, err)
 		assert.True(t, called)
 	})
-}
-
-func TestRunPage(t *testing.T) {
-	t.Parallel()
 
 	t.Run("rejects nonpositive pages", func(t *testing.T) {
 		t.Parallel()
-		err := RunPage(t.Context(), "http://127.0.0.1:8080", "secret", []string{"one"}, 0, false, func(any) error { return nil })
+		err := Run(t.Context(), "http://127.0.0.1:8080", "secret", []string{"one"}, 0, false, func(any) error { return nil })
 		require.ErrorContains(t, err, "positive")
 	})
 
 	t.Run("rejects page selection with all history", func(t *testing.T) {
 		t.Parallel()
-		err := RunPage(t.Context(), "http://127.0.0.1:8080", "secret", []string{"one"}, 2, true, func(any) error { return nil })
+		err := Run(t.Context(), "http://127.0.0.1:8080", "secret", []string{"one"}, 2, true, func(any) error { return nil })
 		require.ErrorContains(t, err, "cannot be combined")
 	})
 
@@ -173,7 +165,7 @@ func TestRunPage(t *testing.T) {
 		defer server.Close()
 
 		var result []inspection
-		err := RunPage(t.Context(), server.URL, "secret", []string{"one"}, 100, false, func(value any) error {
+		err := Run(t.Context(), server.URL, "secret", []string{"one"}, 100, false, func(value any) error {
 			result = value.([]inspection)
 			return nil
 		})
@@ -211,7 +203,7 @@ func TestRunPage(t *testing.T) {
 		defer server.Close()
 
 		var result []inspection
-		err := RunPage(t.Context(), server.URL, "secret", []string{"one"}, 1, true, func(value any) error {
+		err := Run(t.Context(), server.URL, "secret", []string{"one"}, 1, true, func(value any) error {
 			result = value.([]inspection)
 			return nil
 		})

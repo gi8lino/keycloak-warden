@@ -9,12 +9,14 @@ import (
 )
 
 // transaction implements both application transaction interfaces over one SQL transaction.
-// The changed flag requests a worker notification after a successful commit.
+// Change flags request independent worker wakeups after a successful commit.
 type transaction struct {
 	// tx contains all observation, source, and decision changes until commit.
 	tx *sql.Tx
 	// changed records whether the transaction modified source or decision state.
 	changed bool
+	// notificationChanged records whether the transaction queued incident deliveries.
+	notificationChanged bool
 }
 
 var (
@@ -23,7 +25,7 @@ var (
 )
 
 // TransactObservation runs observation and detection in one transaction.
-// Callback errors roll back all changes; committed decision changes wake the worker.
+// Callback errors roll back all changes; committed work wakes its corresponding worker.
 func (s *Store) TransactObservation(ctx context.Context, apply func(ingestion.Transaction) error) error {
 	return s.transact(ctx, func(tx *transaction) error {
 		return apply(tx)
@@ -50,10 +52,16 @@ func (s *Store) transact(ctx context.Context, apply func(*transaction) error) er
 	if err := apply(state); err != nil {
 		return err
 	}
-	if state.changed {
-		return s.commitDecision(tx)
+	if err := tx.Commit(); err != nil {
+		return err
 	}
-	return tx.Commit()
+	if state.changed {
+		wake(s.changes)
+	}
+	if state.notificationChanged {
+		wake(s.notificationChanges)
+	}
+	return nil
 }
 
 // commitDecision wakes the worker only after the new state is visible to readers.
@@ -61,9 +69,14 @@ func (s *Store) commitDecision(tx *sql.Tx) error {
 	if err := tx.Commit(); err != nil {
 		return err
 	}
+	wake(s.changes)
+	return nil
+}
+
+// wake coalesces committed changes without blocking the writer.
+func wake(changes chan struct{}) {
 	select {
-	case s.changes <- struct{}{}:
+	case changes <- struct{}{}:
 	default:
 	}
-	return nil
 }

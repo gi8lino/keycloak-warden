@@ -30,6 +30,8 @@ var (
 	ErrProtected = errors.New("IP address is protected")
 	// ErrObserveOnly identifies an enforcement request in observation mode.
 	ErrObserveOnly = errors.New("observe-only mode disables manual bans")
+	// ErrNoDestinations indicates manual enforcement has no destination.
+	ErrNoDestinations = errors.New("no enforcement destinations configured")
 	// ErrNotFound identifies a missing decision or a ban that is no longer active for release.
 	ErrNotFound = errors.New("active ban not found")
 )
@@ -65,13 +67,8 @@ type AdminService struct {
 	policy Policy
 }
 
-// NewAdminService constructs the administrative ban service.
-func NewAdminService(store Store, targets []string) (*AdminService, error) {
-	return NewAdminServiceWithPolicy(store, targets, Policy{})
-}
-
-// NewAdminServiceWithPolicy constructs administrative operations with ban admission policy.
-func NewAdminServiceWithPolicy(store Store, targets []string, policy Policy) (*AdminService, error) {
+// NewAdminService constructs administrative operations with ban admission policy.
+func NewAdminService(store Store, targets []string, policy Policy) (*AdminService, error) {
 	if store == nil {
 		return nil, errors.New("ban store is required")
 	}
@@ -94,6 +91,9 @@ func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, 
 	}
 	if s.policy.ObserveOnly {
 		return model.Record{}, ErrObserveOnly
+	}
+	if len(s.targets) == 0 {
+		return model.Record{}, ErrNoDestinations
 	}
 	return ApplyManualBan(ctx, s.store, ip, now.Add(request.Duration), reason, now, s.targets)
 }

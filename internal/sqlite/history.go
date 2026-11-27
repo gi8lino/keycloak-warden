@@ -5,26 +5,56 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // syncDeliveryHistory registers queued destinations and retires unfinished earlier revisions.
 func syncDeliveryHistory(ctx context.Context, tx *sql.Tx, d model.Decision) error {
-	if _, err := tx.ExecContext(ctx, `
+	if _, err := tx.ExecContext(
+		ctx,
+		`
 UPDATE delivery_history
-SET status = ?, superseded_by = ?
-WHERE ip = ? AND revision < ? AND status IN ('pending', 'retrying')
-`, model.DeliverySuperseded, d.Revision, d.IP, d.Revision); err != nil {
+SET
+    status = ?,
+    superseded_by = ?
+WHERE ip = ?
+    AND revision < ?
+    AND status IN ('pending', 'retrying')
+`,
+		model.DeliverySuperseded,
+		d.Revision,
+		d.IP,
+		d.Revision,
+	); err != nil {
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `
-INSERT INTO delivery_history (ip, revision, destination, desired_state, status)
-SELECT ip, ?, destination, ?, ?
-FROM deliveries WHERE ip = ?
+	_, err := tx.ExecContext(
+		ctx,
+		`
+INSERT INTO delivery_history (
+    ip,
+    revision,
+    destination,
+    desired_state,
+    status
+)
+SELECT
+    ip,
+    ?,
+    destination,
+    ?,
+    ?
+FROM deliveries
+WHERE ip = ?
 ON CONFLICT DO NOTHING
-`, d.Revision, d.State, model.DeliveryPending, d.IP)
+`,
+		d.Revision,
+		d.State,
+		model.DeliveryPending,
+		d.IP,
+	)
 	return err
 }
 
@@ -32,7 +62,7 @@ ON CONFLICT DO NOTHING
 func recordAttempt(
 	ctx context.Context,
 	tx *sql.Tx,
-	job actions.Job,
+	job enforcement.Job,
 	deliveryErr error,
 	now time.Time,
 ) error {
@@ -41,11 +71,38 @@ func recordAttempt(
 	if deliveryErr != nil {
 		message = new(deliveryErr.Error())
 	}
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO delivery_attempts (ip, revision, destination, number, completed_at, error)
-SELECT ?, ?, ?, COALESCE(MAX(number), 0) + 1, ?, ?
-FROM delivery_attempts WHERE ip = ? AND revision = ? AND destination = ?
-`, d.IP, d.Revision, job.Destination, now.UnixMilli(), message, d.IP, d.Revision, job.Destination); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`
+INSERT INTO delivery_attempts (
+    ip,
+    revision,
+    destination,
+    number,
+    completed_at,
+    error
+)
+SELECT
+    ?,
+    ?,
+    ?,
+    COALESCE(MAX(number), 0) + 1,
+    ?,
+    ?
+FROM delivery_attempts
+WHERE ip = ?
+    AND revision = ?
+    AND destination = ?
+`,
+		d.IP,
+		d.Revision,
+		job.Destination,
+		now.UnixMilli(),
+		message,
+		d.IP,
+		d.Revision,
+		job.Destination,
+	); err != nil {
 		return err
 	}
 
@@ -58,22 +115,46 @@ FROM delivery_attempts WHERE ip = ? AND revision = ? AND destination = ?
 func finishAttemptStatus(
 	ctx context.Context,
 	tx *sql.Tx,
-	job actions.Job,
+	job enforcement.Job,
 	deliveryErr error,
 	now time.Time,
 ) error {
 	if deliveryErr != nil {
-		_, err := tx.ExecContext(ctx, `
-UPDATE delivery_history SET status = ?
-WHERE ip = ? AND revision = ? AND destination = ? AND status IN ('pending', 'retrying')
-`, model.DeliveryRetrying, job.Decision.IP, job.Decision.Revision, job.Destination)
+		_, err := tx.ExecContext(
+			ctx,
+			`
+UPDATE delivery_history
+SET status = ?
+WHERE ip = ?
+    AND revision = ?
+    AND destination = ?
+    AND status IN ('pending', 'retrying')
+`,
+			model.DeliveryRetrying,
+			job.Decision.IP,
+			job.Decision.Revision,
+			job.Destination,
+		)
 		return err
 	}
-	_, err := tx.ExecContext(ctx, `
+	_, err := tx.ExecContext(
+		ctx,
+		`
 UPDATE delivery_history
-SET status = ?, acknowledged_at = ?, superseded_by = NULL
-WHERE ip = ? AND revision = ? AND destination = ?
-`, model.DeliveryDelivered, now.UnixMilli(), job.Decision.IP, job.Decision.Revision, job.Destination)
+SET
+    status = ?,
+    acknowledged_at = ?,
+    superseded_by = NULL
+WHERE ip = ?
+    AND revision = ?
+    AND destination = ?
+`,
+		model.DeliveryDelivered,
+		now.UnixMilli(),
+		job.Decision.IP,
+		job.Decision.Revision,
+		job.Destination,
+	)
 	return err
 }
 
@@ -86,30 +167,55 @@ func readDeliveryHistory(
 	ip string,
 	page bans.HistoryPage,
 ) ([]model.Delivery, bool, error) {
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := tx.QueryContext(
+		ctx,
+		`
 WITH page AS (
     SELECT revision, destination
     FROM delivery_history
-    WHERE ip = ? AND revision <= ?
+    WHERE ip = ?
+        AND revision <= ?
     ORDER BY revision DESC, destination
     LIMIT ? OFFSET ?
 )
-SELECT h.destination, h.revision, COALESCE(h.desired_state, ''), h.status,
-       h.acknowledged_at, COALESCE(h.superseded_by, 0),
-       CASE WHEN h.status = 'retrying' THEN MAX(q.retry_at, COALESCE(b.retry_at, 0)) END,
-       a.number, a.completed_at, SUBSTR(a.error, 1, ?)
+SELECT
+    h.destination,
+    h.revision,
+    COALESCE(h.desired_state, ''),
+    h.status,
+    h.acknowledged_at,
+    COALESCE(h.superseded_by, 0),
+    CASE WHEN h.status = 'retrying' THEN MAX(q.retry_at, COALESCE(b.retry_at, 0)) END,
+    a.number,
+    a.completed_at,
+    SUBSTR(a.error, 1, ?)
 FROM page AS p
-JOIN delivery_history AS h ON h.ip = ? AND h.revision = p.revision AND h.destination = p.destination
-LEFT JOIN delivery_attempts AS a ON a.ip = h.ip AND a.revision = h.revision
-    AND a.destination = h.destination AND a.number > (
+JOIN delivery_history AS h ON h.ip = ?
+    AND h.revision = p.revision
+    AND h.destination = p.destination
+LEFT JOIN delivery_attempts AS a ON a.ip = h.ip
+    AND a.revision = h.revision
+    AND a.destination = h.destination
+    AND a.number > (
         SELECT COALESCE(MAX(number), 0) - ?
         FROM delivery_attempts
-        WHERE ip = h.ip AND revision = h.revision AND destination = h.destination
+        WHERE ip = h.ip
+            AND revision = h.revision
+            AND destination = h.destination
     )
-LEFT JOIN deliveries AS q ON q.ip = h.ip AND q.destination = h.destination
+LEFT JOIN deliveries AS q ON q.ip = h.ip
+    AND q.destination = h.destination
 LEFT JOIN destination_backoff AS b ON b.destination = h.destination
 ORDER BY h.revision DESC, h.destination, a.number
-`, ip, page.ThroughRevision, page.Groups+1, page.Offset, page.ErrorCharacters, ip, page.Attempts)
+`,
+		ip,
+		page.ThroughRevision,
+		page.Groups+1,
+		page.Offset,
+		page.ErrorCharacters,
+		ip,
+		page.Attempts,
+	)
 	if err != nil {
 		return nil, false, err
 	}

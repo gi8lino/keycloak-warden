@@ -4,29 +4,9 @@ import (
 	"errors"
 	"io"
 	"os"
-	"time"
 
 	"go.yaml.in/yaml/v4"
-
-	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
-
-// document represents the YAML configuration.
-type document struct {
-	// ProtectedIPs contains literal addresses or CIDRs.
-	ProtectedIPs []string `yaml:"protected-ips"`
-	// Rule contains the failed-login detection settings.
-	Rule struct {
-		// Threshold is the number of distinct failures required to trigger detection.
-		Threshold int `yaml:"threshold"`
-		// Window is the sliding counting window in Go duration syntax.
-		Window string `yaml:"window"`
-		// Ban is the automatic block lifetime in Go duration syntax.
-		Ban string `yaml:"ban"`
-	} `yaml:"rule"`
-	// Targets groups named destinations under webhook and cloudflare.
-	Targets Targets `yaml:"targets"`
-}
 
 // Load reads one strict YAML document containing detection rules and action destinations.
 func Load(path string) (cfg Config, err error) {
@@ -36,7 +16,7 @@ func Load(path string) (cfg Config, err error) {
 	}
 	defer file.Close() // nolint:errcheck
 
-	var raw document
+	var raw Config
 	loader, err := yaml.NewLoader(file, yaml.WithKnownFields(), yaml.WithUniqueKeys())
 	if err != nil {
 		return Config{}, errors.New("invalid Warden YAML: cannot initialize loader")
@@ -50,31 +30,5 @@ func Load(path string) (cfg Config, err error) {
 		return Config{}, errors.New("expected one YAML document")
 	}
 
-	window, err := duration(raw.Rule.Window)
-	if err != nil {
-		return Config{}, errors.New("invalid Warden YAML: rule.window must be a duration")
-	}
-
-	ban, err := duration(raw.Rule.Ban)
-	if err != nil {
-		return Config{}, errors.New("invalid Warden YAML: rule.ban must be a duration")
-	}
-
-	return Config{
-		ProtectedIPs: raw.ProtectedIPs,
-		Rule: ingestion.Rule{
-			Threshold: raw.Rule.Threshold,
-			Window:    window,
-			Ban:       ban,
-		},
-		Targets: raw.Targets,
-	}, nil
-}
-
-// duration parses an optional duration; missing values remain zero for rule validation.
-func duration(value string) (time.Duration, error) {
-	if value == "" {
-		return 0, nil
-	}
-	return time.ParseDuration(value)
+	return raw, nil
 }

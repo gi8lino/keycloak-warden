@@ -32,10 +32,10 @@ CREATE TABLE delivery_attempts (
     error TEXT,
     PRIMARY KEY (ip, revision, destination, number),
     FOREIGN KEY (ip, revision, destination)
-        REFERENCES delivery_history(ip, revision, destination) ON DELETE CASCADE
+        REFERENCES delivery_history (ip, revision, destination) ON DELETE CASCADE
 );
 CREATE TABLE delivery_history (
-    ip TEXT NOT NULL REFERENCES decisions(ip) ON DELETE CASCADE,
+    ip TEXT NOT NULL REFERENCES decisions (ip) ON DELETE CASCADE,
     revision INTEGER NOT NULL,
     destination TEXT NOT NULL,
     desired_state TEXT,

@@ -13,9 +13,17 @@ import (
 func (t *transaction) Source(ctx context.Context, ip string, kind model.SourceKind) (model.Source, bool, error) {
 	source := model.Source{Kind: kind}
 	var expires int64
-	err := t.tx.QueryRowContext(ctx, `
-SELECT expires, reason FROM ban_sources WHERE ip = ? AND kind = ?
-`, ip, kind).Scan(&expires, &source.Reason)
+	err := t.tx.QueryRowContext(
+		ctx,
+		`
+SELECT expires, reason
+FROM ban_sources
+WHERE ip = ?
+    AND kind = ?
+`,
+		ip,
+		kind,
+	).Scan(&expires, &source.Reason)
 	if errors.Is(err, sql.ErrNoRows) {
 		return model.Source{}, false, nil
 	}
@@ -28,13 +36,30 @@ SELECT expires, reason FROM ban_sources WHERE ip = ? AND kind = ?
 
 // PutSource inserts or updates a ban source.
 func (t *transaction) PutSource(ctx context.Context, ip string, source model.Source) error {
-	_, err := t.tx.ExecContext(ctx, `
-INSERT INTO ban_sources (ip, kind, expires, reason)
-VALUES (?, ?, ?, ?)
+	_, err := t.tx.ExecContext(
+		ctx,
+		`
+INSERT INTO ban_sources (
+    ip,
+    kind,
+    expires,
+    reason
+)
+VALUES (
+    ?,
+    ?,
+    ?,
+    ?
+)
 ON CONFLICT (ip, kind) DO UPDATE SET
     expires = excluded.expires,
     reason = excluded.reason
-`, ip, source.Kind, source.ExpiresAt.UnixMilli(), source.Reason)
+`,
+		ip,
+		source.Kind,
+		source.ExpiresAt.UnixMilli(),
+		source.Reason,
+	)
 	if err == nil {
 		t.changed = true
 	}
@@ -61,9 +86,15 @@ func (t *transaction) DeleteSources(ctx context.Context, ip string) error {
 
 // ExpiredSourceIPs returns affected addresses before any expired source is deleted.
 func (t *transaction) ExpiredSourceIPs(ctx context.Context, now time.Time) ([]string, error) {
-	rows, err := t.tx.QueryContext(ctx, `
-SELECT DISTINCT ip FROM ban_sources WHERE expires <= ?
-`, now.UnixMilli())
+	rows, err := t.tx.QueryContext(
+		ctx,
+		`
+SELECT DISTINCT ip
+FROM ban_sources
+WHERE expires <= ?
+`,
+		now.UnixMilli(),
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -85,9 +116,14 @@ SELECT DISTINCT ip FROM ban_sources WHERE expires <= ?
 
 // DeleteExpiredSources removes expired ban sources.
 func (t *transaction) DeleteExpiredSources(ctx context.Context, now time.Time) error {
-	result, err := t.tx.ExecContext(ctx, `
-DELETE FROM ban_sources WHERE expires <= ?
-`, now.UnixMilli())
+	result, err := t.tx.ExecContext(
+		ctx,
+		`
+DELETE FROM ban_sources
+WHERE expires <= ?
+`,
+		now.UnixMilli(),
+	)
 	if err != nil {
 		return err
 	}

@@ -34,11 +34,11 @@ func TestBulkBanListing(t *testing.T) {
 		require.NoError(t, err)
 
 		event := failed("bulk-first")
-		event.IP = "203.0.113.20"
-		_, err = processor.Process(ctx, event, now)
+		event.User.IP = "203.0.113.20"
+		_, err = processor.Process(ctx, event, func() time.Time { return now })
 		require.NoError(t, err)
 		event.ID = "bulk-second"
-		_, err = processor.Process(ctx, event, now)
+		_, err = processor.Process(ctx, event, func() time.Time { return now })
 		require.NoError(t, err)
 		second, err := bans.ApplyManualBan(ctx, store, "203.0.113.20", now.Add(time.Hour), "second", now, []string{"zeta", "alpha"})
 		require.NoError(t, err)

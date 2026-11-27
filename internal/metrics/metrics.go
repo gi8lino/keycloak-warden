@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -16,6 +17,12 @@ import (
 // Registry owns Warden's private metrics registry and collectors.
 // No collectors are allocated when collection is disabled.
 type Registry struct {
+	// labelsMu protects the cardinality budget.
+	labelsMu sync.Mutex
+	// eventLabels tracks accepted realm/kind/type combinations.
+	eventLabels map[[3]string]struct{}
+	// banRealms tracks realms attributed to automatic bans.
+	banRealms map[string]struct{}
 	// enabled avoids metrics allocation and instrumentation when disabled.
 	enabled bool
 	// registry owns only explicitly registered Warden collectors.
@@ -28,10 +35,16 @@ type Registry struct {
 	snitchEvents *prometheus.CounterVec
 	// automaticBanDecisions counts decisions by the realm of the triggering event.
 	automaticBanDecisions *prometheus.CounterVec
+	// incidents counts committed rule threshold hits by configured rule name.
+	incidents *prometheus.CounterVec
 	// deliveryAttempts counts outbound delivery attempts by destination and outcome.
 	deliveryAttempts *prometheus.CounterVec
 	// deliveryDuration measures outbound provider request latency.
 	deliveryDuration *prometheus.HistogramVec
+	// notificationAttempts counts outbound occurrence delivery attempts.
+	notificationAttempts *prometheus.CounterVec
+	// notificationDuration measures occurrence delivery duration.
+	notificationDuration *prometheus.HistogramVec
 }
 
 // NewRegistry constructs the private Prometheus registry when enabled.
@@ -54,11 +67,15 @@ func NewRegistry(enabled bool, version string) *Registry {
 	snitchEvents := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "warden_snitch_events_total",
 		Help: "Authenticated Snitch HTTP events successfully processed (including duplicate event IDs), by realm and event type.",
-	}, []string{"realm", "event_type"})
+	}, []string{"realm", "event_kind", "event_type"})
 	automaticBanDecisions := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "warden_automatic_ban_decisions_total",
 		Help: "Effective automatic ban decision changes by triggering event realm; the detection threshold remains global by IP.",
 	}, []string{"trigger_realm"})
+	incidents := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_incidents_total",
+		Help: "Committed named detection rule threshold hits.",
+	}, []string{"rule"})
 	deliveryAttempts := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "warden_delivery_attempts_total",
 		Help: "Outbound destination delivery attempts by destination and outcome.",
@@ -68,6 +85,16 @@ func NewRegistry(enabled bool, version string) *Registry {
 		Help:    "Outbound destination delivery duration by destination.",
 		Buckets: prometheus.DefBuckets,
 	}, []string{"destination"})
+	notificationAttempts := prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "warden_notification_attempts_total",
+		Help: "Outbound incident notification attempts by destination and outcome.",
+	}, []string{"destination", "outcome"})
+	notificationDuration := prometheus.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "warden_notification_duration_seconds",
+		Help:    "Outbound incident notification duration by destination.",
+		Buckets: prometheus.DefBuckets,
+	}, []string{"destination"})
+
 	buildInfo := prometheus.NewGauge(prometheus.GaugeOpts{
 		Name:        "warden_build_info",
 		Help:        "Warden build metadata.",
@@ -82,34 +109,50 @@ func NewRegistry(enabled bool, version string) *Registry {
 		httpDuration,
 		snitchEvents,
 		automaticBanDecisions,
+		incidents,
 		deliveryAttempts,
 		deliveryDuration,
+		notificationAttempts,
+		notificationDuration,
 		buildInfo,
 	)
 
 	return &Registry{
 		enabled:               true,
+		eventLabels:           make(map[[3]string]struct{}),
+		banRealms:             make(map[string]struct{}),
 		registry:              registry,
 		httpRequests:          httpRequests,
 		httpDuration:          httpDuration,
 		snitchEvents:          snitchEvents,
 		automaticBanDecisions: automaticBanDecisions,
+		incidents:             incidents,
 		deliveryAttempts:      deliveryAttempts,
 		deliveryDuration:      deliveryDuration,
+		notificationAttempts:  notificationAttempts,
+		notificationDuration:  notificationDuration,
 	}
 }
 
 // RecordProcessedEvent counts accepted Snitch requests and attributes revised automatic ban decisions to the triggering realm.
-func (r *Registry) RecordProcessedEvent(realmID, eventType string, automaticBan bool) {
+func (r *Registry) RecordProcessedEvent(realmID, eventKind, eventType string, automaticBan bool) {
 	if !r.enabled {
 		return
 	}
 
 	realm := cmp.Or(strings.TrimSpace(realmID), "unknown")
-	r.snitchEvents.WithLabelValues(realm, eventType).Inc()
+	eventRealm, kind, event := r.eventLabel(realm, eventKind, eventType)
+	r.snitchEvents.WithLabelValues(eventRealm, kind, event).Inc()
 
 	if automaticBan {
-		r.automaticBanDecisions.WithLabelValues(realm).Inc()
+		r.automaticBanDecisions.WithLabelValues(r.banRealm(realm)).Inc()
+	}
+}
+
+// RecordIncident counts a committed named rule threshold hit.
+func (r *Registry) RecordIncident(rule string) {
+	if r.enabled {
+		r.incidents.WithLabelValues(rule).Inc()
 	}
 }
 
@@ -197,4 +240,36 @@ func metricMethod(method string) string {
 	default:
 		return "OTHER"
 	}
+}
+
+// maxEventLabelSets bounds producer-controlled metric series per process.
+const maxEventLabelSets = 1024
+
+// eventLabel maps unbounded producer labels to one overflow series after the budget is reached.
+func (r *Registry) eventLabel(realm, kind, event string) (string, string, string) {
+	r.labelsMu.Lock()
+	defer r.labelsMu.Unlock()
+	key := [3]string{realm, kind, event}
+	if _, exists := r.eventLabels[key]; exists {
+		return realm, kind, event
+	}
+	if len(r.eventLabels) >= maxEventLabelSets {
+		return "overflow", "overflow", "overflow"
+	}
+	r.eventLabels[key] = struct{}{}
+	return realm, kind, event
+}
+
+// banRealm bounds automatic-ban realm labels independently.
+func (r *Registry) banRealm(realm string) string {
+	r.labelsMu.Lock()
+	defer r.labelsMu.Unlock()
+	if _, exists := r.banRealms[realm]; exists {
+		return realm
+	}
+	if len(r.banRealms) >= maxEventLabelSets {
+		return "overflow"
+	}
+	r.banRealms[realm] = struct{}{}
+	return realm
 }

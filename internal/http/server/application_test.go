@@ -18,12 +18,15 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/internal/signing"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
@@ -31,7 +34,7 @@ import (
 
 // processDecision extracts the effective decision for server-storage integration tests.
 func processDecision(processor *ingestion.Service, ctx context.Context, envelope events.Envelope, now time.Time) (*model.Decision, error) {
-	result, err := processor.Process(ctx, envelope, now)
+	result, err := processor.Process(ctx, envelope, func() time.Time { return now })
 	return result.Decision, err
 }
 
@@ -79,7 +82,7 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 
 	require.NoError(t, err)
 	t.Cleanup(func() { assert.NoError(t, store.Close()) })
-	service, err := bans.NewAdminService(store, []string{"edge"})
+	service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 	require.NoError(t, err)
 	h := newTestServer(server.Config{
@@ -196,16 +199,26 @@ func TestNewApplication(t *testing.T) {
 	t.Run("lists automatic source and unbans it through the application API", func(t *testing.T) {
 		t.Parallel()
 
-		rule := ingestion.Rule{
-			Threshold: 2,
-			Window:    time.Minute,
-			Ban:       time.Minute,
+		rule := detection.Rule{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 2,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: time.Minute,
+			},
 		}
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"))
 
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })
-		ingest, err := ingestion.New(store, rule, []string{"edge"})
+		ingest, err := ingestion.New(store, []detection.Rule{rule}, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -214,9 +227,12 @@ func TestNewApplication(t *testing.T) {
 				ID:        id,
 				Version:   events.SchemaVersion,
 				Source:    events.SourceKeycloak,
-				Kind:      events.KindLoginError,
-				IP:        "203.0.113.22",
+				Kind:      events.KindUser,
 				Timestamp: now,
+				User: &events.UserEvent{
+					Type: events.TypeLoginError,
+					IP:   "203.0.113.22",
+				},
 			}
 		}
 		_, err = processDecision(ingest, t.Context(), input("first"), now)
@@ -226,7 +242,7 @@ func TestNewApplication(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		application := newTestServer(server.Config{
@@ -379,36 +395,46 @@ func TestNewApplication(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer target.Close()
-		rule := ingestion.Rule{
-			Window:    time.Minute,
-			Threshold: 1,
-			Ban:       3 * time.Second,
+		rule := detection.Rule{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Window:    time.Minute,
+				Threshold: 1,
+			},
+			Actions: detection.Actions{
+				Ban: 3 * time.Second,
+			},
 		}
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"))
 
 		require.NoError(t, err)
 		defer store.Close() //nolint:errcheck
-		destinations := map[string]actions.Target{
+		destinations := map[string]enforcement.Target{
 			"notify": {
-				Provider: webhook.Provider{
+				Provider: webhook.Provider[model.Decision]{
 					URL:     target.URL,
 					Client:  target.Client(),
 					Headers: http.Header{"X-Api-Key": {"expected"}},
 				},
-				MaxAttempts: actions.DefaultMaxAttempts,
+				MaxAttempts: retry.DefaultMaxAttempts,
 			},
 		}
 		expirer, err := bans.NewExpiryService(store, []string{"notify"})
 		require.NoError(t, err)
-		runner := actions.Start(t.Context(), store, expirer, destinations, actions.DefaultRetryPolicy(), slog.Default())
+		runner := enforcement.Start(t.Context(), store, expirer, destinations, retry.DefaultRetryPolicy(), slog.Default())
 		defer func() { require.NoError(t, runner.Close()) }()
-		body := `{"id":"real-format","timestamp":"2026-11-05T00:00:00Z","schemaVersion":1,"source":"keycloak","type":"LOGIN_ERROR","ipAddress":"203.0.113.8"}`
+		body := `{"schemaVersion":2,"id":"real-format","source":"keycloak","timestamp":"2026-11-05T00:00:00Z","kind":"user","user":{"type":"LOGIN_ERROR","ipAddress":"203.0.113.8"}}`
 		req := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body))
 		ts := strconv.FormatInt(time.Now().Unix(), 10)
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("X-Snitch-Timestamp", ts)
 		req.Header.Set("X-Snitch-Signature", signing.Signature("inbound", ts, []byte(body)))
-		processor, err := ingestion.New(store, rule, []string{"notify"})
+		processor, err := ingestion.New(store, []detection.Rule{rule}, []string{"notify"}, bans.Policy{})
 
 		require.NoError(t, err)
 		rec := httptest.NewRecorder()
@@ -486,4 +512,57 @@ func TestCreateBanRequestIsolation(t *testing.T) {
 
 		assert.Equal(t, http.StatusUnauthorized, rec.Code)
 	})
+}
+
+func TestIncidentsRoute(t *testing.T) {
+	t.Parallel()
+
+	store, err := sqlite.Open(filepath.Join(t.TempDir(), "warden.db"))
+	require.NoError(t, err)
+	t.Cleanup(func() { assert.NoError(t, store.Close()) })
+	operations, err := overview.NewService(store)
+	require.NoError(t, err)
+	processor, err := ingestion.New(store, []detection.Rule{{
+		Name: "admin-audit",
+		Selector: detection.Selector{
+			Kind: events.KindAdmin,
+		},
+		Aggregation: detection.Aggregation{
+			GroupBy:   detection.GroupRealm,
+			Threshold: 1,
+			Window:    time.Minute,
+		},
+	}}, nil, bans.Policy{})
+	require.NoError(t, err)
+	application := newTestServer(server.Config{
+		Logger:     slog.Default(),
+		Secret:     "snitch-secret",
+		AdminToken: "admin-token",
+		Readiness:  store,
+		Processor:  processor,
+		Operations: operations,
+	}).Application
+
+	body := `{"schemaVersion":2,"id":"admin-event","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"admin","admin":{"realmId":"hq","operationType":"CREATE","resourceType":"USER","resourcePath":"users/example","actor":{"realmId":"master","clientId":null,"userId":null,"ipAddress":null}}}`
+	now := strconv.FormatInt(time.Now().Unix(), 10)
+	request := httptest.NewRequest(http.MethodPost, "/events", strings.NewReader(body))
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("X-Snitch-Timestamp", now)
+	request.Header.Set("X-Snitch-Signature", signing.Signature("snitch-secret", now, []byte(body)))
+	response := httptest.NewRecorder()
+	application.ServeHTTP(response, request)
+	require.Equal(t, http.StatusNoContent, response.Code, response.Body.String())
+
+	assert.Equal(t, http.StatusNotFound, adminRequest(application, http.MethodGet, "/observations", "admin-token", "").Code)
+	assert.Equal(t, http.StatusUnauthorized, adminRequest(application, http.MethodGet, "/incidents", "", "").Code)
+	assert.Equal(t, http.StatusBadRequest, adminRequest(application, http.MethodGet, "/incidents?before-id=0", "admin-token", "").Code)
+	response = adminRequest(application, http.MethodGet, "/incidents?kind=admin", "admin-token", "")
+	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
+	var page model.IncidentPage
+	require.NoError(t, json.Unmarshal(response.Body.Bytes(), &page))
+	require.Len(t, page.Items, 1)
+	assert.Equal(t, "admin-audit", page.Items[0].Rule)
+	assert.Equal(t, events.KindAdmin, page.Items[0].EventKind)
+	assert.Empty(t, page.Items[0].EventType)
+	assert.Equal(t, "master", page.Items[0].ActorRealmID)
 }

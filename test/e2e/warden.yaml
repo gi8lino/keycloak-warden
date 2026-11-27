@@ -1,13 +1,40 @@
 # Deliberately low threshold for end-to-end testing.
-rule:
-  threshold: 2
-  window: 1m
-  ban: 15m
+rules:
+  brute-force:
+    selector:
+      kind: user
+      events: [LOGIN_ERROR]
+    aggregation:
+      group-by: ip
+      threshold: 2
+      window: 1m
+    actions:
+      ban: 15m
 
-targets:
+  admin-audit:
+    selector:
+      kind: admin
+      operations: [CREATE]
+      resources: [USER]
+      success-only: true
+    aggregation:
+      group-by: realm
+      threshold: 1
+      window: 1m
+    actions:
+      notify: [audit]
+
+enforcements:
   webhook:
     receiver:
       # Receiver shares Warden's network namespace (loopback HTTP is allowed).
+      url: env:WARDEN_E2E_WEBHOOK_URL
+      headers:
+        X-API-Key: env:WARDEN_E2E_WEBHOOK_KEY
+
+notifications:
+  webhook:
+    audit:
       url: env:WARDEN_E2E_WEBHOOK_URL
       headers:
         X-API-Key: env:WARDEN_E2E_WEBHOOK_KEY

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/events"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/events"
 )
 
 func TestNewRegistry(t *testing.T) {
@@ -46,28 +46,39 @@ func TestRecordProcessedEvent(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(true, "test")
-		registry.RecordProcessedEvent("hq", events.KindLoginError, false)
-		registry.RecordProcessedEvent("hq", events.KindLoginError, true)
-		registry.RecordProcessedEvent("personal", events.KindLoginError, false)
-		registry.RecordProcessedEvent("personal", "LOGIN", false)
+		registry.RecordProcessedEvent("hq", events.KindUser, events.TypeLoginError, false)
+		registry.RecordProcessedEvent("hq", events.KindUser, events.TypeLoginError, true)
+		registry.RecordProcessedEvent("personal", events.KindUser, events.TypeLoginError, false)
+		registry.RecordProcessedEvent("personal", events.KindUser, "LOGIN", false)
 
 		output := scrape(t, registry)
-		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="hq"} 2`)
-		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="personal"} 1`)
-		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN",realm="personal"} 1`)
+		assert.Contains(t, output, `warden_snitch_events_total{event_kind="user",event_type="LOGIN_ERROR",realm="hq"} 2`)
+		assert.Contains(t, output, `warden_snitch_events_total{event_kind="user",event_type="LOGIN_ERROR",realm="personal"} 1`)
+		assert.Contains(t, output, `warden_snitch_events_total{event_kind="user",event_type="LOGIN",realm="personal"} 1`)
 		assert.Contains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="hq"} 1`)
 		assert.NotContains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="personal"}`)
+	})
+
+	t.Run("records administrative category without a native user event type", func(t *testing.T) {
+		t.Parallel()
+
+		registry := NewRegistry(true, "test")
+		registry.RecordProcessedEvent("hq", events.KindAdmin, "", false)
+
+		output := scrape(t, registry)
+		assert.Contains(t, output, `warden_snitch_events_total{event_kind="admin",event_type="",realm="hq"} 1`)
+		assert.NotContains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="hq"}`)
 	})
 
 	t.Run("missing realm is grouped as unknown", func(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(true, "test")
-		registry.RecordProcessedEvent("", events.KindLoginError, true)
-		registry.RecordProcessedEvent("  ", events.KindLoginError, false)
+		registry.RecordProcessedEvent("", events.KindUser, events.TypeLoginError, true)
+		registry.RecordProcessedEvent("  ", events.KindUser, events.TypeLoginError, false)
 
 		output := scrape(t, registry)
-		assert.Contains(t, output, `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="unknown"} 2`)
+		assert.Contains(t, output, `warden_snitch_events_total{event_kind="user",event_type="LOGIN_ERROR",realm="unknown"} 2`)
 		assert.Contains(t, output, `warden_automatic_ban_decisions_total{trigger_realm="unknown"} 1`)
 	})
 
@@ -75,7 +86,7 @@ func TestRecordProcessedEvent(t *testing.T) {
 		t.Parallel()
 
 		registry := NewRegistry(false, "test")
-		registry.RecordProcessedEvent("hq", events.KindLoginError, true)
+		registry.RecordProcessedEvent("hq", events.KindUser, events.TypeLoginError, true)
 
 		assert.Nil(t, registry.snitchEvents)
 		assert.Nil(t, registry.automaticBanDecisions)

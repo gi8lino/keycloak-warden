@@ -11,12 +11,12 @@ import (
 func loadResponseRule(t *testing.T, body string) (WebhookResponse, error) {
 	t.Helper()
 
-	cfg, err := Load(writeConfig(t, "rule:\n  threshold: 2\n  window: 1m\n  ban: 15m\ntargets:\n  webhook:\n    ops:\n      url: https://example.org\n      response:\n"+body))
+	cfg, err := Load(writeConfig(t, "rules:\n  brute-force:\n    selector:\n      kind: user\n      events: [LOGIN_ERROR]\n    aggregation:\n      group-by: ip\n      threshold: 2\n      window: 1m\n    actions:\n      ban: 15m\nenforcements:\n  webhook:\n    ops:\n      url: https://example.org\n      response:\n"+body))
 	if err != nil {
 		return WebhookResponse{}, err
 	}
 
-	target := cfg.Targets.Webhook["ops"]
+	target := cfg.Enforcements.Webhook["ops"]
 	if target.Response == nil {
 		require.FailNow(t, "expected response rule")
 	}

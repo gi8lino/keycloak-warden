@@ -107,7 +107,7 @@ func releaseAllSources(
 	}
 
 	// Retain producer IDs for replay protection while resetting the count.
-	if err := tx.ResetFailures(ctx, current.IP); err != nil {
+	if err := tx.AdvanceBanGeneration(ctx, current.IP); err != nil {
 		return model.Record{}, err
 	}
 
@@ -192,4 +192,12 @@ func NewExpiryService(store Writer, targets []string) (*ExpiryService, error) {
 // Expire reconciles all elapsed sources in one transaction.
 func (s *ExpiryService) Expire(ctx context.Context, now time.Time) ([]model.Decision, error) {
 	return ExpireSources(ctx, s.store, now, s.targets)
+}
+
+// ApplyAutomaticBan extends the automatic source and reconciles its decision in the caller's transaction.
+func ApplyAutomaticBan(ctx context.Context, tx Transaction, ip string, until, now time.Time, targets []string) (model.Decision, bool, error) {
+	if err := ExtendSource(ctx, tx, ip, model.Source{Kind: model.SourceAutomatic, ExpiresAt: until}); err != nil {
+		return model.Decision{}, false, err
+	}
+	return ReconcileDecisionWithCause(ctx, tx, ip, now, targets, model.ChangeAutomatic)
 }

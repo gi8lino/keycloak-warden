@@ -3,6 +3,7 @@ package endpoint_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
@@ -37,7 +39,7 @@ type capture struct {
 }
 
 // Process records the event after HTTP authentication and application dispatch.
-func (c *capture) Process(_ context.Context, e events.Envelope, _ time.Time) (ingestion.Result, error) {
+func (c *capture) Process(_ context.Context, e events.Envelope, _ func() time.Time) (ingestion.Result, error) {
 	c.events = append(c.events, e)
 	if c.err != nil {
 		return ingestion.Result{}, c.err
@@ -64,7 +66,7 @@ func post(h http.Handler, body, secret string, now time.Time) int {
 func TestEvents(t *testing.T) {
 	t.Parallel()
 
-	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","ipAddress":null}`
+	const body = `{"schemaVersion":2,"id":"one","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"user","user":{"type":"LOGIN_ERROR","ipAddress":null}}`
 	newHandler := func(c *capture) http.Handler {
 		return httpkitmiddleware.Chain(endpoint.Events(c, slog.Default(), metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
 	}
@@ -76,7 +78,7 @@ func TestEvents(t *testing.T) {
 
 		require.Equal(t, http.StatusNoContent, post(newHandler(c), body, "key", time.Now()))
 		require.Len(t, c.events, 1)
-		assert.Empty(t, c.events[0].IP)
+		assert.Empty(t, c.events[0].User.IP)
 	})
 
 	t.Run("rejects wrong signature before the endpoint", func(t *testing.T) {
@@ -119,6 +121,24 @@ func TestEvents(t *testing.T) {
 		assert.Empty(t, c.events)
 	})
 
+	t.Run("rejects the flat event contract", func(t *testing.T) {
+		t.Parallel()
+
+		c := new(capture)
+		const flat = `{"schemaVersion":2,"id":"flat","source":"keycloak","type":"LOGIN_ERROR","timestamp":"2026-11-05T15:00:00Z"}`
+		assert.Equal(t, http.StatusBadRequest, post(newHandler(c), flat, "key", time.Now()))
+		assert.Empty(t, c.events)
+	})
+
+	t.Run("rejects unrecognized administrative metadata", func(t *testing.T) {
+		t.Parallel()
+
+		c := new(capture)
+		const unexpected = `{"schemaVersion":2,"id":"admin","source":"keycloak","kind":"admin","timestamp":"2026-11-05T15:00:00Z","admin":{"realmId":"hq","operationType":"CREATE","resourceType":"USER","representation":"secret"}}`
+		assert.Equal(t, http.StatusBadRequest, post(newHandler(c), unexpected, "key", time.Now()))
+		assert.Empty(t, c.events)
+	})
+
 	t.Run("rejects multiple JSON values", func(t *testing.T) {
 		t.Parallel()
 
@@ -133,7 +153,7 @@ func TestEvents(t *testing.T) {
 func TestEventsRealmTelemetry(t *testing.T) {
 	t.Parallel()
 
-	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","realmId":"hq","ipAddress":"203.0.113.5"}`
+	const body = `{"schemaVersion":2,"id":"one","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"user","user":{"type":"LOGIN_ERROR","realmId":"hq","ipAddress":"203.0.113.5"}}`
 
 	t.Run("records processed event with its source realm", func(t *testing.T) {
 		t.Parallel()
@@ -141,21 +161,38 @@ func TestEventsRealmTelemetry(t *testing.T) {
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		registry := metrics.NewRegistry(true, "test")
-		processor := &capture{result: ingestion.Result{
-			Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 1, Threshold: 5,
-		}}
+		processor := &capture{
+			result: ingestion.Result{
+				Outcome: ingestion.OutcomeBelowThreshold,
+				IP:      "203.0.113.5",
+				Evaluations: []detection.Evaluation{
+					{
+						Rule:      "brute-force",
+						Count:     1,
+						Threshold: 5,
+					},
+				},
+			},
+		}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, registry), middleware.AuthenticateSnitch("key"))
 
 		require.Equal(t, http.StatusNoContent, post(handler, body, "key", time.Now()))
 		require.Len(t, processor.events, 1)
-		assert.Equal(t, "hq", processor.events[0].RealmID)
-		assert.Contains(t, logs.String(), `"event":"detection_threshold_not_reached"`)
-		assert.Contains(t, logs.String(), `"failures":1`)
-		assert.Contains(t, logs.String(), `"threshold":5`)
+		require.NotNil(t, processor.events[0].User)
+		assert.Equal(t, "hq", processor.events[0].User.RealmID)
+
+		var entry struct {
+			Event       string                 `json:"event"`
+			Evaluations []detection.Evaluation `json:"evaluations"`
+		}
+		require.NoError(t, json.Unmarshal(logs.Bytes(), &entry))
+		assert.Equal(t, "detection_threshold_not_reached", entry.Event)
+		assert.Equal(t, processor.result.Evaluations, entry.Evaluations)
+		assert.NotContains(t, logs.String(), `"failures":`)
 
 		output := httptest.NewRecorder()
 		registry.Metrics().ServeHTTP(output, httptest.NewRequest(http.MethodGet, "/metrics", nil))
-		assert.Contains(t, output.Body.String(), `warden_snitch_events_total{event_type="LOGIN_ERROR",realm="hq"} 1`)
+		assert.Contains(t, output.Body.String(), `warden_snitch_events_total{event_kind="user",event_type="LOGIN_ERROR",realm="hq"} 1`)
 		assert.NotContains(t, output.Body.String(), "warden_automatic_ban_decisions_total{trigger_realm=")
 	})
 
@@ -206,7 +243,7 @@ func TestEventsRealmTelemetry(t *testing.T) {
 func TestEventDiagnosticLogging(t *testing.T) {
 	t.Parallel()
 
-	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","realmId":"hq","ipAddress":"203.0.113.5"}`
+	const body = `{"schemaVersion":2,"id":"one","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"user","user":{"type":"LOGIN_ERROR","realmId":"hq","ipAddress":"203.0.113.5"}}`
 	t.Run("ignored event", func(t *testing.T) {
 		t.Parallel()
 
@@ -245,13 +282,13 @@ func TestEventDiagnosticLogging(t *testing.T) {
 		t.Run("info is silent", func(t *testing.T) {
 			t.Parallel()
 
-			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 2, Threshold: 5}, "detection_threshold_not_reached", slog.LevelInfo)
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5"}, "detection_threshold_not_reached", slog.LevelInfo)
 		})
 
 		t.Run("debug records outcome", func(t *testing.T) {
 			t.Parallel()
 
-			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5", Failures: 2, Threshold: 5}, "detection_threshold_not_reached", slog.LevelDebug)
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeBelowThreshold, IP: "203.0.113.5"}, "detection_threshold_not_reached", slog.LevelDebug)
 		})
 	})
 
@@ -261,13 +298,13 @@ func TestEventDiagnosticLogging(t *testing.T) {
 		t.Run("info is silent", func(t *testing.T) {
 			t.Parallel()
 
-			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5", Failures: 5, Threshold: 5}, "decision_unchanged", slog.LevelInfo)
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5"}, "decision_unchanged", slog.LevelInfo)
 		})
 
 		t.Run("debug records outcome", func(t *testing.T) {
 			t.Parallel()
 
-			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5", Failures: 5, Threshold: 5}, "decision_unchanged", slog.LevelDebug)
+			assertEventDiagnosticLog(t, ingestion.Result{Outcome: ingestion.OutcomeUnchanged, IP: "203.0.113.5"}, "decision_unchanged", slog.LevelDebug)
 		})
 	})
 
@@ -286,7 +323,7 @@ func TestEventDiagnosticLogging(t *testing.T) {
 		t.Parallel()
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, nil))
-		processor := &capture{err: ingestion.ErrInvalidEvent}
+		processor := &capture{err: events.ErrInvalidEvent}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, metrics.NewRegistry(false, "test")), middleware.AuthenticateSnitch("key"))
 		require.Equal(t, http.StatusBadRequest, post(handler, body, "key", time.Now()))
 		assert.Contains(t, logs.String(), `"level":"WARN"`)
@@ -307,7 +344,7 @@ func TestEventDiagnosticLogging(t *testing.T) {
 func assertEventDiagnosticLog(t *testing.T, result ingestion.Result, event string, level slog.Level) {
 	t.Helper()
 
-	const body = `{"id":"one","source":"keycloak","type":"LOGIN_ERROR","schemaVersion":1,"timestamp":"2026-11-05T15:00:00Z","realmId":"hq","ipAddress":"203.0.113.5"}`
+	const body = `{"schemaVersion":2,"id":"one","source":"keycloak","timestamp":"2026-11-05T15:00:00Z","kind":"user","user":{"type":"LOGIN_ERROR","realmId":"hq","ipAddress":"203.0.113.5"}}`
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: level}))
 	processor := &capture{result: result}

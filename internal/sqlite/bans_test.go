@@ -8,8 +8,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -23,7 +23,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		ctx := t.Context()
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		store, _ := openStore(t, path, "edge")
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 
@@ -46,7 +46,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		store, _ = openStore(t, path, "edge")
 		defer store.Close() //nolint:errcheck
-		service, err = bans.NewAdminService(store, []string{"edge"})
+		service, err = bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		views, err := service.ListActive(ctx, now)
@@ -93,7 +93,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -133,7 +133,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -204,7 +204,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		ctx := t.Context()
@@ -235,7 +235,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -263,7 +263,7 @@ func TestStoreListActive(t *testing.T) {
 
 		store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"))
 		defer store.Close() //nolint:errcheck
-		service, err := bans.NewAdminService(store, nil)
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
@@ -297,7 +297,7 @@ func TestRetiredDestination(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "warden.db")
 	ctx := t.Context()
 	store, _ := openStore(t, path, "old")
-	service, err := bans.NewAdminService(store, []string{"old"})
+	service, err := bans.NewAdminService(store, []string{"old"}, bans.Policy{})
 
 	require.NoError(t, err)
 	now := time.Now()
@@ -316,12 +316,12 @@ func TestRetiredDestination(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
+	require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now, 0))
 	require.NoError(t, store.Close())
 
 	store, _ = openStore(t, path, "new")
 	defer store.Close() //nolint:errcheck
-	service, err = bans.NewAdminService(store, []string{"new"})
+	service, err = bans.NewAdminService(store, []string{"new"}, bans.Policy{})
 
 	require.NoError(t, err)
 	view, err = service.BanManual(ctx, request, now)
@@ -342,7 +342,7 @@ func TestIdempotentManualBan(t *testing.T) {
 
 	store, _ := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
-	service, err := bans.NewAdminService(store, []string{"edge"})
+	service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
@@ -357,7 +357,7 @@ func TestIdempotentManualBan(t *testing.T) {
 	job, err := store.Next(t.Context(), now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(t.Context(), *job, nil, actions.DefaultMaxAttempts, now, 0))
+	require.NoError(t, store.Finish(t.Context(), *job, nil, retry.DefaultMaxAttempts, now, 0))
 
 	// Neither identical requests nor a reason-only change affect delivered fields.
 	again, err := service.BanManual(t.Context(), request, now)
@@ -392,7 +392,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 
 	store, ingestion := openStore(t, filepath.Join(t.TempDir(), "warden.db"), "edge")
 	defer store.Close() //nolint:errcheck
-	service, err := bans.NewAdminService(store, []string{"edge"})
+	service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)

@@ -70,6 +70,19 @@ func TestReady(t *testing.T) {
 		assert.Zero(t, p.called)
 	})
 
+	t.Run("stopped notification worker", func(t *testing.T) {
+		t.Parallel()
+
+		p := &healthProbe{}
+		done := make(chan struct{})
+		close(done)
+		w := httptest.NewRecorder()
+		endpoint.Ready(p, make(chan struct{}), done)(w, httptest.NewRequest(http.MethodGet, "/readyz", nil))
+		assert.Equal(t, http.StatusServiceUnavailable, w.Code)
+		assert.Contains(t, w.Body.String(), "Notification worker unavailable")
+		assert.Zero(t, p.called)
+	})
+
 	t.Run("database failure", func(t *testing.T) {
 		t.Parallel()
 		p := &healthProbe{pingErr: errors.New("database offline")}

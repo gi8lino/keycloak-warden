@@ -15,6 +15,9 @@ configMapGenerator:
 
   - name: keycloak-warden-templates
     files:
-      - templates/slack-api.json.tmpl
-      - templates/slack-bot.json.tmpl
-      - templates/msteams.json.tmpl
+      - templates/ban-slack-api.json.tmpl
+      - templates/ban-slack-bot.json.tmpl
+      - templates/ban-msteams.json.tmpl
+      - templates/incident-slack-api.json.tmpl
+      - templates/incident-slack-bot.json.tmpl
+      - templates/incident-msteams.json.tmpl

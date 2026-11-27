@@ -9,8 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
 
 func TestDatabaseOwnership(t *testing.T) {

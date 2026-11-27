@@ -22,107 +22,46 @@ Give the [Cloudflare API token](https://dash.cloudflare.com/profile/api-tokens) 
 
 Set `CLOUDFLARE_ZONE_ID` (32 hexadecimal characters) and `CLOUDFLARE_API_TOKEN` in your copied Kubernetes Secret.
 
-The example configures `targets.cloudflare.edge`; Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Additional Cloudflare accounts or zones can be configured as separate named targets.
+The example configures `enforcements.cloudflare.edge`; Warden resolves `zone-id: env:CLOUDFLARE_ZONE_ID` and `api-token: env:CLOUDFLARE_API_TOKEN` at startup. Additional Cloudflare accounts or zones can be configured as separate named targets.
 
-### Webhook notification templates
+### Incident notifications
 
-The example enables Slack notifications alongside Cloudflare bans. Microsoft Teams is included as an optional destination.
+The example sends brute-force incidents to two named Slack webhooks while Cloudflare independently enforces bans. All HTTP destinations use identical webhook configuration. Kustomize mounts all six templates at `/config/templates/`:
 
-The Kubernetes directory contains:
-
-```text
-deploy/kubernetes/
-├── README.md
-├── deployment.yaml
-├── kustomization.yaml
-├── persistentvolumeclaim.yaml
-├── secret.example.yaml
-├── service.yaml
-├── warden.yaml
-└── templates/
-    ├── slack-api.json.tmpl
-    ├── slack-bot.json.tmpl
-    └── msteams.json.tmpl
-```
-
-Kustomize generates two separate ConfigMaps:
-
-- `keycloak-warden-config` — contains `warden.yaml` with detection rules and destinations.
-- `keycloak-warden-templates` — contains `slack-api.json.tmpl`, `slack-bot.json.tmpl`, and `msteams.json.tmpl`.
-
-The generators are defined in `kustomization.yaml`:
+| Template | Payload |
+| --- | --- |
+| `ban-slack-api.json.tmpl` | Ban and release messages via Slack incoming webhook |
+| `ban-slack-bot.json.tmpl` | Ban and release messages via Slack Bot API |
+| `ban-msteams.json.tmpl` | Ban and release MessageCard |
+| `incident-slack-api.json.tmpl` | Incident via Slack incoming webhook |
+| `incident-slack-bot.json.tmpl` | Incident via Slack Bot API |
+| `incident-msteams.json.tmpl` | Incident Adaptive Card for Teams Workflows |
 
 ```yaml
-configMapGenerator:
-  - name: keycloak-warden-config
-    files:
-      - warden.yaml
-
-  - name: keycloak-warden-templates
-    files:
-      - templates/slack-api.json.tmpl
-      - templates/slack-bot.json.tmpl
-      - templates/msteams.json.tmpl
-```
-
-The Deployment mounts them separately:
-
-```yaml
-volumeMounts:
-  - name: config
-    mountPath: /config
-    readOnly: true
-  - name: templates
-    mountPath: /config/templates
-    readOnly: true
-```
-
-The resulting container paths are:
-
-```text
-/config/
-├── warden.yaml
-└── templates/
-    ├── slack-api.json.tmpl
-    ├── slack-bot.json.tmpl
-    └── msteams.json.tmpl
-```
-
-The corresponding webhook targets in `warden.yaml` reference these files:
-
-```yaml
-targets:
+notifications:
   webhook:
-    slack-api:
+    slack-security:
       url: env:SLACK_WEBHOOK_URL
-      body-template: file:/config/templates/slack-api.json.tmpl
-
+      body-template: file:/config/templates/incident-slack-api.json.tmpl
     slack-bot:
       url: https://slack.com/api/chat.postMessage
       headers:
         Authorization: env:SLACK_AUTHORIZATION
       template-vars:
         channel: env:SLACK_CHANNEL
-      body-template: file:/config/templates/slack-bot.json.tmpl
+      body-template: file:/config/templates/incident-slack-bot.json.tmpl
       response:
         json:
           pointer: /ok
           equals: true
           error-pointer: /error
-
-    # Optional Microsoft Teams destination:
-    # msteams:
-    #   url: env:MSTEAMS_WEBHOOK_URL
-    #   body-template: file:/config/templates/msteams.json.tmpl
 ```
 
-Merge this `webhook` group into the existing `targets` mapping rather than creating a second root `targets` key.
+The brute-force rule selects `[slack-security, slack-bot]` under `actions.notify`. Remove unused definitions and references. To enable Teams, uncomment `notifications.webhook.msteams-administrators`, add `MSTEAMS_WEBHOOK_URL` to the Secret, and reference `msteams-administrators` in the desired rule. Confirm that the endpoint accepts the chosen card format.
 
-**Slack incoming webhook:** Set `SLACK_WEBHOOK_URL` in the `keycloak-warden` Secret. This target requires no authorization header or response-body check.
+Notifications are sent on incident creation, not automatic ban renewal or release. Enable the commented `enforcements.webhook` entries with ban templates to also receive ban/unban updates. Both kinds of templates use `.Payload` for typed fields and `.Vars` for resolved template variables. Without a template, webhooks send canonical JSON.
 
-**Slack Bot API:** Set `SLACK_AUTHORIZATION` to `Bearer xoxb-...` in the Secret and set `SLACK_CHANNEL` to the destination channel ID in the same Secret. This target uses Notifykit's opt-in JSON response validation: HTTP 200 with `{"ok":false}` is a failure, and `error-pointer: /error` supplies a bounded error message to Warden's delivery log. If you only want one Slack delivery, disable the other Slack target in `warden.yaml`. Both templates show the expiry in UTC only when the state is `banned`.
-
-**Microsoft Teams:** Uncomment the `msteams` target and add `MSTEAMS_WEBHOOK_URL` to the Secret. The provided MessageCard template requires an endpoint that accepts this legacy format; verify compatibility with your Teams workflow before enabling it.
+Drain pending notifications and reconcile outstanding enforcement obligations before removing or renaming destinations. Warden refuses to remove destinations with outstanding obligations.
 
 ### Value resolution
 
@@ -136,13 +75,11 @@ Webhook `url`, `body-template`, and `headers` values, along with Cloudflare `zon
 
 Use `literal:` to preserve values that would otherwise be interpreted as resolver references. `secret:` removes trailing line endings but preserves spaces and tabs; `file:` trims surrounding whitespace. Secrets are read at startup, so restart Warden after changing them.
 
-Every configured target is active. Required values must resolve to nonblank strings, and invalid references fail startup.
+Every configured destination is resolved at startup; notifications are sent only when selected by a rule. Required values must resolve to nonblank strings, and invalid references fail startup.
 
-Header names are literal and validated. Transport-managed headers cannot be overridden, and Warden requires HTTPS webhook URLs except for explicit loopback hosts.
+Header names are literal and validated. Content-Type is reserved, and Warden requires HTTPS webhook URLs except for explicit loopback hosts.
 
 Warden does not automatically sign outbound notifications; use authentication headers when required by the receiver.
-
-The `body-template` setting requires a Warden build supporting templated webhook bodies. Older releases send only the default decision JSON and do not recognize this setting.
 
 **Security:** Never commit real credentials or store them in ConfigMaps. Inbound Snitch event HMAC verification is independent of outbound webhook authentication.
 
@@ -166,6 +103,8 @@ Install [Keycloak Snitch](https://github.com/gi8lino/keycloak-snitch), enable th
 
 Both Keycloak and Warden must use the **same Snitch signing key**.
 
+The included `warden.yaml` enables brute-force enforcement and includes commented monitoring-only rules. Enable only the rules you need. See [Detection rules](../../docs/content/detection-rules.md) for the complete reference and the matching Snitch `EVENT_TYPES` setting. For administrative rules, also set `KC_SPI_EVENTS_LISTENER__SNITCH__ADMIN_EVENTS=true`. Use a Snitch release emitting schema version 2.
+
 ## 3. Deploy
 
 From the repository root:
@@ -179,7 +118,7 @@ The Service exposes Warden at `http://keycloak-warden:8080`.
 
 Health checks and optional Prometheus metrics use port `8081` on the Pod, not the application Service.
 
-The `/readyz` endpoint requires a responsive SQLite database and a running action worker. Ordinary retryable delivery errors do not make the service unready.
+The `/readyz` endpoint requires a responsive SQLite database and running enforcement and configured notification workers. Ordinary retryable delivery errors do not make the service unready.
 
 ## Manual bans
 

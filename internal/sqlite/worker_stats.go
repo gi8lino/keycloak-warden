@@ -19,20 +19,28 @@ SELECT
     COALESCE(SUM(CASE WHEN h.status = 'retrying' THEN 1 ELSE 0 END), 0),
     COALESCE(SUM(CASE WHEN h.status = 'exhausted' THEN 1 ELSE 0 END), 0)
 FROM delivery_history AS h
-JOIN decisions AS d ON d.ip = h.ip AND d.revision = h.revision
+JOIN decisions AS d ON d.ip = h.ip
+    AND d.revision = h.revision
 `).Scan(&stats.PendingDeliveries, &stats.RetryingDeliveries, &stats.ExhaustedDeliveries)
 	if err != nil {
 		return model.QueueStats{}, err
 	}
 
-	if err := s.db.QueryRowContext(ctx, `
-SELECT COUNT(DISTINCT ip) FROM ban_sources WHERE expires > ?
-`, now.UnixMilli()).Scan(&stats.ActiveBans); err != nil {
+	if err := s.db.QueryRowContext(
+		ctx,
+		`
+SELECT COUNT(DISTINCT ip)
+FROM ban_sources
+WHERE expires > ?
+`,
+		now.UnixMilli(),
+	).Scan(&stats.ActiveBans); err != nil {
 		return model.QueueStats{}, err
 	}
 
 	if err := s.db.QueryRowContext(ctx, `
-SELECT MAX(completed_at) FROM delivery_attempts
+SELECT MAX(completed_at)
+FROM delivery_attempts
 `).Scan(&last); err != nil {
 		return model.QueueStats{}, err
 	}

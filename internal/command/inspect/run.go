@@ -9,13 +9,16 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
-// Run prepares an authenticated client and encodes the first history page.
-func Run(ctx context.Context, applicationURL, token string, ids []string, encode output.Encoder, opts ...client.Option) error {
-	return RunPage(ctx, applicationURL, token, ids, 1, false, encode, opts...)
-}
-
-// RunPage retrieves a numbered history page or combines every available page.
-func RunPage(ctx context.Context, applicationURL, token string, ids []string, page int, all bool, encode output.Encoder, opts ...client.Option) error {
+// Run retrieves decisions and encodes a selected history page or all pages.
+func Run(
+	ctx context.Context,
+	applicationURL, token string,
+	ids []string,
+	page int,
+	all bool,
+	encode output.Encoder,
+	opts ...client.Option,
+) error {
 	if page < 1 {
 		return errors.New("history-page must be a positive integer")
 	}

@@ -9,7 +9,7 @@ CREATE TABLE ban_observations (
     failures INTEGER NOT NULL,
     threshold INTEGER NOT NULL
 );
-CREATE INDEX ban_observations_time ON ban_observations(observed_at);
+CREATE INDEX ban_observations_time ON ban_observations (observed_at);
 
 CREATE TABLE delivery_retries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,6 +19,6 @@ CREATE TABLE delivery_retries (
     requested_at INTEGER NOT NULL,
     actor TEXT NOT NULL,
     previous_attempts INTEGER NOT NULL,
-    FOREIGN KEY (ip, revision, destination) REFERENCES delivery_history(ip, revision, destination) ON DELETE CASCADE
+    FOREIGN KEY (ip, revision, destination) REFERENCES delivery_history (ip, revision, destination) ON DELETE CASCADE
 );
-CREATE INDEX delivery_retries_group ON delivery_retries(ip, revision, destination, id DESC);
+CREATE INDEX delivery_retries_group ON delivery_retries (ip, revision, destination, id DESC);

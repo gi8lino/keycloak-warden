@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
@@ -25,7 +25,7 @@ func TestRevisionJournal(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "history.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"webhook.receiver"})
+		service, err := bans.NewAdminService(store, []string{"webhook.receiver"}, bans.Policy{})
 		require.NoError(t, err)
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
@@ -58,7 +58,7 @@ func TestRevisionJournal(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "history.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
@@ -84,7 +84,7 @@ func TestDeliveryOverview(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "deliveries.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"webhook.receiver"})
+		service, err := bans.NewAdminService(store, []string{"webhook.receiver"}, bans.Policy{})
 		require.NoError(t, err)
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
@@ -98,7 +98,7 @@ func TestDeliveryOverview(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
-		require.NoError(t, store.Finish(t.Context(), *job, errors.New("receiver rejected"), 1, now.Add(2*time.Second), actions.DefaultRetryPolicy().NextDelay(0)))
+		require.NoError(t, store.Finish(t.Context(), *job, errors.New("receiver rejected"), 1, now.Add(2*time.Second), retry.DefaultRetryPolicy().NextDelay(0)))
 
 		page, err := viewer.Deliveries(t.Context(), 1, model.DeliveryExhausted, "webhook.receiver")
 		require.NoError(t, err)
@@ -117,7 +117,7 @@ func TestDeliveryOverview(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "deliveries.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
@@ -173,7 +173,7 @@ func TestRevisionJournalPagination(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "pagination.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
@@ -209,7 +209,7 @@ func TestSourceChangeJournal(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 
-		service, err := bans.NewAdminService(store, []string{"webhook.receiver"})
+		service, err := bans.NewAdminService(store, []string{"webhook.receiver"}, bans.Policy{})
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
 
@@ -243,7 +243,7 @@ func TestSourceChangeJournal(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "source-rollback.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 		now := time.Now().UTC()
 		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
@@ -280,7 +280,7 @@ func TestCurrentDeliveriesNotLimitedByHistoryPage(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "current-deliveries.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, targets)
+		service, err := bans.NewAdminService(store, targets, bans.Policy{})
 		require.NoError(t, err)
 
 		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
@@ -306,7 +306,7 @@ func TestRevisionJournalStablePagination(t *testing.T) {
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "pinned-revisions.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
-		service, err := bans.NewAdminService(store, []string{"edge"})
+		service, err := bans.NewAdminService(store, []string{"edge"}, bans.Policy{})
 		require.NoError(t, err)
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)

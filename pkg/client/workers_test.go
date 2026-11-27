@@ -24,7 +24,7 @@ func TestWorkerStatus(t *testing.T) {
 			assert.Equal(t, http.MethodGet, r.Method)
 			assert.Equal(t, "Bearer token", r.Header.Get("Authorization"))
 			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"actions":{"state":"idle","startedAt":"2026-11-25T08:00:00Z","pendingDeliveries":3},"maintenance":{"state":"processing","startedAt":"2026-11-25T08:00:00Z"}}`))
+			_, _ = w.Write([]byte(`{"enforcement":{"state":"idle","startedAt":"2026-11-25T08:00:00Z","pendingDeliveries":3},"maintenance":{"state":"processing","startedAt":"2026-11-25T08:00:00Z"}}`))
 		}))
 		defer upstream.Close()
 
@@ -33,8 +33,8 @@ func TestWorkerStatus(t *testing.T) {
 		workers, err := api.WorkerStatus(context.Background())
 
 		require.NoError(t, err)
-		assert.Equal(t, model.WorkerIdle, workers.Actions.State)
-		assert.Equal(t, 3, workers.Actions.PendingDeliveries)
+		assert.Equal(t, model.WorkerIdle, workers.Enforcement.State)
+		assert.Equal(t, 3, workers.Enforcement.PendingDeliveries)
 		assert.Equal(t, model.WorkerProcessing, workers.Maintenance.State)
 	})
 
@@ -49,6 +49,6 @@ func TestWorkerStatus(t *testing.T) {
 		workers, err := api.WorkerStatus(t.Context())
 
 		require.Error(t, err)
-		assert.Empty(t, workers.Actions.State)
+		assert.Empty(t, workers.Enforcement.State)
 	})
 }

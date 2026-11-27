@@ -10,10 +10,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/internal/retry"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
@@ -22,17 +24,27 @@ import (
 func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *ingestion.Service) {
 	t.Helper()
 
-	rule := ingestion.Rule{
-		Threshold: 2,
-		Window:    time.Minute,
-		Ban:       2 * time.Minute,
+	rule := detection.Rule{
+		Name: "brute-force",
+		Selector: detection.Selector{
+			Kind:   events.KindUser,
+			Events: []string{events.TypeLoginError},
+		},
+		Aggregation: detection.Aggregation{
+			GroupBy:   detection.GroupIP,
+			Threshold: 2,
+			Window:    time.Minute,
+		},
+		Actions: detection.Actions{
+			Ban: 2 * time.Minute,
+		},
 	}
 	store, err := sqlite.Open(path)
 	require.NoError(t, err)
 
-	require.NoError(t, actions.ValidateTargets(t.Context(), store, targets))
+	require.NoError(t, enforcement.ValidateTargets(t.Context(), store, targets))
 
-	processor, err := ingestion.New(store, rule, targets)
+	processor, err := ingestion.New(store, []detection.Rule{rule}, targets, bans.Policy{})
 	require.NoError(t, err)
 
 	return store, processor
@@ -45,7 +57,7 @@ func processDecision(
 	event events.Envelope,
 	now time.Time,
 ) (*model.Decision, error) {
-	result, err := processor.Process(ctx, event, now)
+	result, err := processor.Process(ctx, event, func() time.Time { return now })
 	return result.Decision, err
 }
 
@@ -54,10 +66,13 @@ func failed(id string) events.Envelope {
 	return events.Envelope{
 		ID:        id,
 		Source:    events.SourceKeycloak,
-		Kind:      events.KindLoginError,
+		Kind:      events.KindUser,
 		Version:   events.SchemaVersion,
 		Timestamp: time.Date(2026, time.November, 5, 15, 0, 0, 0, time.UTC),
-		IP:        "203.0.113.1",
+		User: &events.UserEvent{
+			Type: events.TypeLoginError,
+			IP:   "203.0.113.1",
+		},
 	}
 }
 
@@ -88,20 +103,20 @@ func TestOpen(t *testing.T) {
 		require.NotNil(t, a)
 		assert.Equal(t, "a", a.Destination)
 		assert.Zero(t, a.PreviousDelay)
-		require.NoError(t, store.Finish(ctx, *a, errors.New("provider failure"), actions.DefaultMaxAttempts, now, actions.DefaultRetryPolicy().NextDelay(a.PreviousDelay)))
+		require.NoError(t, store.Finish(ctx, *a, errors.New("provider failure"), retry.DefaultMaxAttempts, now, retry.DefaultRetryPolicy().NextDelay(a.PreviousDelay)))
 		b, err := store.Next(ctx, now)
 
 		require.NoError(t, err)
 		require.NotNil(t, b)
 		assert.Equal(t, "b", b.Destination)
-		require.NoError(t, store.Finish(ctx, *b, nil, actions.DefaultMaxAttempts, now, 0))
-		retry, err := store.Next(ctx, now.Add(11*time.Second))
+		require.NoError(t, store.Finish(ctx, *b, nil, retry.DefaultMaxAttempts, now, 0))
+		retryJob, err := store.Next(ctx, now.Add(11*time.Second))
 
 		require.NoError(t, err)
-		require.NotNil(t, retry)
-		assert.Equal(t, a.Decision, retry.Decision)
-		assert.Equal(t, a.Destination, retry.Destination)
-		assert.Equal(t, actions.DefaultInitialRetryDelay, retry.PreviousDelay)
+		require.NotNil(t, retryJob)
+		assert.Equal(t, a.Decision, retryJob.Decision)
+		assert.Equal(t, a.Destination, retryJob.Destination)
+		assert.Equal(t, retry.DefaultInitialRetryDelay, retryJob.PreviousDelay)
 
 		later := now.Add(time.Second)
 		extended, err := processDecision(processor, ctx, failed("three"), later)
@@ -110,7 +125,7 @@ func TestOpen(t *testing.T) {
 		require.NotNil(t, extended)
 		assert.Equal(t, decision.ID, extended.ID)
 		assert.Equal(t, int64(2), extended.Revision)
-		require.NoError(t, store.Finish(ctx, *a, nil, actions.DefaultMaxAttempts, later, 0))
+		require.NoError(t, store.Finish(ctx, *a, nil, retry.DefaultMaxAttempts, later, 0))
 		pending, err := store.Next(ctx, later)
 
 		require.NoError(t, err)
@@ -141,7 +156,7 @@ func TestOpen(t *testing.T) {
 		require.NotNil(t, firstRelease)
 		assert.Equal(t, model.DecisionUnbanned, firstRelease.Decision.State)
 		assert.Equal(t, int64(3), firstRelease.Decision.Revision)
-		require.NoError(t, store.Finish(ctx, *firstRelease, nil, actions.DefaultMaxAttempts, now, 0))
+		require.NoError(t, store.Finish(ctx, *firstRelease, nil, retry.DefaultMaxAttempts, now, 0))
 
 		secondRelease, err := store.Next(ctx, now)
 
@@ -150,7 +165,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, model.DecisionUnbanned, secondRelease.Decision.State)
 		assert.Equal(t, int64(3), secondRelease.Decision.Revision)
 		assert.ElementsMatch(t, []string{"a", "b"}, []string{firstRelease.Destination, secondRelease.Destination})
-		require.NoError(t, store.Finish(ctx, *secondRelease, nil, actions.DefaultMaxAttempts, now, 0))
+		require.NoError(t, store.Finish(ctx, *secondRelease, nil, retry.DefaultMaxAttempts, now, 0))
 
 		noMoreWork, err := store.Next(ctx, now)
 
@@ -188,9 +203,9 @@ func TestAdditionalFailureDoesNotReviseUnchangedBan(t *testing.T) {
 	job, err := store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, now, 0))
+	require.NoError(t, store.Finish(ctx, *job, nil, retry.DefaultMaxAttempts, now, 0))
 
-	latest, err := processor.Process(ctx, failed("third"), now)
+	latest, err := processor.Process(ctx, failed("third"), func() time.Time { return now })
 	require.NoError(t, err)
 	assert.Equal(t, ingestion.OutcomeUnchanged, latest.Outcome)
 	assert.Nil(t, latest.Decision, "an extra observation must not be reported as a new decision")
@@ -221,7 +236,7 @@ func TestStoreClosedErrors(t *testing.T) {
 	require.NoError(t, store.Close())
 
 	assert.Error(t, store.Ping(t.Context()))
-	assert.Error(t, store.Prune(t.Context(), time.Now()))
+	assert.Error(t, store.Prune(t.Context(), time.Now(), time.Now()))
 	_, err := store.Next(t.Context(), time.Now())
 	assert.Error(t, err)
 	_, err = store.NextDeadline(t.Context())

@@ -6,21 +6,32 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Next loads the oldest pending target using its latest desired decision revision.
-func (s *Store) Next(ctx context.Context, now time.Time) (*actions.Job, error) {
-	var job actions.Job
+func (s *Store) Next(ctx context.Context, now time.Time) (*enforcement.Job, error) {
+	var job enforcement.Job
 	var expires int64
 	var previousDelayMillis int64
 	decision := &job.Decision
-	err := s.db.QueryRowContext(ctx, `
-SELECT d.id, d.revision, d.ip, d.state, d.expires, q.destination, COALESCE(b.delay_ms, 0)
+	err := s.db.QueryRowContext(
+		ctx,
+		`
+SELECT
+    d.id,
+    d.revision,
+    d.ip,
+    d.state,
+    d.expires,
+    q.destination,
+    COALESCE(b.delay_ms, 0)
 FROM deliveries AS q
 JOIN decisions AS d USING (ip)
-JOIN delivery_history AS h ON h.ip = q.ip AND h.destination = q.destination AND h.revision = d.revision
+JOIN delivery_history AS h ON h.ip = q.ip
+    AND h.destination = q.destination
+    AND h.revision = d.revision
 LEFT JOIN destination_backoff AS b ON b.destination = q.destination
 WHERE q.acknowledged < d.revision
     AND h.status IN ('pending', 'retrying')
@@ -29,7 +40,12 @@ WHERE q.acknowledged < d.revision
     AND (d.state = ? OR d.expires > ?)
 ORDER BY q.retry_at, d.expires, q.destination
 LIMIT 1
-`, now.UnixMilli(), now.UnixMilli(), model.DecisionUnbanned, now.UnixMilli()).Scan(
+`,
+		now.UnixMilli(),
+		now.UnixMilli(),
+		model.DecisionUnbanned,
+		now.UnixMilli(),
+	).Scan(
 		&decision.ID,
 		&decision.Revision,
 		&decision.IP,
@@ -51,9 +67,9 @@ LIMIT 1
 }
 
 // Finish atomically records an attempt and acknowledges or retries within the supplied limit.
-func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, limit int, now time.Time, retryDelay time.Duration) error {
-	if limit < 1 {
-		return errors.New("max-attempts must be at least 1")
+func (s *Store) Finish(ctx context.Context, job enforcement.Job, deliveryErr error, limit enforcement.AttemptLimit, now time.Time, retryDelay time.Duration) error {
+	if err := limit.Validate(); err != nil {
+		return err
 	}
 	if deliveryErr != nil && retryDelay <= 0 {
 		return errors.New("retry delay must be positive")
@@ -98,12 +114,21 @@ func (s *Store) Finish(ctx context.Context, job actions.Job, deliveryErr error, 
 }
 
 // acknowledgeDelivery marks the delivered revision and resets its destination's backoff.
-func acknowledgeDelivery(ctx context.Context, tx *sql.Tx, job actions.Job) error {
-	if _, err := tx.ExecContext(ctx, `
+func acknowledgeDelivery(ctx context.Context, tx *sql.Tx, job enforcement.Job) error {
+	if _, err := tx.ExecContext(
+		ctx,
+		`
 UPDATE deliveries
-SET acknowledged = MAX(acknowledged, ?), retry_at = 0
-WHERE ip = ? AND destination = ?
-`, job.Decision.Revision, job.Decision.IP, job.Destination); err != nil {
+SET
+    acknowledged = MAX(acknowledged, ?),
+    retry_at = 0
+WHERE ip = ?
+    AND destination = ?
+`,
+		job.Decision.Revision,
+		job.Decision.IP,
+		job.Destination,
+	); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, "DELETE FROM destination_backoff WHERE destination = ?", job.Destination)
@@ -111,13 +136,22 @@ WHERE ip = ? AND destination = ?
 }
 
 // scheduleRetry persists the pause calculated by the application and delays this job.
-func scheduleRetry(ctx context.Context, tx *sql.Tx, job actions.Job, now time.Time, delay time.Duration) error {
+func scheduleRetry(ctx context.Context, tx *sql.Tx, job enforcement.Job, now time.Time, delay time.Duration) error {
 	retryAt := now.Add(delay).UnixMilli()
 
-	if _, err := tx.ExecContext(ctx, `
-INSERT INTO destination_backoff (destination, delay_ms, retry_at) VALUES (?, ?, ?)
-ON CONFLICT (destination) DO UPDATE SET delay_ms = excluded.delay_ms, retry_at = excluded.retry_at
-`, job.Destination, delay.Milliseconds(), retryAt); err != nil {
+	if _, err := tx.ExecContext(
+		ctx,
+		`
+INSERT INTO destination_backoff (destination, delay_ms, retry_at)
+VALUES (?, ?, ?)
+ON CONFLICT (destination) DO UPDATE SET
+    delay_ms = excluded.delay_ms,
+    retry_at = excluded.retry_at
+`,
+		job.Destination,
+		delay.Milliseconds(),
+		retryAt,
+	); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, "UPDATE deliveries SET retry_at = ? WHERE ip = ? AND destination = ?", retryAt, job.Decision.IP, job.Destination)
@@ -138,11 +172,14 @@ FROM (
     SELECT MIN(MAX(q.retry_at, COALESCE(b.retry_at, 0))) AS deadline
     FROM deliveries AS q
     JOIN decisions AS d USING (ip)
-    JOIN delivery_history AS h ON h.ip = q.ip AND h.destination = q.destination AND h.revision = d.revision
+    JOIN delivery_history AS h ON h.ip = q.ip
+        AND h.destination = q.destination
+        AND h.revision = d.revision
     LEFT JOIN destination_backoff AS b ON b.destination = q.destination
     WHERE q.acknowledged < d.revision
         AND h.status IN ('pending', 'retrying')
-)`).Scan(&due)
+)
+`).Scan(&due)
 	if err != nil || !due.Valid {
 		return time.Time{}, err
 	}

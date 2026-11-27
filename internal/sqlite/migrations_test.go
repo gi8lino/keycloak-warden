@@ -79,7 +79,8 @@ func TestMigrate(t *testing.T) {
 		var exists bool
 		err := db.QueryRowContext(t.Context(), `
 SELECT EXISTS (
-    SELECT 1 FROM pragma_table_info('decisions')
+    SELECT 1
+    FROM pragma_table_info('decisions')
     WHERE name = 'failure_generation'
 )
 `).Scan(&exists)
@@ -94,19 +95,26 @@ SELECT EXISTS (
 		db := openMigratedDatabase(t)
 		var count int
 		err := db.QueryRowContext(t.Context(), `
-SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'failures'
+SELECT COUNT(*)
+FROM pragma_table_info('decisions')
+WHERE name = 'failures'
 `).Scan(&count)
 		require.NoError(t, err)
 		assert.Zero(t, count)
 
 		err = db.QueryRowContext(t.Context(), `
-SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'failure_generation'
+SELECT COUNT(*)
+FROM pragma_table_info('decisions')
+WHERE name = 'failure_generation'
 `).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
 
 		err = db.QueryRowContext(t.Context(), `
-SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'failures'
+SELECT COUNT(*)
+FROM sqlite_master
+WHERE type = 'table'
+    AND name = 'event_observations'
 `).Scan(&count)
 		require.NoError(t, err)
 		assert.Equal(t, 1, count)
@@ -118,7 +126,9 @@ SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'failures'
 		db := openMigratedDatabase(t)
 		var columnType, defaultValue string
 		err := db.QueryRowContext(t.Context(), `
-SELECT type, dflt_value FROM pragma_table_info('decisions') WHERE name = 'state'
+SELECT type, dflt_value
+FROM pragma_table_info('decisions')
+WHERE name = 'state'
 `).Scan(&columnType, &defaultValue)
 
 		require.NoError(t, err)
@@ -127,7 +137,9 @@ SELECT type, dflt_value FROM pragma_table_info('decisions') WHERE name = 'state'
 
 		var oldColumnCount int
 		err = db.QueryRowContext(t.Context(), `
-SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'active'
+SELECT COUNT(*)
+FROM pragma_table_info('decisions')
+WHERE name = 'active'
 `).Scan(&oldColumnCount)
 
 		require.NoError(t, err)
@@ -139,8 +151,20 @@ SELECT COUNT(*) FROM pragma_table_info('decisions') WHERE name = 'active'
 
 		db := openMigratedDatabase(t)
 		_, err := db.ExecContext(t.Context(), `
-INSERT INTO decisions (ip, id, revision, state, expires)
-VALUES ('192.0.2.80', 'invalid-state', 0, 'invalid', 0)
+INSERT INTO decisions (
+    ip,
+    id,
+    revision,
+    state,
+    expires
+)
+VALUES (
+    '192.0.2.80',
+    'invalid-state',
+    0,
+    'invalid',
+    0
+)
 `)
 
 		require.ErrorContains(t, err, "CHECK constraint failed")
@@ -151,14 +175,26 @@ VALUES ('192.0.2.80', 'invalid-state', 0, 'invalid', 0)
 
 		db := openMigratedDatabase(t)
 		_, err := db.ExecContext(t.Context(), `
-INSERT INTO decisions (ip, id, revision, expires)
-VALUES ('192.0.2.81', 'default-state', 0, 0)
+INSERT INTO decisions (
+    ip,
+    id,
+    revision,
+    expires
+)
+VALUES (
+    '192.0.2.81',
+    'default-state',
+    0,
+    0
+)
 `)
 		require.NoError(t, err)
 
 		var state string
 		err = db.QueryRowContext(t.Context(), `
-SELECT state FROM decisions WHERE ip = '192.0.2.81'
+SELECT state
+FROM decisions
+WHERE ip = '192.0.2.81'
 `).Scan(&state)
 
 		require.NoError(t, err)
@@ -170,7 +206,9 @@ SELECT state FROM decisions WHERE ip = '192.0.2.81'
 
 		db := openMigratedDatabase(t)
 		rows, err := db.QueryContext(t.Context(), `
-SELECT name FROM pragma_index_info('expiry') ORDER BY seqno
+SELECT name
+FROM pragma_index_info('expiry')
+ORDER BY seqno
 `)
 		require.NoError(t, err)
 		defer rows.Close() //nolint:errcheck
@@ -193,8 +231,10 @@ SELECT name FROM pragma_index_info('expiry') ORDER BY seqno
 		var exists bool
 		err := db.QueryRowContext(t.Context(), `
 SELECT EXISTS (
-    SELECT 1 FROM sqlite_master
-    WHERE type = 'table' AND name = 'ban_sources'
+    SELECT 1
+    FROM sqlite_master
+    WHERE type = 'table'
+        AND name = 'ban_sources'
 )
 `).Scan(&exists)
 
@@ -228,7 +268,8 @@ func openMigratedDatabase(t *testing.T) *sql.DB {
 func migrationHistory(t *testing.T, db *sql.DB) map[int]int64 {
 	t.Helper()
 	rows, err := db.QueryContext(t.Context(), `
-SELECT version, applied_at FROM schema_migrations
+SELECT version, applied_at
+FROM schema_migrations
 `)
 
 	require.NoError(t, err)
@@ -269,8 +310,17 @@ func TestMigrateRejectsNewerDatabase(t *testing.T) {
 
 func TestUpgradeVersionSixLayouts(t *testing.T) {
 	t.Parallel()
-	t.Run("integer active flag", func(t *testing.T) { t.Parallel(); verifyVersionSixUpgrade(t, false) })
-	t.Run("text decision state", func(t *testing.T) { t.Parallel(); verifyVersionSixUpgrade(t, true) })
+	t.Run("integer active flag", func(t *testing.T) {
+		t.Parallel()
+
+		verifyVersionSixUpgrade(t, false)
+	})
+
+	t.Run("text decision state", func(t *testing.T) {
+		t.Parallel()
+
+		verifyVersionSixUpgrade(t, true)
+	})
 }
 
 // verifyVersionSixUpgrade opens a populated historical layout through the normal migration path.
@@ -291,13 +341,20 @@ func verifyVersionSixUpgrade(t *testing.T, textState bool) {
 	_, err = db.Exec(schema)
 	require.NoError(t, err)
 	_, err = db.Exec(`
- CREATE TABLE schema_migrations(version INTEGER PRIMARY KEY,applied_at INTEGER NOT NULL);
- INSERT INTO schema_migrations VALUES(6,0);
- INSERT INTO decisions VALUES('ip','ban',2,` + banned + `,100,5),('ip2','release',3,` + released + `,0,2);
- INSERT INTO ban_sources VALUES('ip','manual',100,'reason');
- INSERT INTO deliveries VALUES('ip','edge',1,123);
- INSERT INTO delivery_history VALUES('ip',2,'edge','banned','retrying',NULL,NULL);
- INSERT INTO delivery_attempts VALUES('ip',2,'edge',1,111,'timeout');`)
+CREATE TABLE schema_migrations (
+    version INTEGER PRIMARY KEY,
+    applied_at INTEGER NOT NULL
+);
+INSERT INTO schema_migrations VALUES (6, 0);
+INSERT INTO decisions
+VALUES
+    ('ip', 'ban', 2, ` + banned + `, 100, 5),
+    ('ip2', 'release', 3, ` + released + `, 0, 2);
+INSERT INTO ban_sources VALUES ('ip', 'manual', 100, 'reason');
+INSERT INTO deliveries VALUES ('ip', 'edge', 1, 123);
+INSERT INTO delivery_history VALUES ('ip', 2, 'edge', 'banned', 'retrying', NULL, NULL);
+INSERT INTO delivery_attempts VALUES ('ip', 2, 'edge', 1, 111, 'timeout');
+`)
 	require.NoError(t, err)
 	require.NoError(t, db.Close())
 	migrateTestDatabase(t, path)
@@ -305,12 +362,25 @@ func verifyVersionSixUpgrade(t *testing.T, textState bool) {
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, db.Close()) })
 	var count int
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM decisions WHERE (id='ban' AND state='banned' AND failure_generation=5) OR (id='release' AND state='unbanned')`).Scan(&count))
+	require.NoError(t, db.QueryRow(`
+SELECT COUNT(*)
+FROM decisions
+WHERE (id = 'ban' AND state = 'banned' AND failure_generation = 5)
+    OR (id = 'release' AND state = 'unbanned')
+`).Scan(&count))
 	assert.Equal(t, 2, count)
-	require.NoError(t, db.QueryRow(`SELECT COUNT(*) FROM delivery_attempts JOIN deliveries USING(ip,destination) JOIN ban_sources USING(ip) WHERE error='timeout' AND retry_at=123 AND reason='reason'`).Scan(&count))
+	require.NoError(t, db.QueryRow(`
+SELECT COUNT(*)
+FROM delivery_attempts
+JOIN deliveries USING (ip, destination)
+JOIN ban_sources USING (ip)
+WHERE error = 'timeout'
+    AND retry_at = 123
+    AND reason = 'reason'
+`).Scan(&count))
 	assert.Equal(t, 1, count)
 	require.NoError(t, db.QueryRow("SELECT COUNT(*) FROM pragma_foreign_key_check").Scan(&count))
 	assert.Zero(t, count)
-	_, err = db.Exec("UPDATE delivery_history SET status='invalid'")
+	_, err = db.Exec("UPDATE delivery_history SET status = 'invalid'")
 	require.ErrorContains(t, err, "CHECK")
 }

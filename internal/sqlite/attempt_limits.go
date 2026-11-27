@@ -3,9 +3,8 @@ package sqlite
 import (
 	"context"
 	"database/sql"
-	"errors"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -21,9 +20,9 @@ type attemptStatusUpdate struct {
 
 // ReconcileAttemptLimit re-evaluates unfinished current revisions during startup.
 // The application policy determines each status; SQLite applies them atomically.
-func (s *Store) ReconcileAttemptLimit(ctx context.Context, name string, limit int) error {
-	if limit < 1 {
-		return errors.New("max-attempts must be at least 1")
+func (s *Store) ReconcileAttemptLimit(ctx context.Context, name string, limit enforcement.AttemptLimit) error {
+	if err := limit.Validate(); err != nil {
+		return err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -32,19 +31,44 @@ func (s *Store) ReconcileAttemptLimit(ctx context.Context, name string, limit in
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	rows, err := tx.QueryContext(ctx, `
-SELECT h.ip, h.revision, COALESCE(MAX(a.number), 0) - COALESCE((
-    SELECT r.previous_attempts FROM delivery_retries AS r
-    WHERE r.ip = h.ip AND r.revision = h.revision AND r.destination = h.destination
-    ORDER BY r.id DESC LIMIT 1
-), 0)
+	if err := reconcileAttemptLimit(ctx, tx, name, limit); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// reconcileAttemptLimit updates one destination using an existing startup transaction.
+func reconcileAttemptLimit(ctx context.Context, tx *sql.Tx, name string, limit enforcement.AttemptLimit) error {
+	if err := limit.Validate(); err != nil {
+		return err
+	}
+	rows, err := tx.QueryContext(
+		ctx,
+		`
+SELECT
+    h.ip,
+    h.revision,
+    COALESCE(MAX(a.number), 0) - COALESCE((
+        SELECT r.previous_attempts
+        FROM delivery_retries AS r
+        WHERE r.ip = h.ip
+            AND r.revision = h.revision
+            AND r.destination = h.destination
+        ORDER BY r.id DESC
+        LIMIT 1
+    ), 0)
 FROM delivery_history AS h
-LEFT JOIN delivery_attempts AS a
-    ON a.ip = h.ip AND a.revision = h.revision AND a.destination = h.destination
-JOIN decisions AS d ON d.ip = h.ip AND d.revision = h.revision
-WHERE h.destination = ? AND h.status IN ('retrying', 'exhausted')
+LEFT JOIN delivery_attempts AS a ON a.ip = h.ip
+    AND a.revision = h.revision
+    AND a.destination = h.destination
+JOIN decisions AS d ON d.ip = h.ip
+    AND d.revision = h.revision
+WHERE h.destination = ?
+    AND h.status IN ('retrying', 'exhausted')
 GROUP BY h.ip, h.revision
-`, name)
+`,
+		name,
+	)
 	if err != nil {
 		return err
 	}
@@ -60,7 +84,7 @@ GROUP BY h.ip, h.revision
 		updates = append(updates, attemptStatusUpdate{
 			ip:       ip,
 			revision: revision,
-			status:   actions.StatusAfterFailure(completed, limit),
+			status:   limit.AfterFailure(completed),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -72,35 +96,71 @@ GROUP BY h.ip, h.revision
 	}
 
 	for _, update := range updates {
-		if _, err := tx.ExecContext(ctx, `
+		if _, err := tx.ExecContext(
+			ctx,
+			`
 UPDATE delivery_history
 SET status = ?
-WHERE ip = ? AND revision = ? AND destination = ?
-`, update.status, update.ip, update.revision, name); err != nil {
+WHERE ip = ?
+    AND revision = ?
+    AND destination = ?
+`,
+			update.status,
+			update.ip,
+			update.revision,
+			name,
+		); err != nil {
 			return err
 		}
 	}
-	return tx.Commit()
+	return nil
 }
 
 // applyAttemptLimit atomically persists the retry status chosen by the application policy.
-func applyAttemptLimit(ctx context.Context, tx *sql.Tx, name string, limit int, ip string, revision int64) error {
+func applyAttemptLimit(ctx context.Context, tx *sql.Tx, name string, limit enforcement.AttemptLimit, ip string, revision int64) error {
 	var completed int64
-	if err := tx.QueryRowContext(ctx, `
+	if err := tx.QueryRowContext(
+		ctx,
+		`
 SELECT COALESCE(MAX(number), 0) - COALESCE((
-    SELECT previous_attempts FROM delivery_retries
-    WHERE ip = ? AND revision = ? AND destination = ?
-    ORDER BY id DESC LIMIT 1
+    SELECT previous_attempts
+    FROM delivery_retries
+    WHERE ip = ?
+        AND revision = ?
+        AND destination = ?
+    ORDER BY id DESC
+    LIMIT 1
 ), 0)
 FROM delivery_attempts
-WHERE ip = ? AND revision = ? AND destination = ?
-`, ip, revision, name, ip, revision, name).Scan(&completed); err != nil {
+WHERE ip = ?
+    AND revision = ?
+    AND destination = ?
+`,
+		ip,
+		revision,
+		name,
+		ip,
+		revision,
+		name,
+	).Scan(&completed); err != nil {
 		return err
 	}
 
-	_, err := tx.ExecContext(ctx, `
-UPDATE delivery_history SET status = ?
-WHERE ip = ? AND revision = ? AND destination = ? AND status = ?
-`, actions.StatusAfterFailure(completed, limit), ip, revision, name, model.DeliveryRetrying)
+	_, err := tx.ExecContext(
+		ctx,
+		`
+UPDATE delivery_history
+SET status = ?
+WHERE ip = ?
+    AND revision = ?
+    AND destination = ?
+    AND status = ?
+`,
+		limit.AfterFailure(completed),
+		ip,
+		revision,
+		name,
+		model.DeliveryRetrying,
+	)
 	return err
 }

@@ -50,12 +50,23 @@ func readActiveBans(
 	tx *sql.Tx,
 	now time.Time,
 ) (list []model.Record, byIP map[string]int, err error) {
-	rows, err := tx.QueryContext(ctx, `
-SELECT id, revision, ip, state, expires
+	rows, err := tx.QueryContext(
+		ctx,
+		`
+SELECT
+    id,
+    revision,
+    ip,
+    state,
+    expires
 FROM decisions
-WHERE state = ? AND expires > ?
+WHERE state = ?
+    AND expires > ?
 ORDER BY ip
-`, model.DecisionBanned, now.UnixMilli())
+`,
+		model.DecisionBanned,
+		now.UnixMilli(),
+	)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -69,8 +80,11 @@ ORDER BY ip
 		}
 		var expires int64
 		if err := rows.Scan(
-			&record.Decision.ID, &record.Decision.Revision, &record.Decision.IP,
-			&record.Decision.State, &expires,
+			&record.Decision.ID,
+			&record.Decision.Revision,
+			&record.Decision.IP,
+			&record.Decision.State,
+			&expires,
 		); err != nil {
 			_ = rows.Close()
 			return nil, nil, err
@@ -97,13 +111,25 @@ func appendActiveSources(
 	byIP map[string]int,
 	now time.Time,
 ) error {
-	rows, err := tx.QueryContext(ctx, `
-SELECT s.ip, s.kind, s.expires, s.reason
+	rows, err := tx.QueryContext(
+		ctx,
+		`
+SELECT
+    s.ip,
+    s.kind,
+    s.expires,
+    s.reason
 FROM ban_sources AS s
 JOIN decisions AS d ON d.ip = s.ip
-WHERE d.state = ? AND d.expires > ? AND s.expires > ?
+WHERE d.state = ?
+    AND d.expires > ?
+    AND s.expires > ?
 ORDER BY s.ip, s.kind
-`, model.DecisionBanned, now.UnixMilli(), now.UnixMilli())
+`,
+		model.DecisionBanned,
+		now.UnixMilli(),
+		now.UnixMilli(),
+	)
 	if err != nil {
 		return err
 	}
@@ -134,13 +160,19 @@ func appendActiveDeliveries(
 	byIP map[string]int,
 	now time.Time,
 ) error {
-	rows, err := tx.QueryContext(ctx, `
+	rows, err := tx.QueryContext(
+		ctx,
+		`
 SELECT q.ip, q.destination, q.acknowledged
 FROM deliveries AS q
 JOIN decisions AS d ON d.ip = q.ip
-WHERE d.state = ? AND d.expires > ?
+WHERE d.state = ?
+    AND d.expires > ?
 ORDER BY q.ip, q.destination
-`, model.DecisionBanned, now.UnixMilli())
+`,
+		model.DecisionBanned,
+		now.UnixMilli(),
+	)
 	if err != nil {
 		return err
 	}

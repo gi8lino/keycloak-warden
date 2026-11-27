@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/enforcement"
+	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
@@ -27,18 +29,32 @@ func TestBanAdmission(t *testing.T) {
 		protection, err := bans.NewProtection([]string{"203.0.113.0/24"})
 		require.NoError(t, err)
 		policy := bans.Policy{Protection: protection}
-		processor, err := ingestion.NewWithPolicy(store, ingestion.Rule{Threshold: 1, Window: time.Minute, Ban: time.Hour}, []string{"edge"}, policy)
+		processor, err := ingestion.New(store, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 1,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: time.Hour,
+			},
+		}}, []string{"edge"}, policy)
 		require.NoError(t, err)
 		now := time.Now().UTC()
 		event := failed("protected")
-		event.IP = "::ffff:203.0.113.1"
-		result, err := processor.Process(ctx, event, now)
+		event.User.IP = "::ffff:203.0.113.1"
+		result, err := processor.Process(ctx, event, func() time.Time { return now })
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.OutcomeProtected, result.Outcome)
 		assert.Nil(t, result.Decision)
-		admin, err := bans.NewAdminServiceWithPolicy(store, []string{"edge"}, policy)
+		admin, err := bans.NewAdminService(store, []string{"edge"}, policy)
 		require.NoError(t, err)
-		_, err = admin.BanManual(ctx, bans.ManualBanRequest{IP: event.IP, Duration: time.Hour, Reason: "test"}, now)
+		_, err = admin.BanManual(ctx, bans.ManualBanRequest{IP: event.User.IP, Duration: time.Hour, Reason: "test"}, now)
 		require.ErrorIs(t, err, bans.ErrProtected)
 		active, err := store.ListActive(ctx, now)
 		require.NoError(t, err)
@@ -54,28 +70,45 @@ func TestBanAdmission(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "observed.db"))
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		policy := bans.Policy{ObserveOnly: true}
-		processor, err := ingestion.NewWithPolicy(store, ingestion.Rule{Threshold: 2, Window: time.Minute, Ban: time.Hour}, nil, policy)
+		processor, err := ingestion.New(store, []detection.Rule{{
+			Name: "brute-force",
+			Selector: detection.Selector{
+				Kind:   events.KindUser,
+				Events: []string{events.TypeLoginError},
+			},
+			Aggregation: detection.Aggregation{
+				GroupBy:   detection.GroupIP,
+				Threshold: 2,
+				Window:    time.Minute,
+			},
+			Actions: detection.Actions{
+				Ban: time.Hour,
+			},
+		}}, nil, policy)
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		result, err := processor.Process(ctx, failed("one"), now)
+		result, err := processor.Process(ctx, failed("one"), func() time.Time { return now })
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.OutcomeBelowThreshold, result.Outcome)
-		result, err = processor.Process(ctx, failed("two"), now)
+		result, err = processor.Process(ctx, failed("two"), func() time.Time { return now })
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.OutcomeObserved, result.Outcome)
 		assert.Nil(t, result.Decision)
-		result, err = processor.Process(ctx, failed("two"), now)
+		result, err = processor.Process(ctx, failed("two"), func() time.Time { return now })
 		require.NoError(t, err)
 		assert.Equal(t, ingestion.OutcomeDuplicate, result.Outcome)
-		service, err := overview.NewOperations(store)
+		service, err := overview.NewService(store)
 		require.NoError(t, err)
-		observations, err := service.Observations(ctx, 1)
+		incidents, err := service.Incidents(ctx, overview.IncidentQuery{})
 		require.NoError(t, err)
-		require.Len(t, observations.Items, 1)
-		assert.Equal(t, "two", observations.Items[0].EventID)
-		assert.Equal(t, now.Add(time.Hour), observations.Items[0].ExpiresAt)
-		assert.Equal(t, 2, observations.Items[0].Failures)
-		admin, err := bans.NewAdminServiceWithPolicy(store, nil, policy)
+		require.Len(t, incidents.Items, 1)
+		assert.Equal(t, "two", incidents.Items[0].EventID)
+		assert.True(t, incidents.Items[0].ObserveOnly)
+		require.NotNil(t, incidents.Items[0].BanUntil)
+		assert.Equal(t, now.Add(time.Hour), *incidents.Items[0].BanUntil)
+		assert.Equal(t, 2, incidents.Items[0].Count)
+		assert.Equal(t, 2, incidents.Items[0].Threshold)
+		admin, err := bans.NewAdminService(store, nil, policy)
 		require.NoError(t, err)
 		_, err = admin.BanManual(ctx, bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour, Reason: "test"}, now)
 		require.ErrorIs(t, err, bans.ErrObserveOnly)
@@ -85,10 +118,10 @@ func TestBanAdmission(t *testing.T) {
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		assert.Nil(t, job)
-		require.NoError(t, store.Prune(ctx, now))
-		observations, err = service.Observations(ctx, 1)
+		require.NoError(t, store.Prune(ctx, now, now))
+		incidents, err = service.Incidents(ctx, overview.IncidentQuery{})
 		require.NoError(t, err)
-		assert.Empty(t, observations.Items)
+		assert.Empty(t, incidents.Items)
 	})
 }
 
@@ -113,20 +146,20 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, store.Finish(ctx, *job, errors.New("bad credentials"), 1, now, 10*time.Second))
-		operations, err := overview.NewOperations(store)
+		operations, err := overview.NewService(store)
 		require.NoError(t, err)
 		health, err := operations.Health(ctx)
 		require.NoError(t, err)
 		require.Len(t, health, 1)
 		assert.EqualValues(t, 1, health[0].ExhaustedUnbans)
-		retry, err := actions.NewRetryService(store, []string{"edge"})
+		retry, err := enforcement.NewRetryService(store, []string{"edge"})
 		require.NoError(t, err)
 		request := model.RetryRequest{DecisionID: released.Decision.ID, Revision: released.Decision.Revision, Destination: "edge", Actor: "operator"}
 		stale := request
 		stale.Revision = record.Decision.Revision
-		require.ErrorIs(t, retry.Retry(ctx, stale, now), actions.ErrRetryConflict)
+		require.ErrorIs(t, retry.Retry(ctx, stale, now), enforcement.ErrRetryConflict)
 		require.NoError(t, retry.Retry(ctx, request, now.Add(time.Second)))
-		require.ErrorIs(t, retry.Retry(ctx, request, now.Add(time.Second)), actions.ErrRetryConflict)
+		require.ErrorIs(t, retry.Retry(ctx, request, now.Add(time.Second)), enforcement.ErrRetryConflict)
 		require.NoError(t, store.Close())
 
 		store, _ = openStore(t, path, "edge")
@@ -152,7 +185,7 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		assert.EqualValues(t, 1, current.DeliveryHistory[0].Attempts[0].Number)
 		assert.EqualValues(t, 3, current.DeliveryHistory[0].Attempts[2].Number)
 		assert.Equal(t, model.DeliveryDelivered, current.CurrentDeliveries[0].Status)
-		operations, err = overview.NewOperations(store)
+		operations, err = overview.NewService(store)
 		require.NoError(t, err)
 		timeline, err := operations.Timeline(ctx, released.Decision.ID, 1)
 		require.NoError(t, err)
@@ -177,8 +210,8 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 		require.NoError(t, store.Finish(ctx, *job, errors.New("failure"), 1, now, 10*time.Second))
-		service, err := actions.NewRetryService(store, []string{"edge"})
+		service, err := enforcement.NewRetryService(store, []string{"edge"})
 		require.NoError(t, err)
-		require.ErrorIs(t, service.Retry(ctx, model.RetryRequest{DecisionID: record.Decision.ID, Revision: record.Decision.Revision, Destination: "edge", Actor: "operator"}, now.Add(2*time.Second)), actions.ErrRetryConflict)
+		require.ErrorIs(t, service.Retry(ctx, model.RetryRequest{DecisionID: record.Decision.ID, Revision: record.Decision.Revision, Destination: "edge", Actor: "operator"}, now.Add(2*time.Second)), enforcement.ErrRetryConflict)
 	})
 }

@@ -21,7 +21,7 @@ const (
 	MinInterval = 5 * time.Minute
 	// MaxInterval bounds operational intervals against accidental overflow.
 	MaxInterval = 365 * 24 * time.Hour
-	// MinObservationRetention preserves a full day of failed-login observations.
+	// MinObservationRetention preserves a full day of event observations.
 	MinObservationRetention = 24 * time.Hour
 	// retryInterval avoids rapid retries when SQLite maintenance encounters an error.
 	retryInterval = 5 * time.Second
@@ -80,10 +80,18 @@ func validMaintenanceInterval(interval time.Duration) bool {
 	return interval >= MinInterval && interval <= MaxInterval
 }
 
+// Retention separates detection data from incident history.
+type Retention struct {
+	// Observations controls the lifetime of counting data.
+	Observations time.Duration
+	// Incidents controls the lifetime of incident history.
+	Incidents time.Duration
+}
+
 // Store provides the independent SQLite maintenance operations.
 type Store interface {
 	// Prune deletes observations at or before the application-supplied cutoff.
-	Prune(context.Context, time.Time) error
+	Prune(context.Context, time.Time, time.Time) error
 	// Optimize refreshes SQLite's query-planner statistics.
 	Optimize(context.Context) error
 }
@@ -101,7 +109,7 @@ type Runner struct {
 	// schedule configures normal recurrence.
 	schedule Schedule
 	// retention determines how long detection observations remain available.
-	retention time.Duration
+	retention Retention
 	// logger records maintenance outcomes independently of HTTP access logging.
 	logger *slog.Logger
 	// executeMu prevents concurrent maintenance from overlapping.
@@ -119,7 +127,7 @@ func Start(
 	parent context.Context,
 	store Store,
 	schedule Schedule,
-	retention time.Duration,
+	retention Retention,
 	logger *slog.Logger,
 ) *Runner {
 	ctx, cancel := context.WithCancel(parent)
@@ -207,7 +215,7 @@ func (r *Runner) execute(ctx context.Context, operation Operation, trigger Trigg
 	var err error
 	switch operation {
 	case OperationPrune:
-		err = r.store.Prune(ctx, now.Add(-r.retention))
+		err = r.store.Prune(ctx, now.Add(-r.retention.Observations), now.Add(-r.retention.Incidents))
 	case OperationOptimize:
 		err = r.store.Optimize(ctx)
 	default:
