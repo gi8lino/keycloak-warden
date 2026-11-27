@@ -8,7 +8,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
 )
@@ -45,7 +44,7 @@ func TestPrune(t *testing.T) {
 
 	t.Run("long detection window controls retention", func(t *testing.T) {
 		t.Parallel()
-		rule := detection.Rule{Threshold: 3, Window: 48 * time.Hour, Ban: time.Minute}
+		rule := ingestion.Rule{Threshold: 3, Window: 48 * time.Hour, Ban: time.Minute}
 		store, err := sqlite.Open(filepath.Join(t.TempDir(), "state.db"))
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, store.Close()) })

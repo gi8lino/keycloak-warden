@@ -17,42 +17,21 @@ type transaction struct {
 	changed bool
 }
 
-// Keep the application-facing capabilities narrow even though SQLite uses one type.
 var (
-	// Verify that transaction implements the ingestion transaction contract.
-	_ ingestion.Transaction = (*transaction)(nil)
-	// Verify that transaction implements the ban mutation transaction contract.
+	_ ingestion.Transaction    = (*transaction)(nil)
 	_ bans.MutationTransaction = (*transaction)(nil)
 )
 
-// TransactObservation executes failure observation and detection as one atomic
-// SQLite transaction.
-//
-// The apply callback receives the transaction operations required by the
-// ingestion service. This allows the application to coordinate multiple
-// dependent operations without exposing SQLite details or managing the
-// transaction lifecycle itself.
-//
-// If apply returns an error, all changes are rolled back. Otherwise, the
-// transaction is committed. Committed decision changes notify the delivery
-// worker so it can process the updated state.
+// TransactObservation runs observation and detection in one transaction.
+// Callback errors roll back all changes; committed decision changes wake the worker.
 func (s *Store) TransactObservation(ctx context.Context, apply func(ingestion.Transaction) error) error {
 	return s.transact(ctx, func(tx *transaction) error {
 		return apply(tx)
 	})
 }
 
-// TransactDecision executes ban source and decision mutations as one atomic
-// SQLite transaction.
-//
-// The apply callback receives the transaction operations required by the
-// ban application services. This allows the application to orchestrate
-// workflows such as manual bans, releases, and expiry while keeping all
-// related persistence changes within the same transaction.
-//
-// If apply returns an error, all changes are rolled back. Otherwise, the
-// transaction is committed. Committed decision changes notify the delivery
-// worker so it can reconcile the updated state.
+// TransactDecision runs ban source and decision mutations in one transaction.
+// Callback errors roll back all changes; committed decision changes wake the worker.
 func (s *Store) TransactDecision(ctx context.Context, apply func(bans.MutationTransaction) error) error {
 	return s.transact(ctx, func(tx *transaction) error {
 		return apply(tx)

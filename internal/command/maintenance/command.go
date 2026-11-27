@@ -5,7 +5,6 @@ import (
 
 	"github.com/containeroo/tinyflags"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/adminopts"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 )
@@ -48,7 +47,7 @@ func registerOperation(
 			*adminFlags.AdminToken,
 			action,
 			encode,
-			adminopts.FromFlags(adminFlags)...,
+			adminFlags.ClientOptions()...,
 		)
 	})
 }

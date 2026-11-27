@@ -77,7 +77,7 @@ Slack incoming webhooks accept JSON objects containing `text`. The `examples/tem
 
 ### Webhook response validation (optional)
 
-By default, webhook destinations acknowledge **any HTTP 2xx** response without reading or matching its body. This is unchanged. A `response` section opts a single webhook into Notifykit's response rules. Warden parses the YAML, while [Notifykit's `response` package](https://github.com/containeroo/notifykit/tree/main/response) evaluates the HTTP status and response body.
+By default, webhook destinations acknowledge **any HTTP 2xx** response without reading its body. A `response` section opts a single webhook into Notifykit's response rules. Warden parses the YAML, while [Notifykit's `response` package](https://github.com/containeroo/notifykit/tree/main/response) evaluates the HTTP status and response body.
 
 For Slack's `chat.postMessage` API (Bot OAuth token), a successful HTTP 200 alone is insufficient: Slack may return `{"ok":false}`. Configure:
 
@@ -97,7 +97,7 @@ webhook:
         error-pointer: /error
 ```
 
-Place `webhook` under the existing `targets` mapping. Set `SLACK_AUTHORIZATION` to the complete `Bearer xoxb-...` header value, and set `SLACK_CHANNEL` to the destination channel ID. Incoming Slack webhooks continue working without response validation or an Authorization header.
+Place `webhook` under the existing `targets` mapping. Set `SLACK_AUTHORIZATION` to the complete `Bearer xoxb-...` header value, and set `SLACK_CHANNEL` to the destination channel ID. Incoming Slack webhooks do not require response validation or an Authorization header.
 
 A response such as `{"ok":false,"error":"channel_not_found"}` is rejected, and Warden logs the extracted `channel_not_found` error under its existing `delivery_failed` event. Only the configured error value is exposed; Notifykit sanitizes and truncates it. Other response fields are not logged.
 
@@ -126,7 +126,7 @@ Rules follow these conditions:
 - `text` and `json` are mutually exclusive. Text must specify exactly one of `equals` or `contains`.
 - `json.equals` is required when `json` is configured. JSON values retain their types: YAML `true`, `"true"`, and `null` are different expectations. Missing pointer values and invalid JSON fail validation.
 - Invalid rules fail startup. Response bodies are read only for body matchers and are limited to **64 KiB**. Large bodies fail delivery rather than being partially matched.
-- Failed validation is retried by Warden's existing durable action worker, just like HTTP status failures. No new database or retry configuration is required.
+- Response validation failures follow the same retry policy as HTTP status failures.
 
 ## Secrets and value resolution
 
@@ -213,7 +213,7 @@ warden serve --observe-only
 WARDEN__OBSERVE_ONLY=true warden serve
 ```
 
-In Kubernetes, set `WARDEN__OBSERVE_ONLY` to `"true"` in the Warden container environment. The mode defaults to off; restart Warden with the flag omitted and the environment variable unset (or use `--observe-only=false`) to resume enforcement. Remove any previous `observe-only` YAML key: strict YAML loading rejects it.
+In Kubernetes, set `WARDEN__OBSERVE_ONLY` to `"true"` in the Warden container environment. The mode defaults to off; restart Warden with the flag omitted and the environment variable unset (or use `--observe-only=false`) to resume enforcement. `observe-only` is a runtime flag, not a YAML key.
 
 Observe-only mode allows Warden to evaluate the existing detection threshold without creating ban sources, enforcement decisions, or delivery jobs. Manual bans are rejected with HTTP 409. Targets may be omitted; configured target structures are still validated, but credentials are not resolved and providers are not constructed. Warden refuses to start in this mode if the database contains active bans or destination-owned work, including exhausted releases. Reconcile and release those first, or use an isolated database for rule tuning.
 

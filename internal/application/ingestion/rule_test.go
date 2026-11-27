@@ -1,4 +1,4 @@
-package detection
+package ingestion
 
 import (
 	"net/netip"

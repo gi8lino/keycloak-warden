@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
 
 func TestConfigValidate(t *testing.T) {
@@ -18,7 +18,7 @@ func TestConfigValidate(t *testing.T) {
 		t.Parallel()
 
 		cfg := Config{
-			Rule: detection.Rule{
+			Rule: ingestion.Rule{
 				Threshold: 5,
 				Window:    time.Minute,
 				Ban:       15 * time.Minute,
@@ -31,7 +31,7 @@ func TestConfigValidate(t *testing.T) {
 	t.Run("rejects a missing detection threshold", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := Config{Rule: detection.Rule{Window: time.Minute, Ban: 15 * time.Minute}}
+		cfg := Config{Rule: ingestion.Rule{Window: time.Minute, Ban: 15 * time.Minute}}
 		require.ErrorContains(t, cfg.Validate(), "threshold")
 	})
 
@@ -39,7 +39,7 @@ func TestConfigValidate(t *testing.T) {
 		t.Parallel()
 
 		cfg := Config{
-			Rule: detection.Rule{
+			Rule: ingestion.Rule{
 				Threshold: 5,
 				Window:    time.Minute,
 				Ban:       15 * time.Minute,
@@ -54,7 +54,7 @@ func TestConfigValidate(t *testing.T) {
 	t.Run("accepts valid detection rules without destinations", func(t *testing.T) {
 		t.Parallel()
 
-		cfg := Config{Rule: detection.Rule{
+		cfg := Config{Rule: ingestion.Rule{
 			Threshold: 5,
 			Window:    time.Minute,
 			Ban:       15 * time.Minute,

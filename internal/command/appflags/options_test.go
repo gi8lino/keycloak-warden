@@ -1,4 +1,4 @@
-package adminopts
+package appflags
 
 import (
 	"io"
@@ -10,11 +10,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
-func TestFromFlags(t *testing.T) {
+func TestClientOptions(t *testing.T) {
 	t.Parallel()
 
 	t.Run("passes configured response limits to HTTP client", func(t *testing.T) {
@@ -27,8 +26,8 @@ func TestFromFlags(t *testing.T) {
 		t.Cleanup(server.Close)
 
 		root := tinyflags.NewCommand("warden", tinyflags.ContinueOnError)
-		serverFlags := appflags.RegisterServer(root)
-		flags := appflags.RegisterAdmin(root.Command("list-active", "List bans"), serverFlags)
+		serverFlags := RegisterServer(root)
+		flags := RegisterAdmin(root.Command("list-active", "List bans"), serverFlags)
 
 		require.NoError(t, root.Parse([]string{
 			"list-active",
@@ -39,7 +38,7 @@ func TestFromFlags(t *testing.T) {
 			"--max-response-bytes=2",
 		}))
 
-		api, err := client.New(*flags.ApplicationURL, *flags.AdminToken, FromFlags(flags)...)
+		api, err := client.New(*flags.ApplicationURL, *flags.AdminToken, flags.ClientOptions()...)
 		require.NoError(t, err)
 
 		_, err = api.List(t.Context())

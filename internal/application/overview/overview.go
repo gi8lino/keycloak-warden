@@ -123,7 +123,7 @@ type Store interface {
 	ListDeliveries(context.Context, Query, deliverystate.Status, string) (DeliveryPage, error)
 }
 
-// Service validates cross-decision queries without coupling HTTP to SQLite.
+// Service validates and executes administrative queries.
 type Service struct {
 	// store is the read-only persistence capability used by these queries.
 	store Store

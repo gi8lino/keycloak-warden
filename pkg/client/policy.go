@@ -1,6 +1,4 @@
-// Package adminclient defines shared administrative HTTP client defaults and URL policy.
-// It has no dependency on the client implementation or CLI flag registration.
-package adminclient
+package client
 
 import (
 	"errors"
@@ -23,8 +21,7 @@ const (
 	DefaultMaintenanceTimeout = 35 * time.Second
 )
 
-// ValidateMaxResponseBytes checks that the response size allows a one-byte overflow sentinel.
-// The maximum signed 64-bit integer cannot be used because reading limit+1 would overflow.
+// ValidateMaxResponseBytes requires a positive limit with room for a one-byte overflow sentinel.
 func ValidateMaxResponseBytes(limit int) error {
 	if limit <= 0 || int64(limit) == math.MaxInt64 {
 		return errors.New("maximum response bytes must be positive and less than MaxInt64")
@@ -32,16 +29,8 @@ func ValidateMaxResponseBytes(limit int) error {
 	return nil
 }
 
-// ValidateURL checks an administrative API base URL and its optional route prefix.
-// allowInsecureHTTP explicitly permits plain HTTP to non-loopback hosts.
-func ValidateURL(address string, allowInsecureHTTP bool) error {
-	_, err := ParseApplicationURL(address, allowInsecureHTTP)
-	return err
-}
-
-// ParseApplicationURL validates and normalizes an administrative API base URL.
-// allowInsecureHTTP explicitly permits plain HTTP to non-loopback hosts.
-func ParseApplicationURL(address string, allowInsecureHTTP bool) (*url.URL, error) {
+// parseApplicationURL validates and normalizes an administrative API base URL.
+func parseApplicationURL(address string, allowInsecureHTTP bool) (*url.URL, error) {
 	parsed, err := url.Parse(address)
 	if err != nil {
 		return nil, fmt.Errorf("invalid application-url: %w", err)

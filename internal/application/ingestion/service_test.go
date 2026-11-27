@@ -12,7 +12,6 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
@@ -114,7 +113,7 @@ func TestNew(t *testing.T) {
 	t.Run("rejects missing repository", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ingestion.New(nil, detection.Rule{
+		_, err := ingestion.New(nil, ingestion.Rule{
 			Threshold: 1,
 			Window:    time.Minute,
 			Ban:       time.Minute,
@@ -126,7 +125,7 @@ func TestNew(t *testing.T) {
 	t.Run("rejects invalid rule", func(t *testing.T) {
 		t.Parallel()
 
-		_, err := ingestion.New(&fakeRepository{}, detection.Rule{}, nil)
+		_, err := ingestion.New(&fakeRepository{}, ingestion.Rule{}, nil)
 
 		require.ErrorContains(t, err, "threshold")
 	})
@@ -149,7 +148,7 @@ func processEvent(t *testing.T, event events.Envelope, count int, inserted bool)
 	t.Helper()
 	tx := &fakeTx{inserted: inserted, count: count}
 	repo := &fakeRepository{tx: tx}
-	service, err := ingestion.New(repo, detection.Rule{
+	service, err := ingestion.New(repo, ingestion.Rule{
 		Threshold: 5,
 		Window:    time.Minute,
 		Ban:       15 * time.Minute,
@@ -259,7 +258,7 @@ func assertProcessingOutcome(t *testing.T, kind, ip string, inserted bool, count
 		unchanged: unchanged,
 	}
 	repo := &fakeRepository{tx: tx}
-	service, err := ingestion.New(repo, detection.Rule{
+	service, err := ingestion.New(repo, ingestion.Rule{
 		Threshold: 5,
 		Window:    time.Minute,
 		Ban:       15 * time.Minute,
@@ -335,7 +334,7 @@ func TestServicePassesTargetsToStorage(t *testing.T) {
 		tx := &fakeTx{inserted: true, count: 1}
 		repo := &fakeRepository{tx: tx}
 		targets := []string{"cloudflare.edge", "webhook.slack"}
-		service, err := ingestion.New(repo, detection.Rule{
+		service, err := ingestion.New(repo, ingestion.Rule{
 			Threshold: 1,
 			Window:    time.Minute,
 			Ban:       15 * time.Minute,
@@ -358,7 +357,7 @@ func TestServiceProcessCommitFailure(t *testing.T) {
 
 		tx := &fakeTx{inserted: true, count: 5}
 		repository := &fakeRepository{tx: tx, commitErr: errors.New("commit failed")}
-		service, err := ingestion.New(repository, detection.Rule{
+		service, err := ingestion.New(repository, ingestion.Rule{
 			Threshold: 5,
 			Window:    time.Minute,
 			Ban:       time.Minute,
@@ -385,7 +384,7 @@ func TestProtectedEvents(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 1}}
-		service, err := ingestion.NewWithPolicy(repo, detection.Rule{
+		service, err := ingestion.NewWithPolicy(repo, ingestion.Rule{
 			Threshold: 5,
 			Window:    time.Minute,
 			Ban:       15 * time.Minute,
@@ -409,7 +408,7 @@ func TestProtectedEvents(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 5}}
-		service, err := ingestion.NewWithPolicy(repo, detection.Rule{
+		service, err := ingestion.NewWithPolicy(repo, ingestion.Rule{
 			Threshold: 5,
 			Window:    time.Minute,
 			Ban:       15 * time.Minute,
@@ -438,7 +437,7 @@ func TestProtectedEvents(t *testing.T) {
 		require.NoError(t, err)
 
 		repo := &fakeRepository{tx: &fakeTx{inserted: true, count: 4}}
-		service, err := ingestion.NewWithPolicy(repo, detection.Rule{
+		service, err := ingestion.NewWithPolicy(repo, ingestion.Rule{
 			Threshold: 5,
 			Window:    time.Minute,
 			Ban:       15 * time.Minute,

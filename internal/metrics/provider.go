@@ -20,7 +20,7 @@ func (r *Registry) InstrumentProvider(name string, provider actions.Provider) ac
 	}
 }
 
-// instrumentedProvider records delivery outcomes without changing the provider contract.
+// instrumentedProvider records delivery outcomes.
 type instrumentedProvider struct {
 	// registry owns the collectors updated by this provider wrapper.
 	registry *Registry

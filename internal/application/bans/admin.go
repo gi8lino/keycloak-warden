@@ -139,7 +139,7 @@ func (s *AdminService) GetDecision(ctx context.Context, id string, now time.Time
 	return s.store.GetDecision(ctx, id, now)
 }
 
-// GetDecisionPage validates a one-based history page without coupling HTTP to SQLite.
+// GetDecisionPage retrieves a validated page of decision history.
 func (s *AdminService) GetDecisionPage(
 	ctx context.Context,
 	id string,

@@ -26,7 +26,7 @@ independently controlled by `--access-log`.
 
 ## Worker status
 
-`GET /workers` is available on the **authenticated application listener** when an administrator token is configured; it is not exposed by the management listener. It reports both background workers without adding a worker registry or control operations:
+`GET /workers` is available on the **authenticated application listener** when an administrator token is configured; it is not exposed by the management listener. It reports the status of both background workers:
 
 - **Actions:** `idle`, `processing`, or `stopped`; start time; unexpired ban IP count; `pending`, `retrying`, and `exhausted` counts for each destination's **current** decision revision; the next persisted expiry/delivery deadline; and the most recent completed delivery attempt. The last attempt can predate the current process because it is read from SQLite.
 - **Maintenance:** worker state and start time, configured prune/optimize intervals, and each operation's latest attempt, success, and error information. Manual and scheduled work share the existing maintenance runner.
@@ -59,7 +59,7 @@ Manual maintenance is available through the authenticated application API (`GET 
 
 ## Migration baselines
 
-The repository includes migration consolidation tools adapted for SQLite:
+To consolidate SQLite migrations:
 
 ```sh
 make merge-migrations

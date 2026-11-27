@@ -27,7 +27,7 @@ type DestinationHealth struct {
 	Delivered int64 `json:"delivered"`
 }
 
-// TimelineEvent describes one persisted audit fact, not a synthesized event.
+// TimelineEvent describes a persisted audit event.
 type TimelineEvent struct {
 	// At is the recorded event timestamp.
 	At time.Time `json:"at"`

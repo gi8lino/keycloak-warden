@@ -1,4 +1,4 @@
-// Package client calls the Warden administration API without access to its internal storage or services.
+// Package client provides an HTTP client for the Warden administration API.
 package client
 
 import (
@@ -7,21 +7,10 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 )
 
 // Option configures the administration API client.
 type Option func(*clientOptions)
-
-const (
-	// DefaultMaxResponseBytes limits successful administrative API response bodies to one MiB.
-	DefaultMaxResponseBytes = adminclient.DefaultMaxResponseBytes
-	// DefaultRequestTimeout bounds the total duration of an ordinary administrative HTTP request.
-	DefaultRequestTimeout = adminclient.DefaultRequestTimeout
-	// DefaultMaintenanceTimeout exceeds the server's 30-second maintenance deadline.
-	DefaultMaintenanceTimeout = adminclient.DefaultMaintenanceTimeout
-)
 
 // clientOptions holds transport policy and request limits for administrative connections.
 type clientOptions struct {
@@ -94,12 +83,6 @@ func (o clientOptions) validate() error {
 	return ValidateMaxResponseBytes(o.maxAdminResponseBytes)
 }
 
-// ValidateMaxResponseBytes checks the maximum successful administrative response size.
-// The value must be positive and leave room for the one-byte overflow sentinel.
-func ValidateMaxResponseBytes(limit int) error {
-	return adminclient.ValidateMaxResponseBytes(limit)
-}
-
 // Client authenticates administrative requests against the running Warden server.
 type Client struct {
 	// options contains the validated immutable request limits and transport policy.
@@ -113,7 +96,7 @@ type Client struct {
 }
 
 // New validates the application URL, bearer token, and request limits before making any request.
-// Non-loopback HTTP requires WithAllowInsecureHTTP; existing callers remain HTTPS-only.
+// Non-loopback HTTP requires WithAllowInsecureHTTP.
 func New(address, token string, opts ...Option) (*Client, error) {
 	if strings.TrimSpace(token) == "" {
 		return nil, errors.New("admin-token is required")
@@ -124,7 +107,7 @@ func New(address, token string, opts ...Option) (*Client, error) {
 		return nil, err
 	}
 
-	parsed, err := adminclient.ParseApplicationURL(address, options.allowInsecureHTTP)
+	parsed, err := parseApplicationURL(address, options.allowInsecureHTTP)
 	if err != nil {
 		return nil, err
 	}
@@ -142,5 +125,6 @@ func New(address, token string, opts ...Option) (*Client, error) {
 // ValidateURL checks an application API base URL, optionally with a route prefix.
 // Pass WithAllowInsecureHTTP to permit non-loopback HTTP URLs.
 func ValidateURL(address string, opts ...Option) error {
-	return adminclient.ValidateURL(address, resolveOptions(opts).allowInsecureHTTP)
+	_, err := parseApplicationURL(address, resolveOptions(opts).allowInsecureHTTP)
+	return err
 }

@@ -28,11 +28,8 @@ func (t *transaction) Decision(ctx context.Context, ip string) (decisions.Decisi
 	return readDecisionByIP(ctx, t.tx, ip)
 }
 
-// SaveDecision persists the application-calculated decision and reconciles its
-// destination delivery rows and history within the existing SQL transaction.
-// A change updates the decision revision and schedules delivery; an unchanged
-// decision can still synchronize configured destination ownership. It neither
-// begins nor commits a transaction.
+// SaveDecision persists a decision, its revision history and destination deliveries.
+// Unchanged revisions can still synchronize destination ownership.
 func (t *transaction) SaveDecision(
 	ctx context.Context,
 	previous, decision decisions.Decision,
@@ -51,8 +48,7 @@ WHERE ip = ?
 			decision.ExpiresAt.UnixMilli(), decision.IP); err != nil {
 			return err
 		}
-		// Persist the exact source snapshot used by ban reconciliation. This is
-		// an append-only audit event, committed atomically with the decision.
+		// Record the source snapshot used for this revision.
 		if sources == nil {
 			sources = []bans.Source{}
 		}

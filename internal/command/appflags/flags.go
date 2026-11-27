@@ -11,7 +11,7 @@ import (
 	"github.com/containeroo/httpkit/prefix"
 	"github.com/containeroo/tinyflags"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // sectionAdminAPI groups administrative connection flags in command help.
@@ -71,25 +71,35 @@ func RegisterAdmin(cmd *tinyflags.Command, server *ServerFlags) AdminFlags {
 			Placeholder("SECRET").
 			OverriddenValueMaskFn(tinyflags.MaskFirstLastLimit(5)).
 			Value(),
-		RequestTimeout: cmd.Duration("request-timeout", adminclient.DefaultRequestTimeout, "Timeout for ordinary administrative HTTP requests").
+		RequestTimeout: cmd.Duration("request-timeout", client.DefaultRequestTimeout, "Timeout for ordinary administrative HTTP requests").
 			Section(sectionAdminAPI).
 			Placeholder("DURATION").
 			Validate(tinyflags.Positive[time.Duration]()).
 			Value(),
-		MaintenanceTimeout: cmd.Duration("maintenance-timeout", adminclient.DefaultMaintenanceTimeout, "Timeout for administrative maintenance HTTP requests").
+		MaintenanceTimeout: cmd.Duration("maintenance-timeout", client.DefaultMaintenanceTimeout, "Timeout for administrative maintenance HTTP requests").
 			Section(sectionAdminAPI).
 			Placeholder("DURATION").
 			Validate(tinyflags.Positive[time.Duration]()).
 			Value(),
-		MaxResponseBytes: cmd.Int("max-response-bytes", adminclient.DefaultMaxResponseBytes, "Maximum successful administrative response size in bytes").
+		MaxResponseBytes: cmd.Int("max-response-bytes", client.DefaultMaxResponseBytes, "Maximum successful administrative response size in bytes").
 			Section(sectionAdminAPI).
 			Placeholder("BYTES").
-			Validate(adminclient.ValidateMaxResponseBytes).
+			Validate(client.ValidateMaxResponseBytes).
 			Value(),
 	}
 
 	cmd.Validate(func() error { return validateAdminURL(flags.ApplicationURL, server) })
+
 	return flags
+}
+
+// ValidateListenAddress rejects an empty TCP address while allowing explicit IPs with port zero.
+func ValidateListenAddress(addr *net.TCPAddr) error {
+	if addr == nil || (len(addr.IP) == 0 && addr.Port == 0) {
+		return errors.New("listen address must specify an IP or a nonzero port")
+	}
+
+	return nil
 }
 
 // validateAdminURL derives the local API URL when no explicit override was supplied.
@@ -104,16 +114,7 @@ func validateAdminURL(applicationURL *string, server *ServerFlags) error {
 		*applicationURL = base.String()
 	}
 
-	return adminclient.ValidateURL(*applicationURL, false)
-}
-
-// ValidateListenAddress rejects an empty TCP address while allowing explicit IPs with port zero.
-func ValidateListenAddress(addr *net.TCPAddr) error {
-	if addr == nil || (len(addr.IP) == 0 && addr.Port == 0) {
-		return errors.New("listen address must specify an IP or a nonzero port")
-	}
-
-	return nil
+	return client.ValidateURL(*applicationURL)
 }
 
 // connectAddress substitutes a reachable loopback address for a wildcard bind.

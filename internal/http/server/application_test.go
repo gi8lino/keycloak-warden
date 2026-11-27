@@ -21,7 +21,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
@@ -198,7 +197,7 @@ func TestNewApplication(t *testing.T) {
 	t.Run("lists automatic source and unbans it through the application API", func(t *testing.T) {
 		t.Parallel()
 
-		rule := detection.Rule{
+		rule := ingestion.Rule{
 			Threshold: 2,
 			Window:    time.Minute,
 			Ban:       time.Minute,
@@ -381,7 +380,7 @@ func TestNewApplication(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer target.Close()
-		rule := detection.Rule{
+		rule := ingestion.Rule{
 			Window:    time.Minute,
 			Threshold: 1,
 			Ban:       3 * time.Second,

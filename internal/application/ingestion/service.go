@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 )
@@ -40,7 +39,7 @@ type Service struct {
 	// repository provides transactional persistence for this application service.
 	repository Repository
 	// rule contains the validated failed-login policy.
-	rule detection.Rule
+	rule Rule
 	// targets identifies the configured destinations for new decisions.
 	targets []string
 	// policy controls enforcement admission.
@@ -48,14 +47,14 @@ type Service struct {
 }
 
 // New constructs an ingestion service with a validated detection policy.
-func New(repository Repository, rule detection.Rule, targets []string) (*Service, error) {
+func New(repository Repository, rule Rule, targets []string) (*Service, error) {
 	return NewWithPolicy(repository, rule, targets, bans.Policy{})
 }
 
 // NewWithPolicy constructs ingestion with explicit enforcement admission policy.
 func NewWithPolicy(
 	repository Repository,
-	rule detection.Rule,
+	rule Rule,
 	targets []string,
 	policy bans.Policy,
 ) (*Service, error) {
@@ -185,7 +184,7 @@ func (s *Service) processFailure(
 	return result, nil
 }
 
-// normalize validates the producer contract without trusting HTTP headers.
+// normalize validates and canonicalizes a Snitch event.
 func normalize(p events.Envelope) (event events.Event, err error) {
 	if p.Version != events.SchemaVersion || p.Source != events.SourceKeycloak {
 		return events.Event{}, ErrInvalidEvent

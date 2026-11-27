@@ -56,7 +56,7 @@ type Workers struct {
 	Maintenance MaintenanceWorker `json:"maintenance" yaml:"maintenance"`
 }
 
-// WorkerStatus reads the read-only worker report from the authenticated application API.
+// WorkerStatus retrieves the worker status report.
 func (c *Client) WorkerStatus(ctx context.Context) (Workers, error) {
 	var result Workers
 	if err := c.do(ctx, http.MethodGet, "/workers", nil, &result); err != nil {

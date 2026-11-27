@@ -1,4 +1,4 @@
-// Package middleware implements HTTP request security independently of application logic.
+// Package middleware authenticates and protects HTTP requests.
 package middleware
 
 import (

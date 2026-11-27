@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/adminclient"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
+	"github.com/gi8lino/keycloak-warden/pkg/client"
 )
 
 // adminCommand registers one administrative command against shared server defaults.
@@ -102,9 +102,9 @@ func TestAdminClientSettings(t *testing.T) {
 		root, flags := adminCommand()
 		require.NoError(t, root.Parse([]string{"ban"}))
 
-		assert.Equal(t, adminclient.DefaultRequestTimeout, *flags.RequestTimeout)
-		assert.Equal(t, adminclient.DefaultMaintenanceTimeout, *flags.MaintenanceTimeout)
-		assert.Equal(t, adminclient.DefaultMaxResponseBytes, *flags.MaxResponseBytes)
+		assert.Equal(t, client.DefaultRequestTimeout, *flags.RequestTimeout)
+		assert.Equal(t, client.DefaultMaintenanceTimeout, *flags.MaintenanceTimeout)
+		assert.Equal(t, client.DefaultMaxResponseBytes, *flags.MaxResponseBytes)
 	})
 
 	t.Run("parses all three positive overrides", func(t *testing.T) {

@@ -35,7 +35,7 @@ type Status struct {
 	Maintenance maintenance.Status `json:"maintenance" yaml:"maintenance"`
 }
 
-// Service collects status from the existing runners and SQLite; it starts no workers.
+// Service collects worker lifecycle and queue statistics.
 type Service struct {
 	// actions is the action worker lifecycle owner.
 	actions *actions.Runner
@@ -45,7 +45,7 @@ type Service struct {
 	store Store
 }
 
-// NewService composes the two runners with their existing durable queue.
+// NewService creates a worker status service.
 func NewService(
 	actionRunner *actions.Runner,
 	maintenanceRunner *maintenance.Runner,

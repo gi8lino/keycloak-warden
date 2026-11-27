@@ -13,7 +13,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
@@ -24,7 +23,7 @@ import (
 func openStore(t *testing.T, path string, targets ...string) (*sqlite.Store, *ingestion.Service) {
 	t.Helper()
 
-	rule := detection.Rule{
+	rule := ingestion.Rule{
 		Threshold: 2,
 		Window:    time.Minute,
 		Ban:       2 * time.Minute,

@@ -1,5 +1,4 @@
-// Package detection implements the failed-login threshold policy.
-package detection
+package ingestion
 
 import (
 	"errors"

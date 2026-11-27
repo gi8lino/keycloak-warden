@@ -33,9 +33,9 @@ Detection policy stays in the ingestion service. Runtime targets own their provi
 
 An append-only source mutation journal records persisted additions, changes and removals independently of decision revisions; source-only edits do not trigger outbound reconciliation. These records start with the source journal migration and are bounded on individual inspection.
 
-A decision's `state` is either `banned` or `unbanned`. Both the internal application and public Go client use `pkg/decisionstate.State` for this desired state; JSON and YAML still encode it as the same string. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
+A decision's `state` is either `banned` or `unbanned`. Both the application and Go client use `pkg/decisionstate.State`. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
 
-SQLite persists the same `banned` and `unbanned` values in the constrained `decisions.state` column. It does not maintain a separate boolean representation of desired state.
+SQLite stores these values in the constrained `decisions.state` column.
 
 Automatic expiry or a manual unban changes the desired state to `unbanned`. A manual ban and an automatic ban are independent sources; releasing an IP removes the active reasons for blocking it.
 
@@ -59,7 +59,7 @@ The `bans` application package evaluates source extension and effective decision
 
 ## Worker observability
 
-The two existing background goroutines remain independent: the action worker handles ban expiry, destination delivery and retries, while the maintenance worker handles scheduled database pruning and optimization. Each runner exposes one concurrency-safe `Snapshot()` method. The maintenance snapshot also backs `GET /maintenance`; action queue statistics and deadlines remain in SQLite, not in the runner. The authenticated `GET /workers` endpoint aggregates these read-only snapshots with SQLite-backed queue counts and deadlines. It does **not** create a registry or another worker, and it never changes a decision or schedule.
+The two background workers run independently: the action worker handles ban expiry, destination delivery and retries, while the maintenance worker handles scheduled database pruning and optimization. Each runner exposes one concurrency-safe `Snapshot()` method. The maintenance snapshot also backs `GET /maintenance`; action queue statistics and deadlines remain in SQLite, not in the runner. The authenticated `GET /workers` endpoint combines these snapshots with persisted queue counts and deadlines.
 
 ```mermaid
 flowchart TD
@@ -75,7 +75,7 @@ The `actions` package calculates the capped exponential retry delay (default 10 
 
 ## Expiry and release workflows
 
-`bans` orchestrates manual releases and source expiry using atomic `TransactDecision` callbacks. The application clears sources, advances the observation generation, computes effective decisions and enqueues delivery revisions; SQLite provides only the corresponding persistence primitives. The action worker delegates expiry to `bans.ExpiryService`, rather than asking SQLite to maintain ban policy.
+`bans` orchestrates manual releases and source expiry using atomic `TransactDecision` callbacks. The application clears sources, advances the observation generation, computes effective decisions and enqueues delivery revisions; SQLite provides only the corresponding persistence primitives. The action worker delegates expiry to `bans.ExpiryService`.
 
 ## Policy and persistence boundaries
 
@@ -85,4 +85,4 @@ At startup, SQLite reports the destinations that still own bans or unacknowledge
 
 Warden appends an immutable revision snapshot whenever the effective desired decision changes. The journal captures the commit time, workflow cause, requested state, expiry, and active source reasons. This write shares the original decision transaction, so an unsuccessful transaction cannot leave behind a misleading history entry. Historic revisions prior to migration 0008 cannot be reconstructed from the current decision row.
 
-The authenticated `/decisions/history` query reads this journal. `/deliveries` instead reads the current revision from existing delivery tables, including release attempts, without creating a separate delivery store or service process.
+The authenticated `/decisions/history` query reads this journal. `/deliveries` instead reads the current revision from existing delivery tables, including release attempts.

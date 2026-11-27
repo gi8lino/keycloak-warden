@@ -6,7 +6,6 @@ import (
 
 	"github.com/containeroo/tinyflags"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/adminopts"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
@@ -30,6 +29,6 @@ func Register(root *tinyflags.Command, serverFlags *appflags.ServerFlags, encode
 			Revision:    int64(*revision),
 			Destination: args[1],
 			Actor:       *actor,
-		}, encode, adminopts.FromFlags(adminFlags)...)
+		}, encode, adminFlags.ClientOptions()...)
 	})
 }

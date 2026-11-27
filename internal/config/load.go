@@ -1,4 +1,3 @@
-// Package config loads the strict YAML rules and destination configuration.
 package config
 
 import (
@@ -9,10 +8,10 @@ import (
 
 	"go.yaml.in/yaml/v4"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
 
-// document represents only detection and destination settings; operational settings are CLI flags.
+// document represents the YAML configuration.
 type document struct {
 	// ProtectedIPs contains literal addresses or CIDRs.
 	ProtectedIPs []string `yaml:"protected-ips"`
@@ -63,7 +62,7 @@ func Load(path string) (cfg Config, err error) {
 
 	return Config{
 		ProtectedIPs: raw.ProtectedIPs,
-		Rule: detection.Rule{
+		Rule: ingestion.Rule{
 			Threshold: raw.Rule.Threshold,
 			Window:    window,
 			Ban:       ban,

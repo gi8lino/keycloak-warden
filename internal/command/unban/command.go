@@ -5,10 +5,9 @@ import (
 
 	"github.com/containeroo/tinyflags"
 
-	"github.com/gi8lino/keycloak-warden/internal/command/adminopts"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
+	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 )
 
 // Register adds the authenticated unban command and its flags.
@@ -21,7 +20,7 @@ func Register(
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
 	command.MinPositional(1)
-	command.SetPositionalFinalizeAll(ipargs.Unique)
+	command.SetPositionalFinalizeAll(ipaddress.Unique)
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 
@@ -32,7 +31,7 @@ func Register(
 			*adminFlags.AdminToken,
 			command.Args(),
 			encode,
-			adminopts.FromFlags(adminFlags)...,
+			adminFlags.ClientOptions()...,
 		)
 	})
 }

@@ -9,7 +9,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 )
 
-// Source reads the existing expiry and reason without applying domain policy.
+// Source reads a ban source, including expired sources.
 func (t *transaction) Source(ctx context.Context, ip string, kind bans.SourceKind) (bans.Source, bool, error) {
 	source := bans.Source{Kind: kind}
 	var expires int64
@@ -26,7 +26,7 @@ SELECT expires, reason FROM ban_sources WHERE ip = ? AND kind = ?
 	return source, true, nil
 }
 
-// PutSource writes the already-resolved source without altering its expiry.
+// PutSource inserts or updates a ban source.
 func (t *transaction) PutSource(ctx context.Context, ip string, source bans.Source) error {
 	_, err := t.tx.ExecContext(ctx, `
 INSERT INTO ban_sources (ip, kind, expires, reason)
@@ -83,7 +83,7 @@ SELECT DISTINCT ip FROM ban_sources WHERE expires <= ?
 	return ips, rows.Close()
 }
 
-// DeleteExpiredSources removes elapsed reasons without choosing the new ban state.
+// DeleteExpiredSources removes expired ban sources.
 func (t *transaction) DeleteExpiredSources(ctx context.Context, now time.Time) error {
 	result, err := t.tx.ExecContext(ctx, `
 DELETE FROM ban_sources WHERE expires <= ?

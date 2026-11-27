@@ -3,7 +3,7 @@ package sqlite
 import "context"
 
 // ManagedTargets returns destinations that still own a banned decision or an
-// unacknowledged revision. It reports persisted facts without choosing a policy.
+// unacknowledged revision.
 func (s *Store) ManagedTargets(ctx context.Context) ([]string, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT DISTINCT q.destination

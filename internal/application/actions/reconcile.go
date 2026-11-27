@@ -14,7 +14,6 @@ type AttemptLimitReconciler interface {
 }
 
 // ReconcileTargets applies the configured targets' attempt budgets before the worker starts.
-// It does not deliver decisions or persist the target configuration.
 func ReconcileTargets(ctx context.Context, store AttemptLimitReconciler, targets map[string]Target) error {
 	for _, name := range slices.Sorted(maps.Keys(targets)) {
 		if err := store.ReconcileAttemptLimit(ctx, name, targets[name].MaxAttempts); err != nil {

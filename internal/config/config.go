@@ -3,7 +3,7 @@ package config
 
 import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 )
 
 // Targets groups named destinations by their provider type.
@@ -25,12 +25,12 @@ type WebhookTarget struct {
 	// Headers maps literal HTTP header names to resolvable values.
 	Headers map[string]string `yaml:"headers"`
 	// BodyTemplate optionally resolves to a Go text/template for the JSON request body.
-	// When unset, webhooks receive the unchanged decision JSON.
+	// When unset, the decision is encoded as JSON.
 	BodyTemplate string `yaml:"body-template"`
 	// TemplateVars maps template-visible names to destination-specific resolver values.
 	TemplateVars map[string]string `yaml:"template-vars"`
 	// Response optionally overrides accepted HTTP statuses and validates response bodies.
-	// A nil response preserves the existing HTTP 2xx-only acknowledgement behavior.
+	// A nil response accepts HTTP 2xx.
 	Response *WebhookResponse `yaml:"response"`
 }
 
@@ -49,7 +49,7 @@ type Config struct {
 	// ProtectedIPs lists addresses and CIDRs exempt from bans.
 	ProtectedIPs []string
 	// Rule configures the failed-login detector.
-	Rule detection.Rule
+	Rule ingestion.Rule
 	// Targets groups named destinations by provider.
 	Targets Targets
 }

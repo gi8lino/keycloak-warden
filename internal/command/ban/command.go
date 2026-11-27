@@ -6,10 +6,9 @@ import (
 	"github.com/containeroo/tinyflags"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/command/adminopts"
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
-	"github.com/gi8lino/keycloak-warden/internal/command/ipargs"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
+	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
 )
 
 // sectionBan groups manual ban arguments in command help.
@@ -26,7 +25,7 @@ func Register(
 	command.HideEnvs()
 	command.Note("\nFlags can also be set using WARDEN__<FLAG_NAME> environment variables; for example WARDEN__ADMIN_TOKEN.")
 	command.MinPositional(1)
-	command.SetPositionalFinalizeAll(ipargs.Unique)
+	command.SetPositionalFinalizeAll(ipaddress.Unique)
 
 	adminFlags := appflags.RegisterAdmin(command, serverFlags)
 	duration := command.Duration("duration", 0, "Manual ban lifetime").
@@ -49,7 +48,7 @@ func Register(
 			*duration,
 			*reason,
 			encode,
-			adminopts.FromFlags(adminFlags)...,
+			adminFlags.ClientOptions()...,
 		)
 	})
 }

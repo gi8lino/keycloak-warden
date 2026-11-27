@@ -11,7 +11,6 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
@@ -28,7 +27,7 @@ func TestBanAdmission(t *testing.T) {
 		protection, err := bans.NewProtection([]string{"203.0.113.0/24"})
 		require.NoError(t, err)
 		policy := bans.Policy{Protection: protection}
-		processor, err := ingestion.NewWithPolicy(store, detection.Rule{Threshold: 1, Window: time.Minute, Ban: time.Hour}, []string{"edge"}, policy)
+		processor, err := ingestion.NewWithPolicy(store, ingestion.Rule{Threshold: 1, Window: time.Minute, Ban: time.Hour}, []string{"edge"}, policy)
 		require.NoError(t, err)
 		now := time.Now().UTC()
 		event := failed("protected")
@@ -55,7 +54,7 @@ func TestBanAdmission(t *testing.T) {
 		store, _ := openStore(t, filepath.Join(t.TempDir(), "observed.db"))
 		t.Cleanup(func() { require.NoError(t, store.Close()) })
 		policy := bans.Policy{ObserveOnly: true}
-		processor, err := ingestion.NewWithPolicy(store, detection.Rule{Threshold: 2, Window: time.Minute, Ban: time.Hour}, nil, policy)
+		processor, err := ingestion.NewWithPolicy(store, ingestion.Rule{Threshold: 2, Window: time.Minute, Ban: time.Hour}, nil, policy)
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
 		result, err := processor.Process(ctx, failed("one"), now)

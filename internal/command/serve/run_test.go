@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/application/detection"
+	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
@@ -42,7 +42,7 @@ func TestRunRejectsInvalidMaintenanceSchedule(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.Config{
-		Rule: detection.Rule{
+		Rule: ingestion.Rule{
 			Threshold: 2,
 			Window:    time.Minute,
 			Ban:       time.Minute,
@@ -69,7 +69,7 @@ func TestRunRejectsInvalidRetryPolicy(t *testing.T) {
 	t.Parallel()
 
 	cfg := config.Config{
-		Rule: detection.Rule{
+		Rule: ingestion.Rule{
 			Threshold: 2,
 			Window:    time.Minute,
 			Ban:       time.Minute,

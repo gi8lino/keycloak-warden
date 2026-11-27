@@ -35,7 +35,7 @@ For a manual ban, send a JSON object such as:
 }
 ```
 
-The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return an unpaged `currentDeliveries` list for all current-revision destinations (distinct from paginated history), up to 50 newest `sourceChanges` (source additions, edits, and removals persisted since the source journal migration) and a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`, not the older `"active"` boolean.
+The API responds with a ban record containing three sections: `decision` (desired state), `sources` (currently active automatic and manual reasons), and `deliveries` (acknowledged revisions per destination). Individual decision reads additionally return an unpaged `currentDeliveries` list for all current-revision destinations (distinct from paginated history), up to 50 newest `sourceChanges` (source additions, edits, and removals persisted since the source journal migration) and a bounded `deliveryHistory` page with per-revision statuses and completed attempts. The `inspect` CLI presents this history under `deliveries`. Decisions use `"state":"banned"` or `"state":"unbanned"`.
 
 For example, an active manual ban that has been acknowledged by a webhook might look like:
 
@@ -86,7 +86,7 @@ A `delivered` status confirms acceptance of a notification, not necessarily that
 
 `GET /workers` returns one read-only snapshot of the two Warden background workers. It is authenticated with the same bearer token as bans and maintenance. The **actions** worker reports its runtime lifecycle (`idle`, `processing`, `stopped`) and persisted delivery counts for the current revision of each decision, plus the next persisted wake-up deadline and the last completed attempt. The **maintenance** worker reports its runtime state and the existing prune/optimize task statuses. The same maintenance snapshot, including `state` and `startedAt`, is also returned by `GET /maintenance`.
 
-The Go client provides `Client.WorkerStatus(ctx)` with typed results. The endpoint uses Warden's application route prefix, not the independent management listener. It does not modify the queue or start additional workers. Worker states and database counts are collected separately, so this is not a transactional snapshot.
+The Go client provides `Client.WorkerStatus(ctx)` with typed results. The endpoint uses the application route prefix. Worker states and database counts are collected separately, so this is not a transactional snapshot.
 
 ## Go administration client
 
@@ -108,7 +108,7 @@ The same option is accepted by URL validation: `client.ValidateURL(address, clie
 
 ## Webhook delivery
 
-Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry. When a target defines `body-template`, Warden renders a custom JSON body using those same fields; the default payload remains unchanged for other targets.
+Configured webhook targets receive a JSON representation of the desired decision, including its stable ID, revision, IP address, state, and expiry. A target with `body-template` renders a custom JSON body using those fields.
 
 Webhook responses in the `2xx` range acknowledge a delivery by default. Individual targets may optionally configure a `response` rule for allowed HTTP status codes and plain-text or JSON body matching (including nested JSON error extraction). A rejected response is retried; a successful webhook response means the **receiver accepted the notification**, not necessarily that an external firewall has already reconciled the state. See [Configuration](configuration.md) for response rules.
 
@@ -161,4 +161,4 @@ A retry request contains `decisionId`, positive `revision`, `destination`, and n
 
 HTTP 202 with `{"queued":true}` acknowledges queue admission, not delivery success. HTTP 409 rejects stale revisions, already queued or delivered work, expired bans, or unavailable destinations. The request, identity, and number of previously completed attempts are stored atomically with queue admission. The configured attempt budget starts again, but attempt numbers and previous errors are never erased. Shared destination backoff remains in force. A shared admin token cannot authenticate individual human identities; the direct API caller asserts `actor`, whereas WebUI supplies its authenticated account name server-side.
 
-Health is based on current persisted delivery status, not a provider connectivity probe. It includes destinations with recorded current history, even for released decisions. Failed unbans are retrying or exhausted current releases; exhausted unbans are a subset. Timeline and observation pages contain up to 20 records and reflect live data (new inserts can shift pages). The timeline reports actual persisted timestamps, causes, source edits, delivery attempt outcomes and explicit retries. It does not fabricate older audit history or treat scheduled expiry as proof of release.
+Health is based on current persisted delivery status, not a provider connectivity probe. It includes destinations with recorded current history, even for released decisions. Failed unbans are retrying or exhausted current releases; exhausted unbans are a subset. Timeline and observation pages contain up to 20 records and reflect live data (new inserts can shift pages). The timeline reports recorded timestamps, causes, source edits, delivery attempts and explicit retries. Scheduled expiry is not proof of release.

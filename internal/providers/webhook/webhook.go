@@ -121,7 +121,7 @@ func (p Provider) ValidateTemplate() error {
 	return nil
 }
 
-// templateData adds destination variables to the existing decision template fields.
+// templateData combines decision fields and destination variables.
 type templateData struct {
 	// Decision exposes the original decision fields at the template root.
 	decisions.Decision
