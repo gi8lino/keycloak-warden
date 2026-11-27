@@ -58,9 +58,10 @@ func TestProviderDeliver(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider[model.Decision]{
-			URL:     server.URL,
-			Headers: http.Header{"Authorization": {"Bearer token"}, "X-Source": {"warden"}},
-			Client:  server.Client(),
+			Target: NewTarget(server.URL, map[string]string{
+				"Authorization": "Bearer token",
+				"X-Source":      "warden",
+			}, server.Client(), nil),
 		}
 		require.NoError(t, p.Deliver(t.Context(), want))
 	})
@@ -73,17 +74,62 @@ func TestProviderDeliver(t *testing.T) {
 			w.WriteHeader(http.StatusNoContent)
 		}))
 		defer server.Close()
-		p := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		p := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), nil)}
 		require.NoError(t, p.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
 	t.Run("non-success response propagates to dispatcher", func(t *testing.T) {
 		t.Parallel()
 
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(503) }))
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			w.Header().Set("Retry-After", "60")
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}))
 		defer server.Close()
-		p := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		p := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), nil)}
 		require.ErrorContains(t, p.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "503")
+		assert.Equal(t, int32(1), requests.Load())
+	})
+	t.Run("rejects oversized canonical JSON before delivery", func(t *testing.T) {
+		t.Parallel()
+
+		var requests atomic.Int32
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			requests.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer server.Close()
+
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), nil)}
+		decision := model.Decision{ID: strings.Repeat("x", maxBodyBytes)}
+		require.ErrorContains(t, provider.Deliver(t.Context(), decision), "65536-byte")
+		assert.Zero(t, requests.Load())
+	})
+
+	t.Run("honors the supplied client redirect policy", func(t *testing.T) {
+		t.Parallel()
+
+		var redirected atomic.Int32
+		destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			redirected.Add(1)
+			w.WriteHeader(http.StatusNoContent)
+		}))
+		defer destination.Close()
+
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, destination.URL, http.StatusTemporaryRedirect)
+		}))
+		defer server.Close()
+
+		client := server.Client()
+		client.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, client, nil)}
+		require.ErrorContains(t, provider.Deliver(t.Context(), model.Decision{}), "307")
+		assert.Zero(t, redirected.Load())
 	})
 }
 
@@ -116,12 +162,15 @@ func (privateTimeoutError) Temporary() bool { return true }
 // transport error tests can verify they never appear in returned diagnostics.
 func failingWebhookProvider(err error) Provider[model.Decision] {
 	return Provider[model.Decision]{
-		URL: "http://user:password@private.example/notify?token=query-secret",
-		Headers: http.Header{
-			"Authorization": {"Bearer header-secret"},
-			"X-Secret":      {"private-header"},
-		},
-		Client: &http.Client{Transport: failingRoundTripper{err: err}},
+		Target: NewTarget(
+			"http://user:password@private.example/notify?token=query-secret",
+			map[string]string{
+				"Authorization": "Bearer header-secret",
+				"X-Secret":      "private-header",
+			},
+			&http.Client{Transport: failingRoundTripper{err: err}},
+			nil,
+		),
 	}
 }
 
@@ -380,8 +429,7 @@ func TestProviderTemplate(t *testing.T) {
 		defer server.Close()
 
 		provider := Provider[model.Decision]{
-			URL:      server.URL,
-			Client:   server.Client(),
+			Target:   NewTarget(server.URL, nil, server.Client(), nil),
 			Template: tmpl,
 		}
 		decision := model.Decision{
@@ -405,8 +453,11 @@ func TestProviderTemplate(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		provider := Provider[model.Decision]{Template: tmpl}
-		require.NoError(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}))
+		provider := Provider[model.Decision]{
+			Target:   NewTarget("https://example.org/webhook", nil, nil, nil),
+			Template: tmpl,
+		}
+		require.NoError(t, provider.ValidatePayloads(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}))
 
 		banBody, err := provider.renderBody(model.Decision{State: model.DecisionBanned})
 		require.NoError(t, err)
@@ -430,9 +481,12 @@ func TestProviderTemplate(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Template: tmpl}
+		provider := Provider[model.Decision]{
+			Target:   NewTarget(server.URL, nil, server.Client(), nil),
+			Template: tmpl,
+		}
 		err = provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
-		require.ErrorContains(t, err, "invalid JSON")
+		require.ErrorContains(t, err, "not valid JSON")
 		assert.Zero(t, requests.Load())
 	})
 
@@ -445,8 +499,11 @@ func TestProviderTemplate(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		provider := Provider[model.Decision]{Template: tmpl}
-		require.ErrorContains(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "64 KiB")
+		provider := Provider[model.Decision]{
+			Target:   NewTarget("https://example.org/webhook", nil, nil, nil),
+			Template: tmpl,
+		}
+		require.ErrorContains(t, provider.ValidatePayloads(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "65536-byte")
 	})
 
 	t.Run("propagates template execution errors", func(t *testing.T) {
@@ -455,8 +512,11 @@ func TestProviderTemplate(t *testing.T) {
 		tmpl, err := templates.ParseTemplate("missing-field", `{"text": {{ json .MissingField }}}`, templates.WithDefaultFuncs())
 		require.NoError(t, err)
 
-		provider := Provider[model.Decision]{Template: tmpl}
-		require.ErrorContains(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "render webhook body")
+		provider := Provider[model.Decision]{
+			Target:   NewTarget("https://example.org/webhook", nil, nil, nil),
+			Template: tmpl,
+		}
+		require.ErrorContains(t, provider.ValidatePayloads(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "render webhook body")
 	})
 
 	t.Run("checks both states before startup", func(t *testing.T) {
@@ -465,8 +525,11 @@ func TestProviderTemplate(t *testing.T) {
 		tmpl, err := templates.ParseTemplate("only-ban-valid", `{{ if eq .Payload.State "banned" }}{}{{ else }}not-json{{ end }}`)
 		require.NoError(t, err)
 
-		provider := Provider[model.Decision]{Template: tmpl}
-		require.ErrorContains(t, provider.ValidateTemplate(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "payload 2")
+		provider := Provider[model.Decision]{
+			Target:   NewTarget("https://example.org/webhook", nil, nil, nil),
+			Template: tmpl,
+		}
+		require.ErrorContains(t, provider.ValidatePayloads(model.Decision{State: model.DecisionBanned}, model.Decision{State: model.DecisionUnbanned}), "payload 2")
 	})
 }
 
@@ -481,7 +544,7 @@ func TestProviderResponseRule(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), nil)}
 		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
@@ -494,7 +557,7 @@ func TestProviderResponseRule(t *testing.T) {
 		}))
 		defer server.Close()
 
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client()}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), nil)}
 		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "403")
 		assert.NotContains(t, err.Error(), "secret")
@@ -513,7 +576,7 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:       json.RawMessage(`true`),
 			ErrorPointer: "/error",
 		}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
@@ -530,7 +593,7 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:       json.RawMessage(`true`),
 			ErrorPointer: "/error",
 		}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "channel_not_found")
 		assert.NotContains(t, err.Error(), "private-secret")
@@ -550,7 +613,7 @@ func TestProviderResponseRule(t *testing.T) {
 			Equals:       json.RawMessage(`true`),
 			ErrorPointer: "/error",
 		}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "403")
 		assert.ErrorContains(t, err, "invalid_auth")
@@ -569,7 +632,7 @@ func TestProviderResponseRule(t *testing.T) {
 			Pointer: "/ok",
 			Equals:  json.RawMessage(`true`),
 		}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		assert.Error(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionUnbanned}))
 	})
 
@@ -582,7 +645,7 @@ func TestProviderResponseRule(t *testing.T) {
 		defer server.Close()
 
 		rule := response.Rule{StatusCodes: []int{http.StatusTeapot}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
@@ -595,7 +658,7 @@ func TestProviderResponseRule(t *testing.T) {
 		defer server.Close()
 
 		rule := response.Rule{StatusCodes: []int{http.StatusAccepted}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		assert.ErrorContains(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "204")
 	})
 
@@ -609,7 +672,7 @@ func TestProviderResponseRule(t *testing.T) {
 
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		assert.NoError(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}))
 	})
 
@@ -624,7 +687,7 @@ func TestProviderResponseRule(t *testing.T) {
 
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
 		err := provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned})
 		require.ErrorContains(t, err, "Invalid key")
 		assert.NotContains(t, err.Error(), "\n")
@@ -641,8 +704,8 @@ func TestProviderResponseRule(t *testing.T) {
 
 		expected := "ok"
 		rule := response.Rule{Text: &response.Text{Equals: &expected}}
-		provider := Provider[model.Decision]{URL: server.URL, Client: server.Client(), Response: &rule}
-		assert.ErrorContains(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "64 KiB")
+		provider := Provider[model.Decision]{Target: NewTarget(server.URL, nil, server.Client(), &rule)}
+		assert.ErrorContains(t, provider.Deliver(t.Context(), model.Decision{State: model.DecisionBanned}), "65536-byte")
 	})
 }
 
@@ -667,8 +730,7 @@ func TestIncidentDelivery(t *testing.T) {
 		defer server.Close()
 
 		provider := Provider[model.Incident]{
-			URL:    server.URL,
-			Client: server.Client(),
+			Target: NewTarget(server.URL, nil, server.Client(), nil),
 		}
 		require.NoError(t, provider.Deliver(t.Context(), incident))
 	})

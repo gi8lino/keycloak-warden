@@ -110,4 +110,4 @@ Warden appends an immutable revision snapshot whenever the effective desired dec
 
 The authenticated `/decisions/history` query reads this journal. `/deliveries` instead reads the current revision from existing delivery tables, including release attempts.
 
-Both delivery sections embed the same YAML delivery settings and use `internal/retry` for capped exponential backoff. The generic webhook provider is unaware of ban or incident semantics. Notification history and explicit retries are independently persisted; operator retries never reset lifetime attempt numbering.
+Both delivery sections embed the same YAML delivery settings and use `internal/retry` for capped exponential backoff. The generic webhook provider renders typed payloads and delegates single-attempt HTTP delivery to Notifykit's `SendBody` API. Warden supplies the HTTP client, request and response limits, URL policy and destination identity; its own workers remain responsible for persistent retries. The provider is unaware of ban or incident semantics. Notification history and explicit retries are independently persisted; operator retries never reset lifetime attempt numbering.

@@ -417,9 +417,7 @@ func TestNewApplication(t *testing.T) {
 		destinations := map[string]enforcement.Target{
 			"notify": {
 				Provider: webhook.Provider[model.Decision]{
-					URL:     target.URL,
-					Client:  target.Client(),
-					Headers: http.Header{"X-Api-Key": {"expected"}},
+					Target: webhook.NewTarget(target.URL, map[string]string{"X-Api-Key": "expected"}, target.Client(), nil),
 				},
 				MaxAttempts: retry.DefaultMaxAttempts,
 			},

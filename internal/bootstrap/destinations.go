@@ -148,14 +148,11 @@ func buildWebhook[T any](target config.WebhookTarget, client *http.Client, regis
 	}
 
 	provider := webhook.Provider[T]{
-		URL:          endpoint,
-		Headers:      headers,
-		Client:       client,
+		Target:       webhook.NewTarget(endpoint, headers, client, responseRule),
 		Template:     bodyTemplate,
 		TemplateVars: vars,
-		Response:     responseRule,
 	}
-	if err := provider.ValidateTemplate(samples...); err != nil {
+	if err := provider.ValidatePayloads(samples...); err != nil {
 		return webhook.Provider[T]{}, fmt.Errorf("body-template: %w", err)
 	}
 	return provider, nil
@@ -215,8 +212,8 @@ func allowedWebhook(u *url.URL) bool {
 func resolveWebhookHeaders(
 	registry *resolver.Registry,
 	configuredHeaders map[string]string,
-) (http.Header, error) {
-	headers := make(http.Header, len(configuredHeaders))
+) (map[string]string, error) {
+	headers := make(map[string]string, len(configuredHeaders))
 
 	for _, name := range slices.Sorted(maps.Keys(configuredHeaders)) {
 		value, err := registry.ResolveVariable(configuredHeaders[name])
@@ -228,7 +225,7 @@ func resolveWebhookHeaders(
 			return nil, fmt.Errorf("headers %q: invalid HTTP header value", name)
 		}
 
-		headers.Set(name, value)
+		headers[http.CanonicalHeaderKey(name)] = value
 	}
 
 	return headers, nil
@@ -307,5 +304,5 @@ func fingerprint(endpoint string) string {
 func webhookIdentity[T any](provider webhook.Provider[T]) string {
 	// Encoding a map of strings is deterministic and cannot fail.
 	encoded, _ := json.Marshal(provider.TemplateVars)
-	return fingerprint(provider.URL + "\x00" + string(encoded))
+	return fingerprint(provider.Target.URL + "\x00" + string(encoded))
 }

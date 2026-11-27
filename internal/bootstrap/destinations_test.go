@@ -182,7 +182,7 @@ func assertResolvedWebhookURL(t *testing.T, reference, want string) {
 		},
 	})
 	require.NoError(t, err)
-	assert.Equal(t, want, providers["webhook.edge"].Provider.(webhook.Provider[model.Decision]).URL)
+	assert.Equal(t, want, providers["webhook.edge"].Provider.(webhook.Provider[model.Decision]).Target.URL)
 }
 
 func TestAllowedWebhook(t *testing.T) {
@@ -283,14 +283,14 @@ func TestDestinationsValueResolution(t *testing.T) {
 	assert.Equal(t, " secondary-token ", providers["cloudflare.secondary"].Provider.(cloudflare.Provider).Token)
 	assert.Contains(t, providers["cloudflare.secondary"].Provider.(cloudflare.Provider).RulesURL, strings.Repeat("b", 32))
 	p := providers["webhook.notification"].Provider.(webhook.Provider[model.Decision])
-	assert.Equal(t, "https://hooks.example.com/warden", p.URL)
-	assert.Equal(t, "Bearer secret", p.Headers.Get("Authorization"))
-	assert.Equal(t, "file-header-value", p.Headers.Get("X-API-Key"))
-	assert.Equal(t, "custom:source", p.Headers.Get("X-Source"))
+	assert.Equal(t, "https://hooks.example.com/warden", p.Target.URL)
+	assert.Equal(t, "Bearer secret", p.Target.Headers["Authorization"])
+	assert.Equal(t, "file-header-value", p.Target.Headers["X-Api-Key"])
+	assert.Equal(t, "custom:source", p.Target.Headers["X-Source"])
 
 	// Resolved values are snapshots, not dynamically looked up on delivery.
 	t.Setenv("WARDEN_TEST_WEBHOOK_HEADER", "different")
-	assert.Equal(t, "Bearer secret", p.Headers.Get("Authorization"))
+	assert.Equal(t, "Bearer secret", p.Target.Headers["Authorization"])
 }
 
 // TestDestinationsInvalidReferences verifies field-specific errors for every resolvable setting.
@@ -498,9 +498,9 @@ func TestWebhookHeaderValueValidation(t *testing.T) {
 		})
 		require.NoError(t, err)
 		p := providers["webhook.edge"].Provider.(webhook.Provider[model.Decision])
-		assert.Equal(t, "example.org", p.Headers.Get("Host"))
-		assert.Equal(t, "123", p.Headers.Get("Content-Length"))
-		assert.Equal(t, "chunked", p.Headers.Get("Transfer-Encoding"))
+		assert.Equal(t, "example.org", p.Target.Headers["Host"])
+		assert.Equal(t, "123", p.Target.Headers["Content-Length"])
+		assert.Equal(t, "chunked", p.Target.Headers["Transfer-Encoding"])
 	})
 
 	t.Run("accepts tabs in resolved header values", func(t *testing.T) {
@@ -737,7 +737,7 @@ func TestWebhookBodyTemplate(t *testing.T) {
 			},
 		})
 		require.ErrorContains(t, err, "body-template")
-		assert.ErrorContains(t, err, "invalid JSON")
+		assert.ErrorContains(t, err, "not valid JSON")
 	})
 
 	t.Run("rejects blank optional template source", func(t *testing.T) {
@@ -773,7 +773,12 @@ func TestDestinationsResponse(t *testing.T) {
 		require.NoError(t, err)
 
 		provider := providers["webhook.ops"].Provider.(webhook.Provider[model.Decision])
-		assert.Nil(t, provider.Response)
+		assert.Nil(t, provider.Target.ResponseRule)
+		assert.True(t, provider.Target.DiscardResponseBody)
+		assert.True(t, provider.Target.ValidateJSON)
+		assert.Equal(t, 64<<10, provider.Target.RequestBodyLimit)
+		assert.Equal(t, 64<<10, provider.Target.ResponseBodyLimit)
+		assert.Equal(t, defaultClientTimeout, provider.Target.Client.Timeout)
 	})
 
 	t.Run("constructs the Notifykit rule from YAML", func(t *testing.T) {
@@ -812,10 +817,10 @@ enforcements:
 		require.NoError(t, err)
 
 		provider := providers["webhook.slack-bot"].Provider.(webhook.Provider[model.Decision])
-		require.NotNil(t, provider.Response)
-		assert.Equal(t, []int{200, 201, 202}, provider.Response.StatusCodes)
-		assert.NoError(t, provider.Response.Evaluate(200, []byte(`{"ok":true}`)))
-		assert.ErrorContains(t, provider.Response.Evaluate(200, []byte(`{"ok":false,"error":"channel_not_found"}`)), "channel_not_found")
+		require.NotNil(t, provider.Target.ResponseRule)
+		assert.Equal(t, []int{200, 201, 202}, provider.Target.ResponseRule.StatusCodes)
+		assert.NoError(t, provider.Target.ResponseRule.Evaluate(200, []byte(`{"ok":true}`)))
+		assert.ErrorContains(t, provider.Target.ResponseRule.Evaluate(200, []byte(`{"ok":false,"error":"channel_not_found"}`)), "channel_not_found")
 	})
 }
 
