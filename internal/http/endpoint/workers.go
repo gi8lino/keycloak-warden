@@ -5,14 +5,14 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // WorkerStatus supplies the aggregated read-only worker snapshot.
 type WorkerStatus interface {
 	// Snapshot gathers action and maintenance state without changing schedules.
-	Snapshot(context.Context) (overview.WorkerStatus, error)
+	Snapshot(context.Context) (model.Workers, error)
 }
 
 // Workers returns worker state to an authenticated Warden administrator.

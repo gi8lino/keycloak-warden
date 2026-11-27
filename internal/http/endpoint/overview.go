@@ -31,8 +31,8 @@ const (
 
 // OverviewQueries exposes cross-decision history and reconciliation status.
 type OverviewQueries interface {
-	RevisionsThrough(context.Context, int, string, model.DecisionState, int64) (overview.RevisionPage, error)
-	Deliveries(context.Context, int, model.DeliveryStatus, string) (overview.DeliveryPage, error)
+	RevisionsThrough(context.Context, int, string, model.DecisionState, int64) (model.RevisionPage, error)
+	Deliveries(context.Context, int, model.DeliveryStatus, string) (model.DeliveryOverviewPage, error)
 }
 
 // DecisionHistory returns a bounded journal of effective ban and release revisions.

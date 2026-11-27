@@ -65,7 +65,7 @@ func (tx *fakeTx) CountFailures(_ context.Context, _ string, _ time.Time) (int, 
 }
 
 // RecordObservation accepts hypothetical threshold hits in tests.
-func (tx *fakeTx) RecordObservation(context.Context, ingestion.Observation) error { return nil }
+func (tx *fakeTx) RecordObservation(context.Context, model.Observation) error { return nil }
 
 // EnsureDecision records that ingestion requested an automatic source.
 func (tx *fakeTx) EnsureDecision(context.Context, string) error {
@@ -101,7 +101,7 @@ func (tx *fakeTx) Sources(context.Context, string, time.Time) ([]model.Source, e
 }
 
 // SaveDecision records destination identifiers from the application.
-func (tx *fakeTx) SaveDecision(_ context.Context, _, _ model.Decision, _ []model.Source, _ bans.ChangeCause, _ bool, targets []string) error {
+func (tx *fakeTx) SaveDecision(_ context.Context, _, _ model.Decision, _ []model.Source, _ model.ChangeCause, _ bool, targets []string) error {
 	tx.targets = append([]string(nil), targets...)
 	return nil
 }

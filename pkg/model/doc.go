@@ -1,2 +1,2 @@
-// Package model defines Warden decisions, ban sources, delivery records and lifecycle states.
+// Package model defines Warden domain models and administrative API contracts.
 package model

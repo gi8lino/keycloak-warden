@@ -6,12 +6,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // DestinationHealth aggregates all current revisions, not just one overview page.
-func (s *Store) DestinationHealth(ctx context.Context) ([]overview.DestinationHealth, error) {
+func (s *Store) DestinationHealth(ctx context.Context) ([]model.DestinationHealth, error) {
 	rows, err := s.db.QueryContext(ctx, `
 SELECT h.destination, SUM(h.status='pending'), SUM(h.status='retrying'), SUM(h.status='exhausted'),
  SUM(d.state='unbanned' AND h.status IN ('retrying','exhausted')),
@@ -22,9 +22,9 @@ GROUP BY h.destination ORDER BY 6 DESC,5 DESC,4 DESC,3 DESC,h.destination`)
 		return nil, err
 	}
 	defer rows.Close() //nolint:errcheck
-	result := []overview.DestinationHealth{}
+	result := []model.DestinationHealth{}
 	for rows.Next() {
-		var item overview.DestinationHealth
+		var item model.DestinationHealth
 		if err := rows.Scan(&item.Destination, &item.Pending, &item.Retrying, &item.Exhausted, &item.FailedUnbans, &item.ExhaustedUnbans, &item.Delivered); err != nil {
 			return nil, err
 		}
@@ -34,8 +34,8 @@ GROUP BY h.destination ORDER BY 6 DESC,5 DESC,4 DESC,3 DESC,h.destination`)
 }
 
 // Timeline combines audit tables in a consistent read transaction and orders by recorded time.
-func (s *Store) Timeline(ctx context.Context, id string, bounds overview.Query) (overview.TimelinePage, error) {
-	result := overview.TimelinePage{Items: []overview.TimelineEvent{}, Page: bounds.Page}
+func (s *Store) Timeline(ctx context.Context, id string, bounds overview.Query) (model.TimelinePage, error) {
+	result := model.TimelinePage{Items: []model.TimelineEvent{}, Page: bounds.Page}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return result, err
@@ -74,7 +74,7 @@ LIMIT ? OFFSET ?
 	}
 	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
-		var item overview.TimelineEvent
+		var item model.TimelineEvent
 		var at int64
 		var expires sql.NullInt64
 		if err := rows.Scan(&at, &item.Kind, &item.Action, &item.SourceKind, &item.State, &item.Revision, &item.Destination, &item.Detail, &item.Actor, &expires, &item.Attempt); err != nil {
@@ -98,15 +98,15 @@ LIMIT ? OFFSET ?
 }
 
 // Observations pages through hypothetical threshold hits without consulting enforcement state.
-func (s *Store) Observations(ctx context.Context, bounds overview.Query) (overview.ObservationPage, error) {
-	result := overview.ObservationPage{Items: []ingestion.Observation{}, Page: bounds.Page}
+func (s *Store) Observations(ctx context.Context, bounds overview.Query) (model.ObservationPage, error) {
+	result := model.ObservationPage{Items: []model.Observation{}, Page: bounds.Page}
 	rows, err := s.db.QueryContext(ctx, `SELECT source,event_id,ip,observed_at,expires,failures,threshold FROM ban_observations ORDER BY id DESC LIMIT ? OFFSET ?`, bounds.Limit+1, bounds.Offset)
 	if err != nil {
 		return result, err
 	}
 	defer rows.Close() //nolint:errcheck
 	for rows.Next() {
-		var item ingestion.Observation
+		var item model.Observation
 		var at, expires int64
 		if err := rows.Scan(&item.Source, &item.EventID, &item.IP, &at, &expires, &item.Failures, &item.Threshold); err != nil {
 			return result, err

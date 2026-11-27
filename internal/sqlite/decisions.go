@@ -33,7 +33,7 @@ func (t *transaction) SaveDecision(
 	ctx context.Context,
 	previous, decision model.Decision,
 	sources []model.Source,
-	cause bans.ChangeCause,
+	cause model.ChangeCause,
 	changed bool,
 	targets []string,
 ) error {

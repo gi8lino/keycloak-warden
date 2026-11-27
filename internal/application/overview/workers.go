@@ -6,32 +6,15 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // WorkerStore supplies durable delivery counts and the next wake-up deadline.
 type WorkerStore interface {
 	// WorkerStats returns current-revision delivery counts and activity.
-	WorkerStats(context.Context, time.Time) (QueueStats, error)
+	WorkerStats(context.Context, time.Time) (model.QueueStats, error)
 	// NextDeadline returns the earliest due source expiry or delivery retry.
 	NextDeadline(context.Context) (time.Time, error)
-}
-
-// ActionWorkerStatus is the action worker's runtime state and durable queue summary.
-type ActionWorkerStatus struct {
-	// RuntimeStatus supplies the in-process lifecycle state.
-	actions.RuntimeStatus `yaml:",inline"`
-	// QueueStats supplies the persisted delivery and ban statistics.
-	QueueStats `yaml:",inline"`
-	// NextDeadline is the earliest pending delivery or source expiry.
-	NextDeadline *time.Time `json:"nextDeadline,omitempty" yaml:"nextDeadline,omitempty"`
-}
-
-// WorkerStatus is the combined observable worker state for administrators.
-type WorkerStatus struct {
-	// Actions handles expiry, ban deliveries, and retries.
-	Actions ActionWorkerStatus `json:"actions" yaml:"actions"`
-	// Maintenance handles periodic observation cleanup and SQLite optimization.
-	Maintenance maintenance.Status `json:"maintenance" yaml:"maintenance"`
 }
 
 // WorkerService collects worker lifecycle and queue statistics.
@@ -58,19 +41,19 @@ func NewWorkerService(
 }
 
 // Snapshot returns a point-in-time view; queue counts can change between queries.
-func (s *WorkerService) Snapshot(ctx context.Context) (WorkerStatus, error) {
+func (s *WorkerService) Snapshot(ctx context.Context) (model.Workers, error) {
 	stats, err := s.store.WorkerStats(ctx, time.Now())
 	if err != nil {
-		return WorkerStatus{}, err
+		return model.Workers{}, err
 	}
 
 	deadline, err := s.store.NextDeadline(ctx)
 	if err != nil {
-		return WorkerStatus{}, err
+		return model.Workers{}, err
 	}
 
-	result := WorkerStatus{
-		Actions: ActionWorkerStatus{
+	result := model.Workers{
+		Actions: model.ActionWorker{
 			RuntimeStatus: s.actions.Snapshot(),
 			QueueStats:    stats,
 		},

@@ -19,13 +19,13 @@ type queryStore struct {
 	destination string
 }
 
-func (s *queryStore) ListRevisions(_ context.Context, q Query, ip string, state model.DecisionState) (RevisionPage, error) {
+func (s *queryStore) ListRevisions(_ context.Context, q Query, ip string, state model.DecisionState) (model.RevisionPage, error) {
 	s.bounds, s.ip, s.state = q, ip, state
-	return RevisionPage{Items: []Revision{}, Page: q.Page}, nil
+	return model.RevisionPage{Items: []model.Revision{}, Page: q.Page}, nil
 }
-func (s *queryStore) ListDeliveries(_ context.Context, q Query, status model.DeliveryStatus, destination string) (DeliveryPage, error) {
+func (s *queryStore) ListDeliveries(_ context.Context, q Query, status model.DeliveryStatus, destination string) (model.DeliveryOverviewPage, error) {
 	s.bounds, s.status, s.destination = q, status, destination
-	return DeliveryPage{Items: []Delivery{}, Page: q.Page}, nil
+	return model.DeliveryOverviewPage{Items: []model.DeliveryOverview{}, Page: q.Page}, nil
 }
 
 func TestValidation(t *testing.T) {

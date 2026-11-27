@@ -7,22 +7,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
-// ChangeCause identifies the application workflow that revised a decision.
-type ChangeCause string
-
-const (
-	// ChangeAutomatic identifies a revision caused by failed-login detection.
-	ChangeAutomatic ChangeCause = "automatic"
-	// ChangeManual identifies a revision caused by a manual ban.
-	ChangeManual ChangeCause = "manual"
-	// ChangeRelease identifies a revision caused by a manual unban.
-	ChangeRelease ChangeCause = "release"
-	// ChangeExpiry identifies a revision caused by expired ban sources.
-	ChangeExpiry ChangeCause = "expiry"
-	// ChangeReconciled identifies a revision caused by decision reconciliation.
-	ChangeReconciled ChangeCause = "reconciled"
-)
-
 // Transaction exposes the persisted facts needed to evaluate ban policy atomically.
 // Its implementation commits or rolls back together with the originating operation.
 type Transaction interface {
@@ -37,7 +21,7 @@ type Transaction interface {
 	// Sources reads the active reasons for a decision at the supplied time.
 	Sources(context.Context, string, time.Time) ([]model.Source, error)
 	// SaveDecision atomically persists a calculated state and synchronizes delivery work.
-	SaveDecision(context.Context, model.Decision, model.Decision, []model.Source, ChangeCause, bool, []string) error
+	SaveDecision(context.Context, model.Decision, model.Decision, []model.Source, model.ChangeCause, bool, []string) error
 }
 
 // MutationTransaction adds storage operations used by administrative and expiry workflows.
@@ -82,7 +66,7 @@ func ReconcileDecision(
 	now time.Time,
 	targets []string,
 ) (model.Decision, bool, error) {
-	return ReconcileDecisionWithCause(ctx, tx, ip, now, targets, ChangeReconciled)
+	return ReconcileDecisionWithCause(ctx, tx, ip, now, targets, model.ChangeReconciled)
 }
 
 // ReconcileDecisionWithCause records why this effective revision changed.
@@ -92,7 +76,7 @@ func ReconcileDecisionWithCause(
 	ip string,
 	now time.Time,
 	targets []string,
-	cause ChangeCause,
+	cause model.ChangeCause,
 ) (model.Decision, bool, error) {
 	previous, err := tx.Decision(ctx, ip)
 	if err != nil {

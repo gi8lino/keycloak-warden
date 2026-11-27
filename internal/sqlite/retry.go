@@ -7,10 +7,11 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // RetryDelivery requeues an exhausted current delivery without changing its revision or attempt history.
-func (s *Store) RetryDelivery(ctx context.Context, request actions.RetryRequest, now time.Time) error {
+func (s *Store) RetryDelivery(ctx context.Context, request model.RetryRequest, now time.Time) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err

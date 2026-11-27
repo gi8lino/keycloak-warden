@@ -33,7 +33,7 @@ Detection policy stays in the ingestion service. Runtime targets own their provi
 
 An append-only source mutation journal records persisted additions, changes and removals independently of decision revisions; source-only edits do not trigger outbound reconciliation. These records start with the source journal migration and are bounded on individual inspection.
 
-A decision's `state` is either `banned` or `unbanned`. Both the application and Go client use `pkg/model.DecisionState`. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
+A decision's `state` is either `banned` or `unbanned`. This is **Warden's desired state**, not proof that an external system has already applied it. Each destination acknowledges revisions independently, and unsuccessful deliveries are retried.
 
 SQLite stores these values in the constrained `decisions.state` column.
 

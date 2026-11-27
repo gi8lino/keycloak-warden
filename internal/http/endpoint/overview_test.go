@@ -11,7 +11,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
@@ -26,14 +25,14 @@ type overviewStub struct {
 	through     int64
 }
 
-func (s *overviewStub) RevisionsThrough(_ context.Context, page int, ip string, state model.DecisionState, through int64) (overview.RevisionPage, error) {
+func (s *overviewStub) RevisionsThrough(_ context.Context, page int, ip string, state model.DecisionState, through int64) (model.RevisionPage, error) {
 	s.page, s.ip, s.state, s.through = page, ip, state, through
-	return overview.RevisionPage{Items: []overview.Revision{}, Page: page}, nil
+	return model.RevisionPage{Items: []model.Revision{}, Page: page}, nil
 }
 
-func (s *overviewStub) Deliveries(_ context.Context, page int, status model.DeliveryStatus, destination string) (overview.DeliveryPage, error) {
+func (s *overviewStub) Deliveries(_ context.Context, page int, status model.DeliveryStatus, destination string) (model.DeliveryOverviewPage, error) {
 	s.page, s.status, s.destination = page, status, destination
-	return overview.DeliveryPage{Items: []overview.Delivery{}, Page: page}, nil
+	return model.DeliveryOverviewPage{Items: []model.DeliveryOverview{}, Page: page}, nil
 }
 
 func TestOverviewEndpoints(t *testing.T) {

@@ -88,34 +88,6 @@ type Store interface {
 	Optimize(context.Context) error
 }
 
-// TaskStatus describes the latest attempt for one maintenance operation.
-type TaskStatus struct {
-	// Running indicates that an attempt is currently in progress.
-	Running bool `json:"running" yaml:"running"`
-	// LastAttemptAt records when the most recent attempt began.
-	LastAttemptAt *time.Time `json:"lastAttemptAt,omitempty" yaml:"lastAttemptAt,omitempty"`
-	// LastSuccessAt records when the most recent successful attempt completed.
-	LastSuccessAt *time.Time `json:"lastSuccessAt,omitempty" yaml:"lastSuccessAt,omitempty"`
-	// LastError reports the last failed attempt, cleared after success.
-	LastError string `json:"lastError,omitempty" yaml:"lastError,omitempty"`
-}
-
-// Status is a safe snapshot of the maintenance worker and its scheduled tasks.
-type Status struct {
-	// State is idle, processing, or stopped.
-	State model.WorkerState `json:"state" yaml:"state"`
-	// StartedAt records when the maintenance worker was started.
-	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
-	// Prune reports the last observation cleanup attempt.
-	Prune TaskStatus `json:"prune" yaml:"prune"`
-	// Optimize reports the last SQLite optimization attempt.
-	Optimize TaskStatus `json:"optimize" yaml:"optimize"`
-	// PruneInterval describes the configured recurring cleanup interval.
-	PruneInterval string `json:"pruneInterval" yaml:"pruneInterval"`
-	// OptimizeInterval describes the configured recurring optimization interval.
-	OptimizeInterval string `json:"optimizeInterval" yaml:"optimizeInterval"`
-}
-
 // Runner owns the maintenance worker and serializes scheduled and manual operations.
 type Runner struct {
 	// cancel requests termination of ongoing or upcoming maintenance.
@@ -137,9 +109,9 @@ type Runner struct {
 	// statusMu protects the most recent outcomes.
 	statusMu sync.Mutex
 	// pruneStatus is the observation cleanup status.
-	pruneStatus TaskStatus
+	pruneStatus model.TaskStatus
 	// optimizeStatus is the planner optimization status.
-	optimizeStatus TaskStatus
+	optimizeStatus model.TaskStatus
 }
 
 // Start schedules maintenance using a prevalidated schedule; SQLite is optimized separately on open.
@@ -180,7 +152,7 @@ func (r *Runner) Close() {
 }
 
 // Snapshot returns the worker lifecycle and task history without querying SQLite.
-func (r *Runner) Snapshot() Status {
+func (r *Runner) Snapshot() model.Maintenance {
 	r.statusMu.Lock()
 	defer r.statusMu.Unlock()
 
@@ -194,7 +166,7 @@ func (r *Runner) Snapshot() Status {
 		}
 	}
 
-	return Status{
+	return model.Maintenance{
 		State:            state,
 		StartedAt:        r.startedAt,
 		Prune:            r.pruneStatus,
@@ -279,7 +251,7 @@ func (r *Runner) logOutcome(operation Operation, trigger Trigger, started time.T
 }
 
 // statusFor returns the protected status value; statusMu must be held.
-func (r *Runner) statusFor(operation Operation) *TaskStatus {
+func (r *Runner) statusFor(operation Operation) *model.TaskStatus {
 	if operation == OperationPrune {
 		return &r.pruneStatus
 	}

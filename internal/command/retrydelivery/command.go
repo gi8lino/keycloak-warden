@@ -8,7 +8,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
-	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Register binds one decision ID and destination to a revision-guarded retry request.
@@ -24,7 +24,7 @@ func Register(root *tinyflags.Command, serverFlags *appflags.ServerFlags, encode
 
 	command.Run(func(ctx context.Context) error {
 		args := command.Args()
-		return Run(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, client.RetryRequest{
+		return Run(ctx, *adminFlags.ApplicationURL, *adminFlags.AdminToken, model.RetryRequest{
 			DecisionID:  args[0],
 			Revision:    int64(*revision),
 			Destination: args[1],

@@ -9,12 +9,13 @@ import (
 
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // MaintenanceOperations provides operational DB maintenance independent of HTTP and SQLite.
 type MaintenanceOperations interface {
 	// Snapshot reports the last in-process maintenance attempts.
-	Snapshot() maintenance.Status
+	Snapshot() model.Maintenance
 	// Trigger runs the requested operation without overlapping scheduled maintenance.
 	Trigger(context.Context, maintenance.Operation) error
 }

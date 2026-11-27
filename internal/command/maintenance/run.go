@@ -7,6 +7,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Action identifies a supported remote maintenance command.
@@ -28,7 +29,7 @@ func Run(ctx context.Context, applicationURL, token string, action Action, encod
 		return err
 	}
 
-	var status client.Maintenance
+	var status model.Maintenance
 	switch action {
 	case ActionStatus:
 		status, err = api.MaintenanceStatus(ctx)

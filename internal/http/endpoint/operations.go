@@ -10,17 +10,18 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // RetryOperations exposes validated explicit retries.
 type RetryOperations interface {
-	Retry(context.Context, actions.RetryRequest, time.Time) error
+	Retry(context.Context, model.RetryRequest, time.Time) error
 }
 
 // RetryDelivery queues one exhausted current delivery via the application service.
 func RetryDelivery(service RetryOperations, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		var request actions.RetryRequest
+		var request model.RetryRequest
 		if !decodeAdminPayload(w, r, &request, "Invalid retry request.", "Retry request is too large.") {
 			return
 		}
@@ -35,16 +36,16 @@ func RetryDelivery(service RetryOperations, logger *slog.Logger) http.HandlerFun
 			httpresponse.Problem(w, http.StatusServiceUnavailable, "Retry unavailable.")
 		default:
 			logger.Info("delivery retry queued", "event", "delivery_retry_queued", "decision_id", request.DecisionID, "revision", request.Revision, "destination", request.Destination, "actor", request.Actor)
-			httpresponse.Respond(w, http.StatusAccepted, map[string]bool{"queued": true})
+			httpresponse.Respond(w, http.StatusAccepted, model.RetryResponse{Queued: true})
 		}
 	}
 }
 
 // OperationalQueries exposes read-only operational projections.
 type OperationalQueries interface {
-	Health(context.Context) ([]overview.DestinationHealth, error)
-	Timeline(context.Context, string, int) (overview.TimelinePage, error)
-	Observations(context.Context, int) (overview.ObservationPage, error)
+	Health(context.Context) ([]model.DestinationHealth, error)
+	Timeline(context.Context, string, int) (model.TimelinePage, error)
+	Observations(context.Context, int) (model.ObservationPage, error)
 }
 
 // DeliveryHealth returns current counts grouped by destination.

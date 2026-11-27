@@ -5,12 +5,12 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/overview"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // WorkerStats returns a read-only summary of active work and historical last activity.
-func (s *Store) WorkerStats(ctx context.Context, now time.Time) (overview.QueueStats, error) {
-	var stats overview.QueueStats
+func (s *Store) WorkerStats(ctx context.Context, now time.Time) (model.QueueStats, error) {
+	var stats model.QueueStats
 	var last sql.NullInt64
 
 	err := s.db.QueryRowContext(ctx, `
@@ -22,19 +22,19 @@ FROM delivery_history AS h
 JOIN decisions AS d ON d.ip = h.ip AND d.revision = h.revision
 `).Scan(&stats.PendingDeliveries, &stats.RetryingDeliveries, &stats.ExhaustedDeliveries)
 	if err != nil {
-		return overview.QueueStats{}, err
+		return model.QueueStats{}, err
 	}
 
 	if err := s.db.QueryRowContext(ctx, `
 SELECT COUNT(DISTINCT ip) FROM ban_sources WHERE expires > ?
 `, now.UnixMilli()).Scan(&stats.ActiveBans); err != nil {
-		return overview.QueueStats{}, err
+		return model.QueueStats{}, err
 	}
 
 	if err := s.db.QueryRowContext(ctx, `
 SELECT MAX(completed_at) FROM delivery_attempts
 `).Scan(&last); err != nil {
-		return overview.QueueStats{}, err
+		return model.QueueStats{}, err
 	}
 	if last.Valid {
 		stats.LastAttemptAt = new(time.UnixMilli(last.Int64).UTC())

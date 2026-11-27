@@ -20,7 +20,7 @@ import (
 // fakeQueue supplies an idle action worker and deterministic database statistics.
 type fakeQueue struct {
 	// stats is the persisted work summary.
-	stats QueueStats
+	stats model.QueueStats
 	// deadline is the earliest scheduled queue deadline.
 	deadline time.Time
 	// err makes the read-only query fail.
@@ -34,7 +34,7 @@ func (fakeQueue) Changes() <-chan struct{} { return nil }
 func (q fakeQueue) NextDeadline(context.Context) (time.Time, error) { return q.deadline, q.err }
 
 // WorkerStats returns the fake current-revision delivery counts.
-func (q fakeQueue) WorkerStats(context.Context, time.Time) (QueueStats, error) {
+func (q fakeQueue) WorkerStats(context.Context, time.Time) (model.QueueStats, error) {
 	return q.stats, q.err
 }
 
@@ -73,7 +73,7 @@ func TestWorkerSnapshot(t *testing.T) {
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 		deadline := time.Now().Add(time.Hour).UTC()
 		queue := fakeQueue{
-			stats: QueueStats{
+			stats: model.QueueStats{
 				PendingDeliveries:   2,
 				RetryingDeliveries:  3,
 				ExhaustedDeliveries: 1,
@@ -113,12 +113,12 @@ func TestWorkerSnapshot(t *testing.T) {
 		lastAttemptAt := startedAt.Add(5 * time.Minute)
 		nextDeadline := startedAt.Add(time.Hour)
 
-		status := ActionWorkerStatus{
-			RuntimeStatus: actions.RuntimeStatus{
+		status := model.ActionWorker{
+			RuntimeStatus: model.RuntimeStatus{
 				State:     model.WorkerIdle,
 				StartedAt: startedAt,
 			},
-			QueueStats: QueueStats{
+			QueueStats: model.QueueStats{
 				PendingDeliveries:   2,
 				RetryingDeliveries:  3,
 				ExhaustedDeliveries: 1,
@@ -162,6 +162,6 @@ func TestWorkerSnapshot(t *testing.T) {
 		status, err := NewWorkerService(actionsRunner, maintenanceRunner, queue).Snapshot(t.Context())
 
 		require.ErrorContains(t, err, "storage error")
-		assert.Equal(t, WorkerStatus{}, status)
+		assert.Equal(t, model.Workers{}, status)
 	})
 }

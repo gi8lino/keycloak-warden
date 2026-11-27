@@ -151,7 +151,7 @@ func TestRevisionJournalAtomicity(t *testing.T) {
 			}); err != nil {
 				return err
 			}
-			_, _, err := bans.ReconcileDecisionWithCause(t.Context(), tx, "203.0.113.50", now, []string{"edge"}, bans.ChangeCause("invalid"))
+			_, _, err := bans.ReconcileDecisionWithCause(t.Context(), tx, "203.0.113.50", now, []string{"edge"}, model.ChangeCause("invalid"))
 			return err
 		})
 		require.Error(t, err)

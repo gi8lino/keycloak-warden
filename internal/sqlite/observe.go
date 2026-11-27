@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
-	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // RecordFailure persists a new occurrence only once per producer and identifier.
@@ -56,7 +56,7 @@ WHERE ip = ?
 }
 
 // RecordObservation stores the hypothetical result without creating a decision or delivery.
-func (t *transaction) RecordObservation(ctx context.Context, item ingestion.Observation) error {
+func (t *transaction) RecordObservation(ctx context.Context, item model.Observation) error {
 	_, err := t.tx.ExecContext(ctx, `INSERT INTO ban_observations (source, event_id, ip, observed_at, expires, failures, threshold) VALUES (?, ?, ?, ?, ?, ?, ?)`, item.Source, item.EventID, item.IP, item.At.UnixMilli(), item.ExpiresAt.UnixMilli(), item.Failures, item.Threshold)
 	return err
 }

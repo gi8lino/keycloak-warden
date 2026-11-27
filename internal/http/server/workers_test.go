@@ -12,10 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
-	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -26,21 +23,21 @@ type testWorkerStatus struct {
 }
 
 // Snapshot provides one sample action and maintenance worker report.
-func (s testWorkerStatus) Snapshot(context.Context) (overview.WorkerStatus, error) {
+func (s testWorkerStatus) Snapshot(context.Context) (model.Workers, error) {
 	if s.err != nil {
-		return overview.WorkerStatus{}, s.err
+		return model.Workers{}, s.err
 	}
-	return overview.WorkerStatus{
-		Actions: overview.ActionWorkerStatus{
-			RuntimeStatus: actions.RuntimeStatus{
+	return model.Workers{
+		Actions: model.ActionWorker{
+			RuntimeStatus: model.RuntimeStatus{
 				State:     model.WorkerIdle,
 				StartedAt: time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
 			},
-			QueueStats: overview.QueueStats{
+			QueueStats: model.QueueStats{
 				PendingDeliveries: 2,
 			},
 		},
-		Maintenance: maintenance.Status{
+		Maintenance: model.Maintenance{
 			State: model.WorkerIdle,
 		},
 	}, nil

@@ -11,22 +11,12 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
-// createBanRequest is the JSON body used by the application ban endpoint.
-type createBanRequest struct {
-	// IPAddress is the canonical address selected by the operation.
-	IPAddress string `json:"ipAddress"`
-	// Duration specifies how long the requested manual block should last.
-	Duration string `json:"duration"`
-	// Reason records the operator explanation for the requested block.
-	Reason string `json:"reason"`
-}
-
 // Ban requests one operator-initiated ban from the running application server.
 func (c *Client) Ban(ctx context.Context, request model.ManualBanRequest) (model.Record, error) {
-	return c.doBanRequest(ctx, http.MethodPost, "/bans", createBanRequest{
-		IPAddress: request.IP,
-		Duration:  request.Duration.String(),
-		Reason:    request.Reason,
+	return c.doBanRequest(ctx, http.MethodPost, "/bans", model.CreateBanRequest{
+		IP:       request.IP,
+		Duration: request.Duration.String(),
+		Reason:   request.Reason,
 	})
 }
 
@@ -44,7 +34,7 @@ func (c *Client) Get(ctx context.Context, decisionID string) (model.Record, erro
 	return c.GetPage(ctx, decisionID, 1)
 }
 
-// GetPage retrieves a one-based history page directly using SQLite LIMIT/OFFSET.
+// GetPage retrieves a one-based history page.
 // The decision and acknowledgements always describe the latest persisted state.
 func (c *Client) GetPage(ctx context.Context, decisionID string, page int) (model.Record, error) {
 	return c.GetPageThroughRevision(ctx, decisionID, page, 0)

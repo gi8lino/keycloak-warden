@@ -13,8 +13,8 @@ import (
 var _ overview.Store = (*Store)(nil)
 
 // ListRevisions pages over immutable decision changes, newest first.
-func (s *Store) ListRevisions(ctx context.Context, bounds overview.Query, ip string, state model.DecisionState) (overview.RevisionPage, error) {
-	result := overview.RevisionPage{Items: []overview.Revision{}, Page: bounds.Page}
+func (s *Store) ListRevisions(ctx context.Context, bounds overview.Query, ip string, state model.DecisionState) (model.RevisionPage, error) {
+	result := model.RevisionPage{Items: []model.Revision{}, Page: bounds.Page}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return result, err
@@ -40,7 +40,7 @@ LIMIT ? OFFSET ?
 		return result, err
 	}
 	for rows.Next() {
-		var item overview.Revision
+		var item model.Revision
 		var expires, changed int64
 		var sources string
 		if err := rows.Scan(&item.DecisionID, &item.IPAddress, &item.Revision, &item.State, &expires, &changed, &sources, &item.Cause); err != nil {
@@ -74,8 +74,8 @@ LIMIT ? OFFSET ?
 
 // ListDeliveries pages over the latest revision for each decision/destination.
 // History survives after a release even when a destination was fully acknowledged.
-func (s *Store) ListDeliveries(ctx context.Context, bounds overview.Query, status model.DeliveryStatus, destination string) (overview.DeliveryPage, error) {
-	result := overview.DeliveryPage{Items: []overview.Delivery{}, Page: bounds.Page}
+func (s *Store) ListDeliveries(ctx context.Context, bounds overview.Query, status model.DeliveryStatus, destination string) (model.DeliveryOverviewPage, error) {
+	result := model.DeliveryOverviewPage{Items: []model.DeliveryOverview{}, Page: bounds.Page}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return result, err
@@ -107,7 +107,7 @@ LIMIT ? OFFSET ?
 		return result, err
 	}
 	for rows.Next() {
-		var item overview.Delivery
+		var item model.DeliveryOverview
 		var changed, last, next sql.NullInt64
 		var diagnostic sql.NullString
 		if err := rows.Scan(&item.DecisionID, &item.IPAddress, &item.Revision, &item.DesiredState, &item.Destination, &item.Status, &item.AcknowledgedRevision, &item.AttemptCount, &changed, &last, &next, &diagnostic); err != nil {

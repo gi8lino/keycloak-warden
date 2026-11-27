@@ -26,8 +26,8 @@ type scriptedMaintenance struct {
 }
 
 // Snapshot returns a known successful status.
-func (s *scriptedMaintenance) Snapshot() maintenance.Status {
-	return maintenance.Status{State: model.WorkerIdle, PruneInterval: "1h0m0s"}
+func (s *scriptedMaintenance) Snapshot() model.Maintenance {
+	return model.Maintenance{State: model.WorkerIdle, PruneInterval: "1h0m0s"}
 }
 
 // Trigger records one requested maintenance operation.

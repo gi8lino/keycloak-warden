@@ -24,7 +24,7 @@ type Transaction interface {
 	// CountFailures returns observed failures in the active sliding window.
 	CountFailures(context.Context, string, time.Time) (int, error)
 	// RecordObservation stores a would-ban result atomically with the failure.
-	RecordObservation(context.Context, Observation) error
+	RecordObservation(context.Context, model.Observation) error
 	// Ban policy reads and writes share this observation transaction.
 	bans.Transaction
 }
@@ -148,7 +148,7 @@ func (s *Service) processFailure(
 	}
 
 	if s.policy.ObserveOnly {
-		if err := tx.RecordObservation(ctx, Observation{
+		if err := tx.RecordObservation(ctx, model.Observation{
 			Source:    event.Source,
 			EventID:   event.ID,
 			IP:        result.IP,
@@ -170,7 +170,7 @@ func (s *Service) processFailure(
 		return Result{}, err
 	}
 
-	decision, changed, err := bans.ReconcileDecisionWithCause(ctx, tx, result.IP, now, s.targets, bans.ChangeAutomatic)
+	decision, changed, err := bans.ReconcileDecisionWithCause(ctx, tx, result.IP, now, s.targets, model.ChangeAutomatic)
 	if err != nil {
 		return Result{}, err
 	}

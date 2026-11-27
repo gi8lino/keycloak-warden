@@ -22,16 +22,6 @@ type BanAdministration interface {
 	GetDecisionPage(context.Context, string, time.Time, int, int64) (model.Record, error)
 }
 
-// createBanPayload contains the fields decoded independently for each administrative request.
-type createBanPayload struct {
-	// IP is the single address requested by the operator.
-	IP string `json:"ipAddress"`
-	// Duration is the requested lifetime in Go duration syntax.
-	Duration string `json:"duration"`
-	// Reason explains why the operator requested the block.
-	Reason string `json:"reason"`
-}
-
 // CreateBan creates or extends a manual ban, returning its effective decision.
 func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -65,9 +55,9 @@ func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc 
 	}
 }
 
-// decodeBanPayload decodes the administrative ban request using the shared JSON contract.
-func decodeBanPayload(w http.ResponseWriter, r *http.Request) (createBanPayload, bool) {
-	var payload createBanPayload
+// decodeBanPayload decodes the manual ban request.
+func decodeBanPayload(w http.ResponseWriter, r *http.Request) (model.CreateBanRequest, bool) {
+	var payload model.CreateBanRequest
 	ok := decodeAdminPayload(w, r, &payload, "Invalid ban request.", "Ban request is too large.")
 	return payload, ok
 }
@@ -86,7 +76,6 @@ func ListBans(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 // GetBan returns one persisted decision together with its sources and deliveries.
 func GetBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// A page number selects a bounded slice of history with no precursor requests.
 		query, err := url.ParseQuery(r.URL.RawQuery)
 		if err != nil {
 			httpresponse.Problem(w, http.StatusBadRequest, "Invalid history query.")

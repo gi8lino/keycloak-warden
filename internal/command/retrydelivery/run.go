@@ -5,10 +5,11 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Run sends a retry request to Warden and prints acknowledgement of queue admission.
-func Run(ctx context.Context, applicationURL, token string, request client.RetryRequest, encode output.Encoder, opts ...client.Option) error {
+func Run(ctx context.Context, applicationURL, token string, request model.RetryRequest, encode output.Encoder, opts ...client.Option) error {
 	api, err := client.New(applicationURL, token, opts...)
 	if err != nil {
 		return err

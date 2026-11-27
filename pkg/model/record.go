@@ -57,13 +57,3 @@ type Record struct {
 	// Deliveries records each destination’s acknowledged revision.
 	Deliveries []Acknowledgement `json:"deliveries" yaml:"deliveries"`
 }
-
-// ManualBanRequest specifies a new or extended operator-requested block.
-type ManualBanRequest struct {
-	// IP is the reported client address, provided by the operator.
-	IP string
-	// Duration specifies how long the requested manual block should last.
-	Duration time.Duration
-	// Reason records the operator explanation for the requested block.
-	Reason string
-}

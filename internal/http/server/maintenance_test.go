@@ -11,13 +11,14 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // testMaintenance responds to maintenance API requests without a database.
 type testMaintenance struct{}
 
 // Snapshot returns a predictable test status.
-func (testMaintenance) Snapshot() maintenance.Status { return maintenance.Status{} }
+func (testMaintenance) Snapshot() model.Maintenance { return model.Maintenance{} }
 
 // Trigger accepts an administrative maintenance request.
 func (testMaintenance) Trigger(context.Context, maintenance.Operation) error { return nil }

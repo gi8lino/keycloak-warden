@@ -121,7 +121,7 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		assert.EqualValues(t, 1, health[0].ExhaustedUnbans)
 		retry, err := actions.NewRetryService(store, []string{"edge"})
 		require.NoError(t, err)
-		request := actions.RetryRequest{DecisionID: released.Decision.ID, Revision: released.Decision.Revision, Destination: "edge", Actor: "operator"}
+		request := model.RetryRequest{DecisionID: released.Decision.ID, Revision: released.Decision.Revision, Destination: "edge", Actor: "operator"}
 		stale := request
 		stale.Revision = record.Decision.Revision
 		require.ErrorIs(t, retry.Retry(ctx, stale, now), actions.ErrRetryConflict)
@@ -157,7 +157,7 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		timeline, err := operations.Timeline(ctx, released.Decision.ID, 1)
 		require.NoError(t, err)
 		assert.Equal(t, "203.0.113.1", timeline.IP)
-		assert.Contains(t, timeline.Items, overview.TimelineEvent{Kind: "retry", Action: "requested", Revision: released.Decision.Revision, Destination: "edge", Actor: "operator", At: now.Add(time.Second)})
+		assert.Contains(t, timeline.Items, model.TimelineEvent{Kind: "retry", Action: "requested", Revision: released.Decision.Revision, Destination: "edge", Actor: "operator", At: now.Add(time.Second)})
 		health, err = operations.Health(ctx)
 		require.NoError(t, err)
 		require.Len(t, health, 1)
@@ -179,6 +179,6 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		require.NoError(t, store.Finish(ctx, *job, errors.New("failure"), 1, now, 10*time.Second))
 		service, err := actions.NewRetryService(store, []string{"edge"})
 		require.NoError(t, err)
-		require.ErrorIs(t, service.Retry(ctx, actions.RetryRequest{DecisionID: record.Decision.ID, Revision: record.Decision.Revision, Destination: "edge", Actor: "operator"}, now.Add(2*time.Second)), actions.ErrRetryConflict)
+		require.ErrorIs(t, service.Retry(ctx, model.RetryRequest{DecisionID: record.Decision.ID, Revision: record.Decision.Revision, Destination: "edge", Actor: "operator"}, now.Add(2*time.Second)), actions.ErrRetryConflict)
 	})
 }

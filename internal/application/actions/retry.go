@@ -5,6 +5,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 var (
@@ -14,22 +16,10 @@ var (
 	ErrRetryConflict = errors.New("delivery is not eligible for retry")
 )
 
-// RetryRequest identifies exactly one exhausted current-revision delivery.
-type RetryRequest struct {
-	// DecisionID identifies the stable decision.
-	DecisionID string `json:"decisionId"`
-	// Revision prevents stale operator actions from retrying newer decisions.
-	Revision int64 `json:"revision"`
-	// Destination identifies the configured target.
-	Destination string `json:"destination"`
-	// Actor is the identity asserted by the authenticated administrative caller.
-	Actor string `json:"actor"`
-}
-
 // RetryStore atomically requeues one exhausted delivery and records the operator request.
 type RetryStore interface {
 	// RetryDelivery atomically checks eligibility, records the request and requeues the delivery.
-	RetryDelivery(context.Context, RetryRequest, time.Time) error
+	RetryDelivery(context.Context, model.RetryRequest, time.Time) error
 }
 
 // RetryService validates retry admission independently of transport and storage.
@@ -58,7 +48,7 @@ func NewRetryService(store RetryStore, names []string) (*RetryService, error) {
 }
 
 // Retry schedules an exhausted current revision with a fresh attempt budget.
-func (s *RetryService) Retry(ctx context.Context, request RetryRequest, now time.Time) error {
+func (s *RetryService) Retry(ctx context.Context, request model.RetryRequest, now time.Time) error {
 	request.Actor = strings.TrimSpace(request.Actor)
 
 	if !validDecisionReference(request.DecisionID, request.Revision) {

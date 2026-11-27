@@ -14,18 +14,19 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // retryOperation records the parsed request and returns a configurable service outcome.
 type retryOperation struct {
 	// request captures the request forwarded to the application.
-	request actions.RetryRequest
+	request model.RetryRequest
 	// err is the application outcome.
 	err error
 }
 
 // Retry records the request without touching a destination.
-func (s *retryOperation) Retry(_ context.Context, request actions.RetryRequest, _ time.Time) error {
+func (s *retryOperation) Retry(_ context.Context, request model.RetryRequest, _ time.Time) error {
 	s.request = request
 	return s.err
 }
@@ -42,7 +43,7 @@ func TestRetryEndpoint(t *testing.T) {
 		RetryDelivery(service, slog.New(slog.NewTextHandler(io.Discard, nil)))(response, request)
 		assert.Equal(t, http.StatusAccepted, response.Code)
 		assert.JSONEq(t, `{"queued":true}`, response.Body.String())
-		assert.Equal(t, actions.RetryRequest{DecisionID: "one", Revision: 4, Destination: "edge", Actor: "operator"}, service.request)
+		assert.Equal(t, model.RetryRequest{DecisionID: "one", Revision: 4, Destination: "edge", Actor: "operator"}, service.request)
 	})
 
 	t.Run("stale revision is a conflict", func(t *testing.T) {
