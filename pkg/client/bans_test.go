@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestGetPage(t *testing.T) {
@@ -20,7 +22,7 @@ func TestGetPage(t *testing.T) {
 			received <- r.URL.Query().Get("history-page")
 			assert.Equal(t, "/warden/bans/id-one", r.URL.Path)
 			w.Header().Set("Content-Type", "application/json")
-			assert.NoError(t, json.NewEncoder(w).Encode(Record{HistoryPage: 100}))
+			assert.NoError(t, json.NewEncoder(w).Encode(model.Record{HistoryPage: 100}))
 		}))
 		defer server.Close()
 

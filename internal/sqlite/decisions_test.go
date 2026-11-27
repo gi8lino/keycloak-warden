@@ -9,10 +9,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	_ "modernc.org/sqlite"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	_ "modernc.org/sqlite"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // TestDecisionIDsUseUUIDv7 ensures manual and automatic decisions receive standard UUIDv7 identifiers.
@@ -38,7 +38,7 @@ func TestDecisionIDsUseUUIDv7(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		record, err := service.BanManual(t.Context(), model.ManualBanRequest{
 			IP:       "203.0.113.50",
 			Duration: time.Hour,
 			Reason:   "incident",
@@ -86,18 +86,18 @@ func TestDecisionStatePersistence(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
-		var stored decisionstate.State
+		var stored model.DecisionState
 		require.NoError(t, db.QueryRowContext(ctx, "SELECT state FROM decisions WHERE ip = ?", created.Decision.IP).Scan(&stored))
-		assert.Equal(t, decisionstate.StateBanned, stored)
+		assert.Equal(t, model.DecisionBanned, stored)
 
 		record, err := store.GetDecision(ctx, created.Decision.ID, now)
 		require.NoError(t, err)
-		assert.Equal(t, decisionstate.StateBanned, record.Decision.State)
+		assert.Equal(t, model.DecisionBanned, record.Decision.State)
 
 		job, err := store.Next(ctx, now)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisionstate.StateBanned, job.Decision.State)
+		assert.Equal(t, model.DecisionBanned, job.Decision.State)
 	})
 
 	t.Run("persists and reads unbanned decisions", func(t *testing.T) {
@@ -118,17 +118,17 @@ func TestDecisionStatePersistence(t *testing.T) {
 		require.NoError(t, err)
 		t.Cleanup(func() { assert.NoError(t, db.Close()) })
 
-		var stored decisionstate.State
+		var stored model.DecisionState
 		require.NoError(t, db.QueryRowContext(ctx, "SELECT state FROM decisions WHERE ip = ?", created.Decision.IP).Scan(&stored))
-		assert.Equal(t, decisionstate.StateUnbanned, stored)
+		assert.Equal(t, model.DecisionUnbanned, stored)
 
 		record, err := store.GetDecision(ctx, created.Decision.ID, now.Add(time.Second))
 		require.NoError(t, err)
-		assert.Equal(t, decisionstate.StateUnbanned, record.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, record.Decision.State)
 
 		job, err := store.Next(ctx, now.Add(time.Second))
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
 	})
 }

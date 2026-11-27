@@ -5,13 +5,13 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // WorkerRuntime describes one worker's current process lifecycle.
 type WorkerRuntime struct {
 	// State is idle, processing, or stopped.
-	State workerstate.State `json:"state" yaml:"state"`
+	State model.WorkerState `json:"state" yaml:"state"`
 	// StartedAt records the current process worker start.
 	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
 }

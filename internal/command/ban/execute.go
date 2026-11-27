@@ -7,6 +7,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // execute attempts a manual ban for each address and retains per-address failures.
@@ -28,7 +29,7 @@ func execute(
 			break
 		}
 
-		record, err := api.Ban(ctx, client.ManualBanRequest{
+		record, err := api.Ban(ctx, model.ManualBanRequest{
 			IP:       ip,
 			Duration: duration,
 			Reason:   reason,

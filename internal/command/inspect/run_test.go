@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestRun(t *testing.T) {
@@ -220,7 +220,7 @@ func TestRunPage(t *testing.T) {
 		assert.Equal(t, []string{"", "2", "3"}, pages)
 		mu.Unlock()
 		require.Len(t, result, 1)
-		history, ok := result[0].Deliveries.([]client.Delivery)
+		history, ok := result[0].Deliveries.([]model.Delivery)
 		require.True(t, ok)
 		require.Len(t, history, 3)
 		assert.EqualValues(t, 3, history[0].Revision)

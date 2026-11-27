@@ -13,8 +13,7 @@ import (
 	"go.yaml.in/yaml/v4"
 
 	"github.com/gi8lino/keycloak-warden/pkg/client"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestPublicResponseTypes(t *testing.T) {
@@ -36,8 +35,8 @@ func TestPublicResponseTypes(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, records, 1)
 		assert.Equal(t, "203.0.113.1", records[0].Decision.IP)
-		assert.Equal(t, decisionstate.StateBanned, records[0].Decision.State)
-		assert.Equal(t, "manual", records[0].Sources[0].Kind)
+		assert.Equal(t, model.DecisionBanned, records[0].Decision.State)
+		assert.Equal(t, model.SourceManual, records[0].Sources[0].Kind)
 		assert.Equal(t, int64(3), records[0].Deliveries[0].Revision)
 	})
 
@@ -91,49 +90,49 @@ func TestDecisionStateSerialization(t *testing.T) {
 	t.Run("banned JSON", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := json.Marshal(client.Decision{State: decisionstate.StateBanned})
+		encoded, err := json.Marshal(model.Decision{State: model.DecisionBanned})
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"state":"banned"`)
 
-		var decoded client.Decision
+		var decoded model.Decision
 		require.NoError(t, json.Unmarshal(encoded, &decoded))
-		assert.Equal(t, decisionstate.StateBanned, decoded.State)
+		assert.Equal(t, model.DecisionBanned, decoded.State)
 	})
 
 	t.Run("unbanned JSON", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := json.Marshal(client.Decision{State: decisionstate.StateUnbanned})
+		encoded, err := json.Marshal(model.Decision{State: model.DecisionUnbanned})
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"state":"unbanned"`)
 
-		var decoded client.Decision
+		var decoded model.Decision
 		require.NoError(t, json.Unmarshal(encoded, &decoded))
-		assert.Equal(t, decisionstate.StateUnbanned, decoded.State)
+		assert.Equal(t, model.DecisionUnbanned, decoded.State)
 	})
 
 	t.Run("banned YAML", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := yaml.Marshal(client.Decision{State: decisionstate.StateBanned})
+		encoded, err := yaml.Marshal(model.Decision{State: model.DecisionBanned})
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), "state: banned")
 
-		var decoded client.Decision
+		var decoded model.Decision
 		require.NoError(t, yaml.Unmarshal(encoded, &decoded))
-		assert.Equal(t, decisionstate.StateBanned, decoded.State)
+		assert.Equal(t, model.DecisionBanned, decoded.State)
 	})
 
 	t.Run("unbanned YAML", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := yaml.Marshal(client.Decision{State: decisionstate.StateUnbanned})
+		encoded, err := yaml.Marshal(model.Decision{State: model.DecisionUnbanned})
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), "state: unbanned")
 
-		var decoded client.Decision
+		var decoded model.Decision
 		require.NoError(t, yaml.Unmarshal(encoded, &decoded))
-		assert.Equal(t, decisionstate.StateUnbanned, decoded.State)
+		assert.Equal(t, model.DecisionUnbanned, decoded.State)
 	})
 }
 
@@ -144,25 +143,25 @@ func TestDeliveryDesiredStateSerialization(t *testing.T) {
 	t.Run("JSON", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := json.Marshal(client.Delivery{DesiredState: decisionstate.StateBanned})
+		encoded, err := json.Marshal(model.Delivery{DesiredState: model.DecisionBanned})
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"desiredState":"banned"`)
 
-		var decoded client.Delivery
+		var decoded model.Delivery
 		require.NoError(t, json.Unmarshal(encoded, &decoded))
-		assert.Equal(t, decisionstate.StateBanned, decoded.DesiredState)
+		assert.Equal(t, model.DecisionBanned, decoded.DesiredState)
 	})
 
 	t.Run("YAML", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := yaml.Marshal(client.Delivery{DesiredState: decisionstate.StateUnbanned})
+		encoded, err := yaml.Marshal(model.Delivery{DesiredState: model.DecisionUnbanned})
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), "desiredState: unbanned")
 
-		var decoded client.Delivery
+		var decoded model.Delivery
 		require.NoError(t, yaml.Unmarshal(encoded, &decoded))
-		assert.Equal(t, decisionstate.StateUnbanned, decoded.DesiredState)
+		assert.Equal(t, model.DecisionUnbanned, decoded.DesiredState)
 	})
 }
 
@@ -172,37 +171,37 @@ func TestDeliveryStatusSerialization(t *testing.T) {
 
 	t.Run("JSON status and outcome", func(t *testing.T) {
 		t.Parallel()
-		input := client.Delivery{
-			Status:   deliverystate.StatusRetrying,
-			Attempts: []client.DeliveryAttempt{{Outcome: deliverystate.OutcomeFailed}},
+		input := model.Delivery{
+			Status:   model.DeliveryRetrying,
+			Attempts: []model.DeliveryAttempt{{Outcome: model.AttemptFailed}},
 		}
 		encoded, err := json.Marshal(input)
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), `"status":"retrying"`)
 		assert.Contains(t, string(encoded), `"outcome":"failed"`)
 
-		var decoded client.Delivery
+		var decoded model.Delivery
 		require.NoError(t, json.Unmarshal(encoded, &decoded))
-		assert.Equal(t, deliverystate.StatusRetrying, decoded.Status)
+		assert.Equal(t, model.DeliveryRetrying, decoded.Status)
 		require.Len(t, decoded.Attempts, 1)
-		assert.Equal(t, deliverystate.OutcomeFailed, decoded.Attempts[0].Outcome)
+		assert.Equal(t, model.AttemptFailed, decoded.Attempts[0].Outcome)
 	})
 
 	t.Run("YAML status and outcome", func(t *testing.T) {
 		t.Parallel()
-		input := client.Delivery{
-			Status:   deliverystate.StatusDelivered,
-			Attempts: []client.DeliveryAttempt{{Outcome: deliverystate.OutcomeSucceeded}},
+		input := model.Delivery{
+			Status:   model.DeliveryDelivered,
+			Attempts: []model.DeliveryAttempt{{Outcome: model.AttemptSucceeded}},
 		}
 		encoded, err := yaml.Marshal(input)
 		require.NoError(t, err)
 		assert.Contains(t, string(encoded), "status: delivered")
 		assert.Contains(t, string(encoded), "outcome: succeeded")
 
-		var decoded client.Delivery
+		var decoded model.Delivery
 		require.NoError(t, yaml.Unmarshal(encoded, &decoded))
-		assert.Equal(t, deliverystate.StatusDelivered, decoded.Status)
+		assert.Equal(t, model.DeliveryDelivered, decoded.Status)
 		require.Len(t, decoded.Attempts, 1)
-		assert.Equal(t, deliverystate.OutcomeSucceeded, decoded.Attempts[0].Outcome)
+		assert.Equal(t, model.AttemptSucceeded, decoded.Attempts[0].Outcome)
 	})
 }

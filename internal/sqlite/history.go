@@ -7,17 +7,16 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // syncDeliveryHistory registers queued destinations and retires unfinished earlier revisions.
-func syncDeliveryHistory(ctx context.Context, tx *sql.Tx, d decisions.Decision) error {
+func syncDeliveryHistory(ctx context.Context, tx *sql.Tx, d model.Decision) error {
 	if _, err := tx.ExecContext(ctx, `
 UPDATE delivery_history
 SET status = ?, superseded_by = ?
 WHERE ip = ? AND revision < ? AND status IN ('pending', 'retrying')
-`, deliverystate.StatusSuperseded, d.Revision, d.IP, d.Revision); err != nil {
+`, model.DeliverySuperseded, d.Revision, d.IP, d.Revision); err != nil {
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
@@ -25,7 +24,7 @@ INSERT INTO delivery_history (ip, revision, destination, desired_state, status)
 SELECT ip, ?, destination, ?, ?
 FROM deliveries WHERE ip = ?
 ON CONFLICT DO NOTHING
-`, d.Revision, d.State, deliverystate.StatusPending, d.IP)
+`, d.Revision, d.State, model.DeliveryPending, d.IP)
 	return err
 }
 
@@ -67,14 +66,14 @@ func finishAttemptStatus(
 		_, err := tx.ExecContext(ctx, `
 UPDATE delivery_history SET status = ?
 WHERE ip = ? AND revision = ? AND destination = ? AND status IN ('pending', 'retrying')
-`, deliverystate.StatusRetrying, job.Decision.IP, job.Decision.Revision, job.Destination)
+`, model.DeliveryRetrying, job.Decision.IP, job.Decision.Revision, job.Destination)
 		return err
 	}
 	_, err := tx.ExecContext(ctx, `
 UPDATE delivery_history
 SET status = ?, acknowledged_at = ?, superseded_by = NULL
 WHERE ip = ? AND revision = ? AND destination = ?
-`, deliverystate.StatusDelivered, now.UnixMilli(), job.Decision.IP, job.Decision.Revision, job.Destination)
+`, model.DeliveryDelivered, now.UnixMilli(), job.Decision.IP, job.Decision.Revision, job.Destination)
 	return err
 }
 
@@ -86,7 +85,7 @@ func readDeliveryHistory(
 	tx *sql.Tx,
 	ip string,
 	page bans.HistoryPage,
-) ([]decisions.Delivery, bool, error) {
+) ([]model.Delivery, bool, error) {
 	rows, err := tx.QueryContext(ctx, `
 WITH page AS (
     SELECT revision, destination
@@ -116,9 +115,9 @@ ORDER BY h.revision DESC, h.destination, a.number
 	}
 	defer rows.Close() //nolint:errcheck
 
-	history := make([]decisions.Delivery, 0, page.Groups)
+	history := make([]model.Delivery, 0, page.Groups)
 	for rows.Next() {
-		var d decisions.Delivery
+		var d model.Delivery
 		var acknowledged, retry, number, completed sql.NullInt64
 		var message sql.NullString
 		if err := rows.Scan(
@@ -146,14 +145,14 @@ ORDER BY h.revision DESC, h.destination, a.number
 		}
 
 		if number.Valid {
-			attempt := decisions.DeliveryAttempt{
+			attempt := model.DeliveryAttempt{
 				Number:  number.Int64,
 				At:      time.UnixMilli(completed.Int64).UTC(),
-				Outcome: deliverystate.OutcomeSucceeded,
+				Outcome: model.AttemptSucceeded,
 			}
 
 			if message.Valid {
-				attempt.Outcome = deliverystate.OutcomeFailed
+				attempt.Outcome = model.AttemptFailed
 				attempt.Error = message.String
 			}
 
@@ -169,7 +168,7 @@ ORDER BY h.revision DESC, h.destination, a.number
 }
 
 // startsNewDelivery reports whether the row begins a new revision or destination group.
-func startsNewDelivery(history []decisions.Delivery, row decisions.Delivery) bool {
+func startsNewDelivery(history []model.Delivery, row model.Delivery) bool {
 	if len(history) == 0 {
 		return true
 	}

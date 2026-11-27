@@ -1,4 +1,4 @@
-package deliverystate
+package model
 
 import (
 	"testing"
@@ -6,55 +6,55 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestStatusValid(t *testing.T) {
+func TestDeliveryStatusValid(t *testing.T) {
 	t.Parallel()
 
 	t.Run("accepts pending", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StatusPending.Valid())
+		assert.True(t, DeliveryPending.Valid())
 	})
 
 	t.Run("accepts retrying", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StatusRetrying.Valid())
+		assert.True(t, DeliveryRetrying.Valid())
 	})
 
 	t.Run("accepts delivered", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StatusDelivered.Valid())
+		assert.True(t, DeliveryDelivered.Valid())
 	})
 
 	t.Run("accepts exhausted", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StatusExhausted.Valid())
+		assert.True(t, DeliveryExhausted.Valid())
 	})
 
 	t.Run("accepts superseded", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StatusSuperseded.Valid())
+		assert.True(t, DeliverySuperseded.Valid())
 	})
 
 	t.Run("rejects unknown", func(t *testing.T) {
 		t.Parallel()
-		assert.False(t, Status("unknown").Valid())
+		assert.False(t, DeliveryStatus("unknown").Valid())
 	})
 }
 
-func TestOutcomeValid(t *testing.T) {
+func TestAttemptOutcomeValid(t *testing.T) {
 	t.Parallel()
 
 	t.Run("accepts succeeded", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, OutcomeSucceeded.Valid())
+		assert.True(t, AttemptSucceeded.Valid())
 	})
 
 	t.Run("accepts failed", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, OutcomeFailed.Valid())
+		assert.True(t, AttemptFailed.Valid())
 	})
 
 	t.Run("rejects unknown", func(t *testing.T) {
 		t.Parallel()
-		assert.False(t, Outcome("unknown").Valid())
+		assert.False(t, AttemptOutcome("unknown").Valid())
 	})
 }

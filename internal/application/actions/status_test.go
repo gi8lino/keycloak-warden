@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // TestRunnerSnapshot covers action worker lifecycle reporting.
@@ -20,7 +20,7 @@ func TestRunnerSnapshot(t *testing.T) {
 		runner := &Runner{startedAt: started, done: make(chan struct{})}
 		status := runner.Snapshot()
 
-		assert.Equal(t, workerstate.StateIdle, status.State)
+		assert.Equal(t, model.WorkerIdle, status.State)
 		assert.Equal(t, started, status.StartedAt)
 	})
 
@@ -30,7 +30,7 @@ func TestRunnerSnapshot(t *testing.T) {
 		runner := &Runner{done: make(chan struct{})}
 		runner.processing.Store(true)
 
-		assert.Equal(t, workerstate.StateProcessing, runner.Snapshot().State)
+		assert.Equal(t, model.WorkerProcessing, runner.Snapshot().State)
 	})
 
 	t.Run("reports stopped even after processing", func(t *testing.T) {
@@ -40,6 +40,6 @@ func TestRunnerSnapshot(t *testing.T) {
 		runner.processing.Store(true)
 		close(runner.done)
 
-		assert.Equal(t, workerstate.StateStopped, runner.Snapshot().State)
+		assert.Equal(t, model.WorkerStopped, runner.Snapshot().State)
 	})
 }

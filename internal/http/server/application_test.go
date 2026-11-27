@@ -20,18 +20,17 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
 	"github.com/gi8lino/keycloak-warden/internal/signing"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // processDecision extracts the effective decision for server-storage integration tests.
-func processDecision(processor *ingestion.Service, ctx context.Context, envelope events.Envelope, now time.Time) (*decisions.Decision, error) {
+func processDecision(processor *ingestion.Service, ctx context.Context, envelope events.Envelope, now time.Time) (*model.Decision, error) {
 	result, err := processor.Process(ctx, envelope, now)
 	return result.Decision, err
 }
@@ -40,23 +39,23 @@ func processDecision(processor *ingestion.Service, ctx context.Context, envelope
 type noOpBanAdministration struct{}
 
 // BanManual returns an empty ban for authentication tests.
-func (noOpBanAdministration) BanManual(context.Context, bans.ManualBanRequest, time.Time) (bans.Record, error) {
-	return bans.Record{}, nil
+func (noOpBanAdministration) BanManual(context.Context, model.ManualBanRequest, time.Time) (model.Record, error) {
+	return model.Record{}, nil
 }
 
 // Release returns an empty release for authentication tests.
-func (noOpBanAdministration) Release(context.Context, string, time.Time) (bans.Record, error) {
-	return bans.Record{}, nil
+func (noOpBanAdministration) Release(context.Context, string, time.Time) (model.Record, error) {
+	return model.Record{}, nil
 }
 
 // ListActive returns an empty active-ban list for authentication tests.
-func (noOpBanAdministration) ListActive(context.Context, time.Time) ([]bans.Record, error) {
-	return []bans.Record{}, nil
+func (noOpBanAdministration) ListActive(context.Context, time.Time) ([]model.Record, error) {
+	return []model.Record{}, nil
 }
 
 // GetDecision returns an empty decision for authentication tests.
-func (noOpBanAdministration) GetDecisionPage(context.Context, string, time.Time, int, int64) (bans.Record, error) {
-	return bans.Record{}, nil
+func (noOpBanAdministration) GetDecisionPage(context.Context, string, time.Time, int, int64) (model.Record, error) {
+	return model.Record{}, nil
 }
 
 // adminRequest sends one authenticated application request for a single subtest.
@@ -95,14 +94,14 @@ func liveBanHandlers(t *testing.T) (http.Handler, http.Handler) {
 }
 
 // awaitDecision bounds how long the signed-delivery integration test waits.
-func awaitDecision(t *testing.T, received <-chan decisions.Decision) decisions.Decision {
+func awaitDecision(t *testing.T, received <-chan model.Decision) model.Decision {
 	t.Helper()
 	select {
 	case decision := <-received:
 		return decision
 	case <-time.After(8 * time.Second):
 		require.FailNow(t, "timed out waiting for destination")
-		return decisions.Decision{}
+		return model.Decision{}
 	}
 }
 
@@ -164,16 +163,16 @@ func TestNewApplication(t *testing.T) {
 		)
 
 		require.Equal(t, http.StatusOK, created.Code, created.Body.String())
-		var view bans.Record
+		var view model.Record
 
 		require.NoError(t, json.Unmarshal(created.Body.Bytes(), &view))
-		assert.Equal(t, decisionstate.StateBanned, view.Decision.State)
+		assert.Equal(t, model.DecisionBanned, view.Decision.State)
 		require.Len(t, view.Sources, 1)
-		assert.Equal(t, bans.SourceManual, view.Sources[0].Kind)
+		assert.Equal(t, model.SourceManual, view.Sources[0].Kind)
 		listed := adminRequest(application, http.MethodGet, "/bans", "admin-token", "")
 
 		require.Equal(t, http.StatusOK, listed.Code)
-		var all []bans.Record
+		var all []model.Record
 
 		require.NoError(t, json.Unmarshal(listed.Body.Bytes(), &all))
 		require.Len(t, all, 1)
@@ -186,7 +185,7 @@ func TestNewApplication(t *testing.T) {
 
 		require.Equal(t, http.StatusOK, removed.Code, removed.Body.String())
 		require.NoError(t, json.Unmarshal(removed.Body.Bytes(), &view))
-		assert.Equal(t, decisionstate.StateUnbanned, view.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, view.Decision.State)
 		assert.Empty(t, view.Sources)
 		assert.Len(t, view.Deliveries, 1)
 		duplicate := adminRequest(application, http.MethodDelete, "/bans/"+id, "admin-token", "")
@@ -242,26 +241,26 @@ func TestNewApplication(t *testing.T) {
 		listed := adminRequest(application, http.MethodGet, "/bans", "admin-token", "")
 
 		require.Equal(t, http.StatusOK, listed.Code, listed.Body.String())
-		var all []bans.Record
+		var all []model.Record
 
 		require.NoError(t, json.Unmarshal(listed.Body.Bytes(), &all))
 		require.Len(t, all, 1)
 		require.Len(t, all[0].Sources, 1)
-		assert.Equal(t, bans.SourceAutomatic, all[0].Sources[0].Kind)
+		assert.Equal(t, model.SourceAutomatic, all[0].Sources[0].Kind)
 
 		removed := adminRequest(application, http.MethodDelete, "/bans/"+auto.ID, "admin-token", "")
 
 		require.Equal(t, http.StatusOK, removed.Code, removed.Body.String())
-		var view bans.Record
+		var view model.Record
 
 		require.NoError(t, json.Unmarshal(removed.Body.Bytes(), &view))
-		assert.Equal(t, decisionstate.StateUnbanned, view.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, view.Decision.State)
 		assert.Empty(t, view.Sources)
 		job, err := store.Next(t.Context(), time.Now())
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
 	})
 
 	t.Run("ban routes disabled without admin token", func(t *testing.T) {
@@ -362,7 +361,7 @@ func TestNewApplication(t *testing.T) {
 	t.Run("signed incoming events deliver block and subsequent release", func(t *testing.T) {
 		t.Parallel()
 
-		received := make(chan decisions.Decision, 4)
+		received := make(chan model.Decision, 4)
 		target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			body, err := io.ReadAll(r.Body)
 			if !assert.NoError(t, err) {
@@ -371,7 +370,7 @@ func TestNewApplication(t *testing.T) {
 			}
 
 			assert.Equal(t, "expected", r.Header.Get("X-API-Key"))
-			var d decisions.Decision
+			var d model.Decision
 			if !assert.NoError(t, json.Unmarshal(body, &d)) {
 				w.WriteHeader(http.StatusBadRequest)
 				return
@@ -423,10 +422,10 @@ func TestNewApplication(t *testing.T) {
 		require.Equal(t, http.StatusNoContent, rec.Code)
 		block := awaitDecision(t, received)
 
-		assert.Equal(t, decisionstate.StateBanned, block.State)
+		assert.Equal(t, model.DecisionBanned, block.State)
 		release := awaitDecision(t, received)
 
-		assert.Equal(t, decisionstate.StateUnbanned, release.State)
+		assert.Equal(t, model.DecisionUnbanned, release.State)
 		assert.Equal(t, block.ID, release.ID)
 		assert.Equal(t, block.Revision+1, release.Revision)
 	})
@@ -467,7 +466,7 @@ func TestCreateBanRequestIsolation(t *testing.T) {
 				if !assert.Equal(t, http.StatusOK, result.Code) {
 					return
 				}
-				var view bans.Record
+				var view model.Record
 				if assert.NoError(t, json.Unmarshal(result.Body.Bytes(), &view)) {
 					assert.Equal(t, ip, view.Decision.IP)
 				}

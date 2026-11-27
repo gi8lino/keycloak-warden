@@ -13,26 +13,25 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // overviewStub captures validated selectors passed to the application.
 type overviewStub struct {
 	page        int
 	ip          string
-	state       decisionstate.State
-	status      deliverystate.Status
+	state       model.DecisionState
+	status      model.DeliveryStatus
 	destination string
 	through     int64
 }
 
-func (s *overviewStub) RevisionsThrough(_ context.Context, page int, ip string, state decisionstate.State, through int64) (overview.RevisionPage, error) {
+func (s *overviewStub) RevisionsThrough(_ context.Context, page int, ip string, state model.DecisionState, through int64) (overview.RevisionPage, error) {
 	s.page, s.ip, s.state, s.through = page, ip, state, through
 	return overview.RevisionPage{Items: []overview.Revision{}, Page: page}, nil
 }
 
-func (s *overviewStub) Deliveries(_ context.Context, page int, status deliverystate.Status, destination string) (overview.DeliveryPage, error) {
+func (s *overviewStub) Deliveries(_ context.Context, page int, status model.DeliveryStatus, destination string) (overview.DeliveryPage, error) {
 	s.page, s.status, s.destination = page, status, destination
 	return overview.DeliveryPage{Items: []overview.Delivery{}, Page: page}, nil
 }
@@ -49,7 +48,7 @@ func TestOverviewEndpoints(t *testing.T) {
 		assert.Equal(t, http.StatusOK, response.Code)
 		assert.Equal(t, 2, service.page)
 		assert.Equal(t, "203.0.113.42", service.ip)
-		assert.Equal(t, decisionstate.StateUnbanned, service.state)
+		assert.Equal(t, model.DecisionUnbanned, service.state)
 		require.Contains(t, response.Body.String(), `"page":2`)
 	})
 
@@ -80,7 +79,7 @@ func TestOverviewEndpoints(t *testing.T) {
 		response := httptest.NewRecorder()
 		endpoint.DeliveryOverview(service, logger)(response, httptest.NewRequest(http.MethodGet, "/deliveries?status=exhausted&destination=edge", nil))
 		assert.Equal(t, http.StatusOK, response.Code)
-		assert.Equal(t, deliverystate.StatusExhausted, service.status)
+		assert.Equal(t, model.DeliveryExhausted, service.status)
 		assert.Equal(t, "edge", service.destination)
 	})
 

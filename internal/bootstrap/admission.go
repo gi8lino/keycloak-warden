@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // AdmissionState describes the persisted enforcement work relevant to startup safety.
@@ -15,7 +16,7 @@ type AdmissionState interface {
 	// ManagedTargets returns destinations with existing enforcement obligations.
 	ManagedTargets(context.Context) ([]string, error)
 	// ListActive returns currently effective bans.
-	ListActive(context.Context, time.Time) ([]bans.Record, error)
+	ListActive(context.Context, time.Time) ([]model.Record, error)
 }
 
 // ValidateAdmission refuses a mode or protection change that would abandon existing enforcement.

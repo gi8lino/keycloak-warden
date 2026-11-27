@@ -14,8 +14,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestRevisionJournal(t *testing.T) {
@@ -32,22 +31,22 @@ func TestRevisionJournal(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		ban, err := service.BanManual(t.Context(), model.ManualBanRequest{
 			IP: "203.0.113.40", Duration: time.Hour, Reason: "manual investigation",
 		}, now)
 		require.NoError(t, err)
 		released, err := service.Release(t.Context(), ban.Decision.ID, now.Add(time.Minute))
 		require.NoError(t, err)
-		assert.Equal(t, decisionstate.StateUnbanned, released.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, released.Decision.State)
 
 		page, err := viewer.Revisions(t.Context(), 1, "203.0.113.40", "")
 		require.NoError(t, err)
 		require.Len(t, page.Items, 2)
 		assert.Equal(t, released.Decision.Revision, page.Items[0].Revision)
-		assert.Equal(t, decisionstate.StateUnbanned, page.Items[0].State)
+		assert.Equal(t, model.DecisionUnbanned, page.Items[0].State)
 		assert.Empty(t, page.Items[0].Sources)
 		assert.Equal(t, ban.Decision.Revision, page.Items[1].Revision)
-		assert.Equal(t, decisionstate.StateBanned, page.Items[1].State)
+		assert.Equal(t, model.DecisionBanned, page.Items[1].State)
 		require.Len(t, page.Items[1].Sources, 1)
 		assert.Equal(t, "manual investigation", page.Items[1].Sources[0].Reason)
 		assert.False(t, page.Items[1].ChangedAt.IsZero())
@@ -65,9 +64,9 @@ func TestRevisionJournal(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC()
-		first, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.41", Duration: time.Hour, Reason: "first"}, now)
+		first, err := service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.41", Duration: time.Hour, Reason: "first"}, now)
 		require.NoError(t, err)
-		second, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.41", Duration: time.Minute, Reason: "reason updated"}, now)
+		second, err := service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.41", Duration: time.Minute, Reason: "reason updated"}, now)
 		require.NoError(t, err)
 		assert.Equal(t, first.Decision.Revision, second.Decision.Revision)
 		page, err := viewer.Revisions(t.Context(), 1, "203.0.113.41", "")
@@ -91,23 +90,23 @@ func TestDeliveryOverview(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.42", Duration: time.Hour, Reason: "test"}, now)
+		ban, err := service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.42", Duration: time.Hour, Reason: "test"}, now)
 		require.NoError(t, err)
 		_, err = service.Release(t.Context(), ban.Decision.ID, now.Add(time.Second))
 		require.NoError(t, err)
 		job, err := store.Next(t.Context(), now.Add(time.Second))
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
 		require.NoError(t, store.Finish(t.Context(), *job, errors.New("receiver rejected"), 1, now.Add(2*time.Second), actions.DefaultRetryPolicy().NextDelay(0)))
 
-		page, err := viewer.Deliveries(t.Context(), 1, deliverystate.StatusExhausted, "webhook.receiver")
+		page, err := viewer.Deliveries(t.Context(), 1, model.DeliveryExhausted, "webhook.receiver")
 		require.NoError(t, err)
 		require.Len(t, page.Items, 1)
 		entry := page.Items[0]
 		assert.Equal(t, ban.Decision.ID, entry.DecisionID)
-		assert.Equal(t, decisionstate.StateUnbanned, entry.DesiredState)
-		assert.Equal(t, deliverystate.StatusExhausted, entry.Status)
+		assert.Equal(t, model.DecisionUnbanned, entry.DesiredState)
+		assert.Equal(t, model.DeliveryExhausted, entry.Status)
 		assert.Equal(t, int64(1), entry.AttemptCount)
 		assert.Equal(t, "receiver rejected", entry.LastError)
 		assert.Zero(t, entry.AcknowledgedRevision)
@@ -123,9 +122,9 @@ func TestDeliveryOverview(t *testing.T) {
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
 		now := time.Now().UTC()
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.43", Duration: time.Hour, Reason: "first"}, now)
+		_, err = service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.43", Duration: time.Hour, Reason: "first"}, now)
 		require.NoError(t, err)
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.43", Duration: 2 * time.Hour, Reason: "extended"}, now)
+		_, err = service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.43", Duration: 2 * time.Hour, Reason: "extended"}, now)
 		require.NoError(t, err)
 		page, err := viewer.Deliveries(t.Context(), 1, "", "edge")
 		require.NoError(t, err)
@@ -147,8 +146,8 @@ func TestRevisionJournalAtomicity(t *testing.T) {
 		now := time.Now().UTC()
 
 		err = store.TransactDecision(t.Context(), func(tx bans.MutationTransaction) error {
-			if err := bans.ExtendSource(t.Context(), tx, "203.0.113.50", bans.Source{
-				Kind: bans.SourceManual, Reason: "rolled back", ExpiresAt: now.Add(time.Hour),
+			if err := bans.ExtendSource(t.Context(), tx, "203.0.113.50", model.Source{
+				Kind: model.SourceManual, Reason: "rolled back", ExpiresAt: now.Add(time.Hour),
 			}); err != nil {
 				return err
 			}
@@ -183,7 +182,7 @@ func TestRevisionJournalPagination(t *testing.T) {
 		// Seed one decision with a series of real revisions. These are fixture
 		// operations, not generated test cases; the test remains one explicit subtest.
 		for i := 0; i < 21; i++ {
-			_, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			_, err := service.BanManual(t.Context(), model.ManualBanRequest{
 				IP: "203.0.113.60", Duration: time.Duration(i+1) * time.Hour, Reason: "extension",
 			}, now)
 			require.NoError(t, err)
@@ -214,11 +213,11 @@ func TestSourceChangeJournal(t *testing.T) {
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
 
-		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		created, err := service.BanManual(t.Context(), model.ManualBanRequest{
 			IP: "203.0.113.119", Duration: time.Hour, Reason: "first",
 		}, now)
 		require.NoError(t, err)
-		updated, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		updated, err := service.BanManual(t.Context(), model.ManualBanRequest{
 			IP: "203.0.113.119", Duration: time.Minute, Reason: "second",
 		}, now)
 		require.NoError(t, err)
@@ -247,14 +246,14 @@ func TestSourceChangeJournal(t *testing.T) {
 		service, err := bans.NewAdminService(store, []string{"edge"})
 		require.NoError(t, err)
 		now := time.Now().UTC()
-		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		created, err := service.BanManual(t.Context(), model.ManualBanRequest{
 			IP: "203.0.113.120", Duration: time.Hour, Reason: "original",
 		}, now)
 		require.NoError(t, err)
 
 		err = store.TransactDecision(t.Context(), func(tx bans.MutationTransaction) error {
-			if err := tx.PutSource(t.Context(), "203.0.113.120", bans.Source{
-				Kind: bans.SourceManual, ExpiresAt: now.Add(time.Hour), Reason: "rolled back",
+			if err := tx.PutSource(t.Context(), "203.0.113.120", model.Source{
+				Kind: model.SourceManual, ExpiresAt: now.Add(time.Hour), Reason: "rolled back",
 			}); err != nil {
 				return err
 			}
@@ -284,7 +283,7 @@ func TestCurrentDeliveriesNotLimitedByHistoryPage(t *testing.T) {
 		service, err := bans.NewAdminService(store, targets)
 		require.NoError(t, err)
 
-		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+		ban, err := service.BanManual(t.Context(), model.ManualBanRequest{
 			IP: "203.0.113.121", Duration: time.Hour, Reason: "current status",
 		}, time.Now().UTC())
 		require.NoError(t, err)
@@ -295,7 +294,7 @@ func TestCurrentDeliveriesNotLimitedByHistoryPage(t *testing.T) {
 		assert.Len(t, page.DeliveryHistory, 16)
 		assert.Len(t, page.CurrentDeliveries, 20)
 		assert.Equal(t, "webhook.receiver-19", page.CurrentDeliveries[19].Destination)
-		assert.Equal(t, deliverystate.StatusPending, page.CurrentDeliveries[19].Status)
+		assert.Equal(t, model.DeliveryPending, page.CurrentDeliveries[19].Status)
 	})
 }
 
@@ -314,7 +313,7 @@ func TestRevisionJournalStablePagination(t *testing.T) {
 		now := time.Now().UTC()
 
 		for i := 0; i < 21; i++ {
-			_, err := service.BanManual(t.Context(), bans.ManualBanRequest{
+			_, err := service.BanManual(t.Context(), model.ManualBanRequest{
 				IP: "203.0.113.66", Duration: time.Duration(i+1) * time.Hour, Reason: "extension",
 			}, now)
 			require.NoError(t, err)
@@ -325,7 +324,7 @@ func TestRevisionJournalStablePagination(t *testing.T) {
 		require.Len(t, first.Items, 20)
 		assert.Positive(t, first.ThroughSequence)
 
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
 			IP: "203.0.113.66", Duration: 22 * time.Hour, Reason: "new revision",
 		}, now)
 		require.NoError(t, err)

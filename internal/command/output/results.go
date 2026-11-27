@@ -1,7 +1,7 @@
 package output
 
 import (
-	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Operation identifies an administrative batch command in CLI output.
@@ -21,7 +21,7 @@ type Item struct {
 	// Success reports whether the API accepted the operation.
 	Success bool `json:"success" yaml:"success"`
 	// Ban is the returned decision record and sources when successful.
-	Ban *client.Record `json:"ban,omitempty" yaml:"ban,omitempty"`
+	Ban *model.Record `json:"ban,omitempty" yaml:"ban,omitempty"`
 	// Error is the per-address error when unsuccessful.
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }

@@ -10,6 +10,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestExecute(t *testing.T) {
@@ -40,9 +41,9 @@ func TestDecisionIDsByIP(t *testing.T) {
 	t.Run("indexes active decision IDs by IP address", func(t *testing.T) {
 		t.Parallel()
 
-		ids := decisionIDsByIP([]client.Record{
-			{Decision: client.Decision{ID: "id-one", IP: "203.0.113.10"}},
-			{Decision: client.Decision{ID: "id-two", IP: "203.0.113.20"}},
+		ids := decisionIDsByIP([]model.Record{
+			{Decision: model.Decision{ID: "id-one", IP: "203.0.113.10"}},
+			{Decision: model.Decision{ID: "id-two", IP: "203.0.113.20"}},
 		})
 
 		assert.Equal(t, map[string]string{"203.0.113.10": "id-one", "203.0.113.20": "id-two"}, ids)

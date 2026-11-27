@@ -13,9 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // sampleResult verifies that JSON and YAML use the same field names.
@@ -141,23 +139,23 @@ func TestBanRecordsYAML(t *testing.T) {
 	t.Run("round trips decisions sources and acknowledgements", func(t *testing.T) {
 		t.Parallel()
 
-		records := []bans.Record{{
-			Decision: decisions.Decision{
+		records := []model.Record{{
+			Decision: model.Decision{
 				ID:        "one",
 				IP:        "203.0.113.10",
-				State:     decisionstate.StateBanned,
+				State:     model.DecisionBanned,
 				Revision:  4,
 				ExpiresAt: deadline,
 			},
-			Sources: []bans.Source{
-				{Kind: bans.SourceAutomatic, ExpiresAt: deadline},
+			Sources: []model.Source{
+				{Kind: model.SourceAutomatic, ExpiresAt: deadline},
 				{
-					Kind:      bans.SourceManual,
+					Kind:      model.SourceManual,
 					ExpiresAt: deadline,
 					Reason:    "Incident",
 				},
 			},
-			Deliveries: []decisions.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
+			Deliveries: []model.Acknowledgement{{Destination: "webhook.receiver", Revision: 4}},
 		}}
 
 		var output bytes.Buffer
@@ -167,7 +165,7 @@ func TestBanRecordsYAML(t *testing.T) {
 		assert.NotContains(t, output.String(), "failures:")
 		assert.Equal(t, 1, strings.Count(output.String(), "reason:"))
 
-		var decoded []bans.Record
+		var decoded []model.Record
 		require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 		require.Len(t, decoded, 1)
 		assert.Equal(t, records[0].Decision, decoded[0].Decision)
@@ -178,22 +176,22 @@ func TestBanRecordsYAML(t *testing.T) {
 	t.Run("includes released historical decisions", func(t *testing.T) {
 		t.Parallel()
 
-		records := []bans.Record{{Decision: decisions.Decision{ID: "released", State: decisionstate.StateUnbanned}}}
+		records := []model.Record{{Decision: model.Decision{ID: "released", State: model.DecisionUnbanned}}}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(records))
-		var decoded []bans.Record
+		var decoded []model.Record
 		require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 		require.Len(t, decoded, 1)
-		assert.Equal(t, decisionstate.StateUnbanned, decoded[0].Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, decoded[0].Decision.State)
 	})
 
 	t.Run("preserves record order", func(t *testing.T) {
 		t.Parallel()
 
-		records := []bans.Record{{Decision: decisions.Decision{ID: "one"}}, {Decision: decisions.Decision{ID: "two"}}}
+		records := []model.Record{{Decision: model.Decision{ID: "one"}}, {Decision: model.Decision{ID: "two"}}}
 		var output bytes.Buffer
 		require.NoError(t, New(ptr(FormatYAML), &output)(records))
-		var decoded []bans.Record
+		var decoded []model.Record
 		require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 		require.Len(t, decoded, 2)
 		assert.Equal(t, "one", decoded[0].Decision.ID)
@@ -204,8 +202,8 @@ func TestBanRecordsYAML(t *testing.T) {
 		t.Parallel()
 
 		var output bytes.Buffer
-		require.NoError(t, New(ptr(FormatYAML), &output)([]bans.Record{}))
-		var decoded []bans.Record
+		require.NoError(t, New(ptr(FormatYAML), &output)([]model.Record{}))
+		var decoded []model.Record
 		require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 		assert.Empty(t, decoded)
 	})
@@ -214,10 +212,10 @@ func TestBanRecordsYAML(t *testing.T) {
 func TestSingleBanRecordYAML(t *testing.T) {
 	t.Parallel()
 
-	record := bans.Record{Decision: decisions.Decision{ID: "one", IP: "203.0.113.10"}}
+	record := model.Record{Decision: model.Decision{ID: "one", IP: "203.0.113.10"}}
 	var output bytes.Buffer
 	require.NoError(t, New(ptr(FormatYAML), &output)(record))
-	var decoded bans.Record
+	var decoded model.Record
 	require.NoError(t, yaml.Load(output.Bytes(), &decoded))
 	assert.Equal(t, record.Decision, decoded.Decision)
 	assert.NotContains(t, output.String(), "- decision:")

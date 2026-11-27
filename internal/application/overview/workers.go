@@ -1,5 +1,4 @@
-// Package workers exposes a read-only snapshot of Warden's two background workers.
-package workers
+package overview
 
 import (
 	"context"
@@ -9,16 +8,16 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
 
-// Store supplies durable delivery counts and the next wake-up deadline.
-type Store interface {
+// WorkerStore supplies durable delivery counts and the next wake-up deadline.
+type WorkerStore interface {
 	// WorkerStats returns current-revision delivery counts and activity.
 	WorkerStats(context.Context, time.Time) (QueueStats, error)
 	// NextDeadline returns the earliest due source expiry or delivery retry.
 	NextDeadline(context.Context) (time.Time, error)
 }
 
-// Actions is the action worker's runtime state and durable queue summary.
-type Actions struct {
+// ActionWorkerStatus is the action worker's runtime state and durable queue summary.
+type ActionWorkerStatus struct {
 	// RuntimeStatus supplies the in-process lifecycle state.
 	actions.RuntimeStatus `yaml:",inline"`
 	// QueueStats supplies the persisted delivery and ban statistics.
@@ -27,31 +26,31 @@ type Actions struct {
 	NextDeadline *time.Time `json:"nextDeadline,omitempty" yaml:"nextDeadline,omitempty"`
 }
 
-// Status is the combined observable worker state for administrators.
-type Status struct {
+// WorkerStatus is the combined observable worker state for administrators.
+type WorkerStatus struct {
 	// Actions handles expiry, ban deliveries, and retries.
-	Actions Actions `json:"actions" yaml:"actions"`
+	Actions ActionWorkerStatus `json:"actions" yaml:"actions"`
 	// Maintenance handles periodic observation cleanup and SQLite optimization.
 	Maintenance maintenance.Status `json:"maintenance" yaml:"maintenance"`
 }
 
-// Service collects worker lifecycle and queue statistics.
-type Service struct {
+// WorkerService collects worker lifecycle and queue statistics.
+type WorkerService struct {
 	// actions is the action worker lifecycle owner.
 	actions *actions.Runner
 	// maintenance is the maintenance worker lifecycle owner.
 	maintenance *maintenance.Runner
 	// store is the persistent work queue.
-	store Store
+	store WorkerStore
 }
 
-// NewService creates a worker status service.
-func NewService(
+// NewWorkerService creates a worker status service.
+func NewWorkerService(
 	actionRunner *actions.Runner,
 	maintenanceRunner *maintenance.Runner,
-	store Store,
-) *Service {
-	return &Service{
+	store WorkerStore,
+) *WorkerService {
+	return &WorkerService{
 		actions:     actionRunner,
 		maintenance: maintenanceRunner,
 		store:       store,
@@ -59,19 +58,19 @@ func NewService(
 }
 
 // Snapshot returns a point-in-time view; queue counts can change between queries.
-func (s *Service) Snapshot(ctx context.Context) (Status, error) {
+func (s *WorkerService) Snapshot(ctx context.Context) (WorkerStatus, error) {
 	stats, err := s.store.WorkerStats(ctx, time.Now())
 	if err != nil {
-		return Status{}, err
+		return WorkerStatus{}, err
 	}
 
 	deadline, err := s.store.NextDeadline(ctx)
 	if err != nil {
-		return Status{}, err
+		return WorkerStatus{}, err
 	}
 
-	result := Status{
-		Actions: Actions{
+	result := WorkerStatus{
+		Actions: ActionWorkerStatus{
 			RuntimeStatus: s.actions.Snapshot(),
 			QueueStats:    stats,
 		},

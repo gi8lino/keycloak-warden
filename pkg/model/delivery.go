@@ -1,11 +1,6 @@
-package client
+package model
 
-import (
-	"time"
-
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
-)
+import "time"
 
 // Delivery describes one destination's progress applying a decision revision.
 type Delivery struct {
@@ -14,9 +9,9 @@ type Delivery struct {
 	// Revision identifies the desired decision version.
 	Revision int64 `json:"revision" yaml:"revision"`
 	// DesiredState is the requested state when known.
-	DesiredState decisionstate.State `json:"desiredState,omitempty" yaml:"desiredState,omitempty"`
+	DesiredState DecisionState `json:"desiredState,omitempty" yaml:"desiredState,omitempty"`
 	// Status is pending, retrying, delivered, exhausted, or superseded.
-	Status deliverystate.Status `json:"status" yaml:"status"`
+	Status DeliveryStatus `json:"status" yaml:"status"`
 	// AcknowledgedAt records successful completion.
 	AcknowledgedAt *time.Time `json:"acknowledgedAt,omitempty" yaml:"acknowledgedAt,omitempty"`
 	// NextAttemptAt is the current retry deadline.
@@ -36,7 +31,7 @@ type DeliveryAttempt struct {
 	// At is the UTC completion time.
 	At time.Time `json:"at" yaml:"at"`
 	// Outcome is either succeeded or failed.
-	Outcome deliverystate.Outcome `json:"outcome" yaml:"outcome"`
+	Outcome AttemptOutcome `json:"outcome" yaml:"outcome"`
 	// Error contains the provider diagnostic for a failed attempt.
 	Error string `json:"error,omitempty" yaml:"error,omitempty"`
 }

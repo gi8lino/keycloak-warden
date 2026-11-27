@@ -6,7 +6,7 @@ import (
 	"errors"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // attemptStatusUpdate is a calculated status update for a persisted delivery.
@@ -16,7 +16,7 @@ type attemptStatusUpdate struct {
 	// revision identifies the delivery version whose status will change.
 	revision int64
 	// status is the outcome computed by the application attempt policy.
-	status deliverystate.Status
+	status model.DeliveryStatus
 }
 
 // ReconcileAttemptLimit re-evaluates unfinished current revisions during startup.
@@ -101,6 +101,6 @@ WHERE ip = ? AND revision = ? AND destination = ?
 	_, err := tx.ExecContext(ctx, `
 UPDATE delivery_history SET status = ?
 WHERE ip = ? AND revision = ? AND destination = ? AND status = ?
-`, actions.StatusAfterFailure(completed, limit), ip, revision, name, deliverystate.StatusRetrying)
+`, actions.StatusAfterFailure(completed, limit), ip, revision, name, model.DeliveryRetrying)
 	return err
 }

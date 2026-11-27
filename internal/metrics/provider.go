@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // InstrumentProvider wraps destination delivery with success, error, and duration metrics.
@@ -31,7 +31,7 @@ type instrumentedProvider struct {
 }
 
 // Apply delegates the decision and records the outcome of one attempt.
-func (p *instrumentedProvider) Apply(ctx context.Context, decision decisions.Decision) error {
+func (p *instrumentedProvider) Apply(ctx context.Context, decision model.Decision) error {
 	started := time.Now()
 	err := p.provider.Apply(ctx, decision)
 

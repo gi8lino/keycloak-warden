@@ -3,7 +3,7 @@ package ingestion
 import (
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Outcome identifies why a valid security event did or did not revise a decision.
@@ -31,7 +31,7 @@ type Result struct {
 	// Outcome explains the event's effect on detection and desired state.
 	Outcome Outcome
 	// Decision is set only when processing revised the effective desired state.
-	Decision *decisions.Decision
+	Decision *model.Decision
 	// IP is the canonical address when the producer supplied a valid address.
 	IP string
 	// Reason explains why an otherwise valid event did not match the rule.

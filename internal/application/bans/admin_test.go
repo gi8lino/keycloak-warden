@@ -9,8 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // fakeStore implements an in-memory transaction for administration service tests.
@@ -43,12 +42,12 @@ func (r *fakeStore) EnsureDecision(_ context.Context, ip string) error {
 }
 
 // Source returns no previously stored source.
-func (r *fakeStore) Source(context.Context, string, bans.SourceKind) (bans.Source, bool, error) {
-	return bans.Source{}, false, nil
+func (r *fakeStore) Source(context.Context, string, model.SourceKind) (model.Source, bool, error) {
+	return model.Source{}, false, nil
 }
 
 // PutSource records an application-validated manual reason.
-func (r *fakeStore) PutSource(_ context.Context, ip string, source bans.Source) error {
+func (r *fakeStore) PutSource(_ context.Context, ip string, source model.Source) error {
 	r.ip = ip
 	r.until = source.ExpiresAt
 	r.reason = source.Reason
@@ -56,29 +55,29 @@ func (r *fakeStore) PutSource(_ context.Context, ip string, source bans.Source) 
 }
 
 // Decision returns a stable current decision for the requested IP.
-func (r *fakeStore) Decision(_ context.Context, ip string) (decisions.Decision, error) {
-	return decisions.Decision{ID: "decision-one", IP: ip, State: decisionstate.StateUnbanned}, nil
+func (r *fakeStore) Decision(_ context.Context, ip string) (model.Decision, error) {
+	return model.Decision{ID: "decision-one", IP: ip, State: model.DecisionUnbanned}, nil
 }
 
 // Sources returns the previously recorded manual source unless it was cleared.
-func (r *fakeStore) Sources(context.Context, string, time.Time) ([]bans.Source, error) {
+func (r *fakeStore) Sources(context.Context, string, time.Time) ([]model.Source, error) {
 	if r.released || r.until.IsZero() {
 		return nil, nil
 	}
-	return []bans.Source{{Kind: bans.SourceManual, ExpiresAt: r.until, Reason: r.reason}}, nil
+	return []model.Source{{Kind: model.SourceManual, ExpiresAt: r.until, Reason: r.reason}}, nil
 }
 
 // SaveDecision records the target names supplied to the transaction.
-func (r *fakeStore) SaveDecision(_ context.Context, _, _ decisions.Decision, _ []bans.Source, _ bans.ChangeCause, _ bool, targets []string) error {
+func (r *fakeStore) SaveDecision(_ context.Context, _, _ model.Decision, _ []model.Source, _ bans.ChangeCause, _ bool, targets []string) error {
 	r.targets = append([]string(nil), targets...)
 	return nil
 }
 
 // DecisionByID returns an active decision eligible for manual release.
-func (r *fakeStore) DecisionByID(_ context.Context, id string) (decisions.Decision, error) {
+func (r *fakeStore) DecisionByID(_ context.Context, id string) (model.Decision, error) {
 	r.id = id
-	return decisions.Decision{
-		ID: id, IP: "203.0.113.1", State: decisionstate.StateBanned,
+	return model.Decision{
+		ID: id, IP: "203.0.113.1", State: model.DecisionBanned,
 		ExpiresAt: time.Now().Add(24 * time.Hour),
 	}, nil
 }
@@ -101,19 +100,19 @@ func (r *fakeStore) ExpiredSourceIPs(context.Context, time.Time) ([]string, erro
 func (r *fakeStore) DeleteExpiredSources(context.Context, time.Time) error { return nil }
 
 // Record returns the fake persisted ban view.
-func (r *fakeStore) Record(context.Context, string, time.Time) (bans.Record, error) {
-	return bans.Record{}, nil
+func (r *fakeStore) Record(context.Context, string, time.Time) (model.Record, error) {
+	return model.Record{}, nil
 }
 
 // ListActive returns the fake store's active ban view.
-func (r *fakeStore) ListActive(context.Context, time.Time) ([]bans.Record, error) {
+func (r *fakeStore) ListActive(context.Context, time.Time) ([]model.Record, error) {
 	return nil, nil
 }
 
 // GetDecision records a requested stable decision ID.
-func (r *fakeStore) GetDecision(_ context.Context, id string, _ time.Time) (bans.Record, error) {
+func (r *fakeStore) GetDecision(_ context.Context, id string, _ time.Time) (model.Record, error) {
 	r.id = id
-	return bans.Record{}, nil
+	return model.Record{}, nil
 }
 
 func TestNewAdminService(t *testing.T) {
@@ -140,7 +139,7 @@ func TestNewAdminService(t *testing.T) {
 func TestAdminServiceBanManual(t *testing.T) {
 	t.Parallel()
 
-	invalid := func(t *testing.T, request bans.ManualBanRequest) {
+	invalid := func(t *testing.T, request model.ManualBanRequest) {
 		t.Helper()
 		store := &fakeStore{}
 		service, err := bans.NewAdminService(store, nil)
@@ -155,7 +154,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects invalid address", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{
+		invalid(t, model.ManualBanRequest{
 			IP:       "not-an-address",
 			Duration: time.Hour,
 			Reason:   "incident",
@@ -165,7 +164,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects unspecified address", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{
+		invalid(t, model.ManualBanRequest{
 			IP:       "0.0.0.0",
 			Duration: time.Hour,
 			Reason:   "incident",
@@ -175,19 +174,19 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects missing reason", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour})
+		invalid(t, model.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour})
 	})
 
 	t.Run("rejects zero duration", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{IP: "203.0.113.1", Reason: "incident"})
+		invalid(t, model.ManualBanRequest{IP: "203.0.113.1", Reason: "incident"})
 	})
 
 	t.Run("rejects duration above maximum", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, bans.ManualBanRequest{
+		invalid(t, model.ManualBanRequest{
 			IP:       "203.0.113.1",
 			Duration: 31 * 24 * time.Hour,
 			Reason:   "incident",
@@ -202,7 +201,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 
 		require.NoError(t, err)
 		now := time.Now()
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
 			IP:       "::ffff:203.0.113.1",
 			Duration: time.Hour,
 			Reason:   " incident ",
@@ -299,7 +298,7 @@ func TestAdminServiceTargets(t *testing.T) {
 		require.NoError(t, err)
 
 		targets[0] = "modified"
-		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
 			IP:       "203.0.113.1",
 			Duration: time.Hour,
 			Reason:   "investigation",
@@ -324,10 +323,10 @@ func TestAdminServiceTargets(t *testing.T) {
 }
 
 // GetDecisionPage records the one-based page forwarded to persistence.
-func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page bans.HistoryPage) (bans.Record, error) {
+func (r *fakeStore) GetDecisionPage(_ context.Context, id string, _ time.Time, page bans.HistoryPage) (model.Record, error) {
 	r.id = id
 	r.historyPage = page.Number
-	return bans.Record{}, nil
+	return model.Record{}, nil
 }
 
 func TestAdminServiceGetDecisionPage(t *testing.T) {

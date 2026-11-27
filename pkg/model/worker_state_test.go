@@ -1,4 +1,4 @@
-package workerstate
+package model
 
 import (
 	"encoding/json"
@@ -8,43 +8,43 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStateValid(t *testing.T) {
+func TestWorkerStateValid(t *testing.T) {
 	t.Parallel()
 
 	t.Run("idle is valid", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StateIdle.Valid())
+		assert.True(t, WorkerIdle.Valid())
 	})
 
 	t.Run("processing is valid", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StateProcessing.Valid())
+		assert.True(t, WorkerProcessing.Valid())
 	})
 
 	t.Run("stopped is valid", func(t *testing.T) {
 		t.Parallel()
-		assert.True(t, StateStopped.Valid())
+		assert.True(t, WorkerStopped.Valid())
 	})
 
 	t.Run("empty is invalid", func(t *testing.T) {
 		t.Parallel()
-		assert.False(t, State("").Valid())
+		assert.False(t, WorkerState("").Valid())
 	})
 
 	t.Run("unknown is invalid", func(t *testing.T) {
 		t.Parallel()
-		assert.False(t, State("unknown").Valid())
+		assert.False(t, WorkerState("unknown").Valid())
 	})
 }
 
-// TestStateJSON preserves the public wire-format contract used by the workers endpoint.
-func TestStateJSON(t *testing.T) {
+// TestWorkerStateJSON preserves the public wire-format contract used by the workers endpoint.
+func TestWorkerStateJSON(t *testing.T) {
 	t.Parallel()
 
 	t.Run("marshals a named state as a string", func(t *testing.T) {
 		t.Parallel()
 
-		encoded, err := json.Marshal(StateProcessing)
+		encoded, err := json.Marshal(WorkerProcessing)
 
 		require.NoError(t, err)
 		assert.JSONEq(t, `"processing"`, string(encoded))
@@ -53,10 +53,10 @@ func TestStateJSON(t *testing.T) {
 	t.Run("unmarshals a JSON state", func(t *testing.T) {
 		t.Parallel()
 
-		var state State
+		var state WorkerState
 		err := json.Unmarshal([]byte(`"idle"`), &state)
 
 		require.NoError(t, err)
-		assert.Equal(t, StateIdle, state)
+		assert.Equal(t, WorkerIdle, state)
 	})
 }

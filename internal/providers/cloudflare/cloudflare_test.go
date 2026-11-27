@@ -12,8 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestProviderApply(t *testing.T) {
@@ -22,10 +21,10 @@ func TestProviderApply(t *testing.T) {
 	t.Run("apply retries discover owned IPv6 block and release only that block", func(t *testing.T) {
 		t.Parallel()
 
-		d := decisions.Decision{
+		d := model.Decision{
 			ID:    "decision-one",
 			IP:    "2001:db8::1",
-			State: decisionstate.StateBanned,
+			State: model.DecisionBanned,
 		}
 		var rules = []rule{{
 			ID:            "foreign",
@@ -80,7 +79,7 @@ func TestProviderApply(t *testing.T) {
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
-		d.State = decisionstate.StateUnbanned
+		d.State = model.DecisionUnbanned
 
 		require.NoError(t, p.Apply(t.Context(), d))
 		require.NoError(t, p.Apply(t.Context(), d))
@@ -96,7 +95,7 @@ func TestProviderApply(t *testing.T) {
 		t.Parallel()
 
 		p := Provider{}
-		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1"}), "invalid decision state")
+		require.ErrorContains(t, p.Apply(t.Context(), model.Decision{IP: "203.0.113.1"}), "invalid decision state")
 	})
 
 	t.Run("forbidden response includes the numeric Cloudflare code", func(t *testing.T) {
@@ -108,7 +107,7 @@ func TestProviderApply(t *testing.T) {
 		}))
 		defer server.Close()
 		p := Provider{RulesURL: server.URL, Client: server.Client()}
-		require.EqualError(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisionstate.StateBanned}), "Cloudflare HTTP 403 (code 10000)")
+		require.EqualError(t, p.Apply(t.Context(), model.Decision{IP: "203.0.113.1", State: model.DecisionBanned}), "Cloudflare HTTP 403 (code 10000)")
 	})
 
 	t.Run("API failure is retryable", func(t *testing.T) {
@@ -122,7 +121,7 @@ func TestProviderApply(t *testing.T) {
 			Token:    "secret",
 		}
 
-		require.ErrorContains(t, p.Apply(t.Context(), decisions.Decision{IP: "203.0.113.1", State: decisionstate.StateBanned}), "429")
+		require.ErrorContains(t, p.Apply(t.Context(), model.Decision{IP: "203.0.113.1", State: model.DecisionBanned}), "429")
 	})
 }
 

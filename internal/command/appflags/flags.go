@@ -89,17 +89,7 @@ func RegisterAdmin(cmd *tinyflags.Command, server *ServerFlags) AdminFlags {
 	}
 
 	cmd.Validate(func() error { return validateAdminURL(flags.ApplicationURL, server) })
-
 	return flags
-}
-
-// ValidateListenAddress rejects an empty TCP address while allowing explicit IPs with port zero.
-func ValidateListenAddress(addr *net.TCPAddr) error {
-	if addr == nil || (len(addr.IP) == 0 && addr.Port == 0) {
-		return errors.New("listen address must specify an IP or a nonzero port")
-	}
-
-	return nil
 }
 
 // validateAdminURL derives the local API URL when no explicit override was supplied.
@@ -115,6 +105,15 @@ func validateAdminURL(applicationURL *string, server *ServerFlags) error {
 	}
 
 	return client.ValidateURL(*applicationURL)
+}
+
+// ValidateListenAddress rejects an empty TCP address while allowing explicit IPs with port zero.
+func ValidateListenAddress(addr *net.TCPAddr) error {
+	if addr == nil || (len(addr.IP) == 0 && addr.Port == 0) {
+		return errors.New("listen address must specify an IP or a nonzero port")
+	}
+
+	return nil
 }
 
 // connectAddress substitutes a reachable loopback address for a wildcard bind.

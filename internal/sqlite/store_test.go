@@ -12,11 +12,10 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // openStore constructs an isolated store and matching application ingestion use case.
@@ -45,7 +44,7 @@ func processDecision(
 	ctx context.Context,
 	event events.Envelope,
 	now time.Time,
-) (*decisions.Decision, error) {
+) (*model.Decision, error) {
 	result, err := processor.Process(ctx, event, now)
 	return result.Decision, err
 }
@@ -128,7 +127,7 @@ func TestOpen(t *testing.T) {
 		assert.Equal(t, *extended, view.Decision)
 		assert.Equal(
 			t,
-			[]decisions.Acknowledgement{{Destination: "a", Revision: 0}, {Destination: "b", Revision: 1}},
+			[]model.Acknowledgement{{Destination: "a", Revision: 0}, {Destination: "b", Revision: 1}},
 			view.Deliveries,
 		)
 
@@ -140,7 +139,7 @@ func TestOpen(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, firstRelease)
-		assert.Equal(t, decisionstate.StateUnbanned, firstRelease.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, firstRelease.Decision.State)
 		assert.Equal(t, int64(3), firstRelease.Decision.Revision)
 		require.NoError(t, store.Finish(ctx, *firstRelease, nil, actions.DefaultMaxAttempts, now, 0))
 
@@ -148,7 +147,7 @@ func TestOpen(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, secondRelease)
-		assert.Equal(t, decisionstate.StateUnbanned, secondRelease.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, secondRelease.Decision.State)
 		assert.Equal(t, int64(3), secondRelease.Decision.Revision)
 		assert.ElementsMatch(t, []string{"a", "b"}, []string{firstRelease.Destination, secondRelease.Destination})
 		require.NoError(t, store.Finish(ctx, *secondRelease, nil, actions.DefaultMaxAttempts, now, 0))
@@ -161,7 +160,7 @@ func TestOpen(t *testing.T) {
 		releasedRecord, err := store.GetDecision(ctx, extended.ID, now)
 
 		require.NoError(t, err)
-		assert.Equal(t, []decisions.Acknowledgement{
+		assert.Equal(t, []model.Acknowledgement{
 			{Destination: "a", Revision: 3},
 			{Destination: "b", Revision: 3},
 		}, releasedRecord.Deliveries)

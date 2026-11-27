@@ -12,8 +12,7 @@ import (
 	"net/netip"
 	"net/url"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -82,7 +81,7 @@ type pagination struct {
 }
 
 // Apply discovers an owned rule before creation or release, including after an interrupted request.
-func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
+func (p Provider) Apply(ctx context.Context, d model.Decision) error {
 	if !d.State.Valid() {
 		return fmt.Errorf("invalid decision state %q", d.State)
 	}
@@ -111,7 +110,7 @@ func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
 		return err
 	}
 
-	if d.State == decisionstate.StateBanned {
+	if d.State == model.DecisionBanned {
 		if len(owned) > 0 {
 			return nil
 		}

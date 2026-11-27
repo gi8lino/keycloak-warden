@@ -1,4 +1,4 @@
-package workers
+package overview
 
 import (
 	"context"
@@ -13,9 +13,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // fakeQueue supplies an idle action worker and deterministic database statistics.
@@ -51,7 +50,7 @@ func (fakeQueue) Finish(context.Context, actions.Job, error, int, time.Time, tim
 type fakeExpirer struct{}
 
 // Expire leaves all persisted sources untouched.
-func (fakeExpirer) Expire(context.Context, time.Time) ([]decisions.Decision, error) { return nil, nil }
+func (fakeExpirer) Expire(context.Context, time.Time) ([]model.Decision, error) { return nil, nil }
 
 // fakeMaintenanceStore accepts scheduled operations without accessing a database.
 type fakeMaintenanceStore struct{}
@@ -62,8 +61,7 @@ func (fakeMaintenanceStore) Prune(context.Context, time.Time) error { return nil
 // Optimize acknowledges a planned SQLite optimize operation.
 func (fakeMaintenanceStore) Optimize(context.Context) error { return nil }
 
-// TestSnapshot verifies aggregation does not create a third worker.
-func TestSnapshot(t *testing.T) {
+func TestWorkerSnapshot(t *testing.T) {
 	t.Parallel()
 
 	t.Run("aggregates runner states and persistent queue counts", func(t *testing.T) {
@@ -91,11 +89,11 @@ func TestSnapshot(t *testing.T) {
 		}, maintenance.MinObservationRetention, logger)
 		defer maintenanceRunner.Close()
 
-		service := NewService(actionsRunner, maintenanceRunner, queue)
+		service := NewWorkerService(actionsRunner, maintenanceRunner, queue)
 		status, err := service.Snapshot(t.Context())
 
 		require.NoError(t, err)
-		assert.Contains(t, []workerstate.State{workerstate.StateIdle, workerstate.StateProcessing}, status.Actions.State)
+		assert.Contains(t, []model.WorkerState{model.WorkerIdle, model.WorkerProcessing}, status.Actions.State)
 		assert.False(t, status.Actions.StartedAt.IsZero())
 		assert.Equal(t, 2, status.Actions.PendingDeliveries)
 		assert.Equal(t, 3, status.Actions.RetryingDeliveries)
@@ -103,7 +101,7 @@ func TestSnapshot(t *testing.T) {
 		assert.Equal(t, 4, status.Actions.ActiveBans)
 		require.NotNil(t, status.Actions.NextDeadline)
 		assert.Equal(t, deadline, *status.Actions.NextDeadline)
-		assert.Contains(t, []workerstate.State{workerstate.StateIdle, workerstate.StateProcessing}, status.Maintenance.State)
+		assert.Contains(t, []model.WorkerState{model.WorkerIdle, model.WorkerProcessing}, status.Maintenance.State)
 		assert.False(t, status.Maintenance.StartedAt.IsZero())
 		assert.Equal(t, "1h0m0s", status.Maintenance.PruneInterval)
 	})
@@ -115,9 +113,9 @@ func TestSnapshot(t *testing.T) {
 		lastAttemptAt := startedAt.Add(5 * time.Minute)
 		nextDeadline := startedAt.Add(time.Hour)
 
-		status := Actions{
+		status := ActionWorkerStatus{
 			RuntimeStatus: actions.RuntimeStatus{
-				State:     workerstate.StateIdle,
+				State:     model.WorkerIdle,
 				StartedAt: startedAt,
 			},
 			QueueStats: QueueStats{
@@ -161,9 +159,9 @@ func TestSnapshot(t *testing.T) {
 		}, maintenance.MinObservationRetention, logger)
 		defer maintenanceRunner.Close()
 
-		status, err := NewService(actionsRunner, maintenanceRunner, queue).Snapshot(t.Context())
+		status, err := NewWorkerService(actionsRunner, maintenanceRunner, queue).Snapshot(t.Context())
 
 		require.ErrorContains(t, err, "storage error")
-		assert.Equal(t, Status{}, status)
+		assert.Equal(t, WorkerStatus{}, status)
 	})
 }

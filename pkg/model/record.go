@@ -1,10 +1,6 @@
-package bans
+package model
 
-import (
-	"time"
-
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-)
+import "time"
 
 // SourceKind distinguishes independent reasons for an effective block.
 type SourceKind string
@@ -45,21 +41,21 @@ type SourceChange struct {
 // Record describes a persisted decision, its active sources, and delivery acknowledgements.
 type Record struct {
 	// Decision contains the effective desired state for the address.
-	Decision decisions.Decision `json:"decision" yaml:"decision"`
+	Decision Decision `json:"decision" yaml:"decision"`
 	// Sources contains the independent active reasons for the block.
 	Sources []Source `json:"sources" yaml:"sources"`
 	// SourceChanges contains the most recent persisted source edits for individual reads.
 	SourceChanges []SourceChange `json:"sourceChanges,omitempty" yaml:"sourceChanges,omitempty"`
 	// CurrentDeliveries reports every current-revision destination regardless of history pagination.
-	CurrentDeliveries []decisions.Delivery `json:"currentDeliveries,omitempty" yaml:"currentDeliveries,omitempty"`
+	CurrentDeliveries []Delivery `json:"currentDeliveries,omitempty" yaml:"currentDeliveries,omitempty"`
 	// DeliveryHistory contains per-revision history on individual decision reads.
-	DeliveryHistory []decisions.Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
+	DeliveryHistory []Delivery `json:"deliveryHistory,omitempty" yaml:"deliveryHistory,omitempty"`
 	// HistoryPage identifies the one-based page included in an individual inspection.
 	HistoryPage int `json:"historyPage,omitempty" yaml:"historyPage,omitempty"`
 	// HistoryNextPage identifies the next older page; zero means the last page.
 	HistoryNextPage int `json:"historyNextPage,omitempty" yaml:"historyNextPage,omitempty"`
 	// Deliveries records each destination’s acknowledged revision.
-	Deliveries []decisions.Acknowledgement `json:"deliveries" yaml:"deliveries"`
+	Deliveries []Acknowledgement `json:"deliveries" yaml:"deliveries"`
 }
 
 // ManualBanRequest specifies a new or extended operator-requested block.

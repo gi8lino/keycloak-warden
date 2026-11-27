@@ -11,6 +11,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // ErrInvalidEvent identifies an event rejected by the application contract.
@@ -162,8 +163,8 @@ func (s *Service) processFailure(
 		return result, nil
 	}
 
-	if err := bans.ExtendSource(ctx, tx, result.IP, bans.Source{
-		Kind:      bans.SourceAutomatic,
+	if err := bans.ExtendSource(ctx, tx, result.IP, model.Source{
+		Kind:      model.SourceAutomatic,
 		ExpiresAt: now.Add(s.rule.Ban),
 	}); err != nil {
 		return Result{}, err

@@ -17,9 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // assertCreateBanStatus checks the response status for a request body sent to POST /bans.
@@ -70,13 +69,13 @@ func TestCreateBanBodyValidation(t *testing.T) {
 // scriptedAdministration exercises the HTTP adapter without requiring SQLite.
 type scriptedAdministration struct {
 	// record is returned for successful operations.
-	record bans.Record
+	record model.Record
 	// records is returned when listing active decisions.
-	records []bans.Record
+	records []model.Record
 	// err is returned from all operations to test HTTP error mapping.
 	err error
 	// requested captures the submitted manual-ban payload.
-	requested bans.ManualBanRequest
+	requested model.ManualBanRequest
 	// id captures the decision selected for retrieval or release.
 	id string
 	// page records the requested history page.
@@ -88,27 +87,27 @@ type scriptedAdministration struct {
 }
 
 // BanManual captures the request and returns the scripted outcome.
-func (s *scriptedAdministration) BanManual(_ context.Context, request bans.ManualBanRequest, _ time.Time) (bans.Record, error) {
+func (s *scriptedAdministration) BanManual(_ context.Context, request model.ManualBanRequest, _ time.Time) (model.Record, error) {
 	s.calls++
 	s.requested = request
 	return s.record, s.err
 }
 
 // Release captures the selected decision and returns the scripted outcome.
-func (s *scriptedAdministration) Release(_ context.Context, id string, _ time.Time) (bans.Record, error) {
+func (s *scriptedAdministration) Release(_ context.Context, id string, _ time.Time) (model.Record, error) {
 	s.calls++
 	s.id = id
 	return s.record, s.err
 }
 
 // ListActive records the read and returns the scripted active decisions.
-func (s *scriptedAdministration) ListActive(context.Context, time.Time) ([]bans.Record, error) {
+func (s *scriptedAdministration) ListActive(context.Context, time.Time) ([]model.Record, error) {
 	s.calls++
 	return s.records, s.err
 }
 
 // GetDecisionPage captures the history selection and returns the scripted record.
-func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _ time.Time, page int, throughRevision int64) (bans.Record, error) {
+func (s *scriptedAdministration) GetDecisionPage(_ context.Context, id string, _ time.Time, page int, throughRevision int64) (model.Record, error) {
 	s.calls++
 	s.id = id
 	s.page = page
@@ -121,8 +120,8 @@ func TestCreateBan(t *testing.T) {
 
 	t.Run("accepts one ban request and writes the decision", func(t *testing.T) {
 		t.Parallel()
-		service := &scriptedAdministration{record: bans.Record{Decision: decisions.Decision{
-			ID: "decision-id", IP: "203.0.113.10", State: decisionstate.StateBanned,
+		service := &scriptedAdministration{record: model.Record{Decision: model.Decision{
+			ID: "decision-id", IP: "203.0.113.10", State: model.DecisionBanned,
 		}}}
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, nil))
@@ -133,8 +132,8 @@ func TestCreateBan(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, response.Code)
 		assert.Equal(t, 1, service.calls)
-		assert.Equal(t, bans.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "investigation"}, service.requested)
-		var result bans.Record
+		assert.Equal(t, model.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "investigation"}, service.requested)
+		var result model.Record
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
 		assert.Equal(t, "decision-id", result.Decision.ID)
 		assert.Contains(t, logs.String(), `"event":"manual_ban_requested"`)
@@ -221,14 +220,14 @@ func assertRejectedBanRequest(t *testing.T, contentType, body string, status int
 func assertBanAdministrationHandler(t *testing.T, method, path string, handler func(endpoint.BanAdministration, *slog.Logger) http.HandlerFunc, wantLog string, wantID bool) {
 	t.Helper()
 
-	record := bans.Record{Decision: decisions.Decision{
+	record := model.Record{Decision: model.Decision{
 		ID:    "decision-id",
 		IP:    "203.0.113.10",
-		State: decisionstate.StateBanned,
+		State: model.DecisionBanned,
 	}}
 	service := &scriptedAdministration{
 		record:  record,
-		records: []bans.Record{record},
+		records: []model.Record{record},
 	}
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, nil))

@@ -4,26 +4,26 @@ import (
 	"context"
 	"testing"
 
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // queryStore records requested bounds and filters independently of the database.
 type queryStore struct {
 	bounds      Query
 	ip          string
-	state       decisionstate.State
-	status      deliverystate.Status
+	state       model.DecisionState
+	status      model.DeliveryStatus
 	destination string
 }
 
-func (s *queryStore) ListRevisions(_ context.Context, q Query, ip string, state decisionstate.State) (RevisionPage, error) {
+func (s *queryStore) ListRevisions(_ context.Context, q Query, ip string, state model.DecisionState) (RevisionPage, error) {
 	s.bounds, s.ip, s.state = q, ip, state
 	return RevisionPage{Items: []Revision{}, Page: q.Page}, nil
 }
-func (s *queryStore) ListDeliveries(_ context.Context, q Query, status deliverystate.Status, destination string) (DeliveryPage, error) {
+func (s *queryStore) ListDeliveries(_ context.Context, q Query, status model.DeliveryStatus, destination string) (DeliveryPage, error) {
 	s.bounds, s.status, s.destination = q, status, destination
 	return DeliveryPage{Items: []Delivery{}, Page: q.Page}, nil
 }
@@ -35,7 +35,7 @@ func TestValidation(t *testing.T) {
 		store := &queryStore{}
 		service, err := NewService(store)
 		require.NoError(t, err)
-		_, err = service.Revisions(t.Context(), 2, "::ffff:203.0.113.12", decisionstate.StateBanned)
+		_, err = service.Revisions(t.Context(), 2, "::ffff:203.0.113.12", model.DecisionBanned)
 		require.NoError(t, err)
 		assert.Equal(t, "203.0.113.12", store.ip)
 		assert.Equal(t, 20, int(store.bounds.Offset))
@@ -66,7 +66,7 @@ func TestValidation(t *testing.T) {
 		t.Parallel()
 		service, err := NewService(&queryStore{})
 		require.NoError(t, err)
-		_, err = service.Deliveries(t.Context(), 1, deliverystate.StatusSuperseded, "")
+		_, err = service.Deliveries(t.Context(), 1, model.DeliverySuperseded, "")
 		require.ErrorIs(t, err, ErrInvalid)
 	})
 	t.Run("rejects invalid delivery state", func(t *testing.T) {

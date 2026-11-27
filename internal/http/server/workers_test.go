@@ -13,10 +13,10 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/application/workers"
+	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // testWorkerStatus supplies deterministic worker state without opening SQLite.
@@ -26,22 +26,22 @@ type testWorkerStatus struct {
 }
 
 // Snapshot provides one sample action and maintenance worker report.
-func (s testWorkerStatus) Snapshot(context.Context) (workers.Status, error) {
+func (s testWorkerStatus) Snapshot(context.Context) (overview.WorkerStatus, error) {
 	if s.err != nil {
-		return workers.Status{}, s.err
+		return overview.WorkerStatus{}, s.err
 	}
-	return workers.Status{
-		Actions: workers.Actions{
+	return overview.WorkerStatus{
+		Actions: overview.ActionWorkerStatus{
 			RuntimeStatus: actions.RuntimeStatus{
-				State:     workerstate.StateIdle,
+				State:     model.WorkerIdle,
 				StartedAt: time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC),
 			},
-			QueueStats: workers.QueueStats{
+			QueueStats: overview.QueueStats{
 				PendingDeliveries: 2,
 			},
 		},
 		Maintenance: maintenance.Status{
-			State: workerstate.StateIdle,
+			State: model.WorkerIdle,
 		},
 	}, nil
 }

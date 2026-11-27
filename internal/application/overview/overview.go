@@ -11,8 +11,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -54,7 +53,7 @@ type Revision struct {
 	// Revision is the monotonically increasing decision version.
 	Revision int64 `json:"revision"`
 	// State is the desired blocking state recorded at this revision.
-	State decisionstate.State `json:"state"`
+	State model.DecisionState `json:"state"`
 	// Cause identifies the workflow that created this revision.
 	Cause bans.ChangeCause `json:"cause"`
 	// ExpiresAt is the deadline recorded for this decision revision.
@@ -62,7 +61,7 @@ type Revision struct {
 	// ChangedAt is when the transaction committed this revision.
 	ChangedAt time.Time `json:"changedAt"`
 	// Sources contains the reasons that were active at this revision.
-	Sources []bans.Source `json:"sources"`
+	Sources []model.Source `json:"sources"`
 }
 
 // RevisionPage contains bounded, newest-first decision changes.
@@ -86,11 +85,11 @@ type Delivery struct {
 	// Revision identifies the current desired decision version.
 	Revision int64 `json:"revision"`
 	// DesiredState is the latest state requested by Warden.
-	DesiredState decisionstate.State `json:"desiredState"`
+	DesiredState model.DecisionState `json:"desiredState"`
 	// Destination is the configured target identifier.
 	Destination string `json:"destination"`
 	// Status is the current revision delivery lifecycle.
-	Status deliverystate.Status `json:"status"`
+	Status model.DeliveryStatus `json:"status"`
 	// AcknowledgedRevision is the last accepted version, or zero when absent.
 	AcknowledgedRevision int64 `json:"acknowledgedRevision"`
 	// AttemptCount is the number of completed current-revision attempts.
@@ -118,9 +117,9 @@ type DeliveryPage struct {
 // Store performs the read-only queries in one SQLite snapshot per call.
 type Store interface {
 	// ListRevisions retrieves a bounded page of immutable decision changes.
-	ListRevisions(context.Context, Query, string, decisionstate.State) (RevisionPage, error)
+	ListRevisions(context.Context, Query, string, model.DecisionState) (RevisionPage, error)
 	// ListDeliveries retrieves only the latest destination revision per decision.
-	ListDeliveries(context.Context, Query, deliverystate.Status, string) (DeliveryPage, error)
+	ListDeliveries(context.Context, Query, model.DeliveryStatus, string) (DeliveryPage, error)
 }
 
 // Service validates and executes administrative queries.
@@ -138,7 +137,7 @@ func NewService(store Store) (*Service, error) {
 }
 
 // Revisions returns immutable decision transitions, including releases and extensions.
-func (s *Service) Revisions(ctx context.Context, page int, ip string, state decisionstate.State) (RevisionPage, error) {
+func (s *Service) Revisions(ctx context.Context, page int, ip string, state model.DecisionState) (RevisionPage, error) {
 	return s.RevisionsThrough(ctx, page, ip, state, 0)
 }
 
@@ -147,7 +146,7 @@ func (s *Service) RevisionsThrough(
 	ctx context.Context,
 	page int,
 	ip string,
-	state decisionstate.State,
+	state model.DecisionState,
 	through int64,
 ) (RevisionPage, error) {
 	if through < 0 {
@@ -176,7 +175,7 @@ func (s *Service) RevisionsThrough(
 }
 
 // Deliveries returns current-revision destination progress, including failed releases.
-func (s *Service) Deliveries(ctx context.Context, page int, status deliverystate.Status, destination string) (DeliveryPage, error) {
+func (s *Service) Deliveries(ctx context.Context, page int, status model.DeliveryStatus, destination string) (DeliveryPage, error) {
 	bounds, err := NewQuery(page)
 	if err != nil {
 		return DeliveryPage{}, err

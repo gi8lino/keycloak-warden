@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 // Job associates a decision revision with one configured destination.
 type Job struct {
 	// Decision is the state to reconcile.
-	Decision decisions.Decision
+	Decision model.Decision
 	// Destination selects a configured provider instance.
 	Destination string
 	// PreviousDelay is the last persisted destination pause used by retry policy.
@@ -33,7 +33,7 @@ type Job struct {
 // Provider reconciles the desired state and tolerates repeated delivery.
 type Provider interface {
 	// Apply reconciles one revision or returns a retryable error.
-	Apply(context.Context, decisions.Decision) error
+	Apply(context.Context, model.Decision) error
 }
 
 // Queue persists desired changes independently of external delivery.
@@ -50,7 +50,7 @@ type Queue interface {
 
 // Expirer owns the application workflow for expiring ban reasons.
 type Expirer interface {
-	Expire(context.Context, time.Time) ([]decisions.Decision, error)
+	Expire(context.Context, time.Time) ([]model.Decision, error)
 }
 
 // Runner owns the background action worker and its cancellation lifecycle.
@@ -198,7 +198,6 @@ func drainReady(
 ) error {
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
-			// Stop processing if the context was cancelled or its deadline expired.
 			return err
 		}
 

@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // TestWorkerStatus verifies the public admin client's worker endpoint contract.
@@ -33,9 +33,9 @@ func TestWorkerStatus(t *testing.T) {
 		workers, err := api.WorkerStatus(context.Background())
 
 		require.NoError(t, err)
-		assert.Equal(t, workerstate.StateIdle, workers.Actions.State)
+		assert.Equal(t, model.WorkerIdle, workers.Actions.State)
 		assert.Equal(t, 3, workers.Actions.PendingDeliveries)
-		assert.Equal(t, workerstate.StateProcessing, workers.Maintenance.State)
+		assert.Equal(t, model.WorkerProcessing, workers.Maintenance.State)
 	})
 
 	t.Run("propagates HTTP error without a fabricated status", func(t *testing.T) {

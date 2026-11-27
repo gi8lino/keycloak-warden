@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // admissionState supplies persisted facts without opening provider connections.
@@ -16,14 +16,14 @@ type admissionState struct {
 	// managed identifies outstanding destination obligations.
 	managed []string
 	// active contains the currently effective bans.
-	active []bans.Record
+	active []model.Record
 }
 
 // ManagedTargets reports outstanding destination obligations.
 func (s admissionState) ManagedTargets(context.Context) ([]string, error) { return s.managed, nil }
 
 // ListActive reports currently effective bans.
-func (s admissionState) ListActive(context.Context, time.Time) ([]bans.Record, error) {
+func (s admissionState) ListActive(context.Context, time.Time) ([]model.Record, error) {
 	return s.active, nil
 }
 
@@ -45,7 +45,7 @@ func TestValidateAdmission(t *testing.T) {
 		t.Parallel()
 		protection, err := bans.NewProtection([]string{"203.0.113.0/24"})
 		require.NoError(t, err)
-		state := admissionState{active: []bans.Record{{Decision: decisions.Decision{IP: "203.0.113.9"}}}}
+		state := admissionState{active: []model.Record{{Decision: model.Decision{IP: "203.0.113.9"}}}}
 		require.ErrorContains(t, ValidateAdmission(t.Context(), state, bans.Policy{Protection: protection}, time.Now()), "release and reconcile existing ban")
 	})
 
@@ -53,7 +53,7 @@ func TestValidateAdmission(t *testing.T) {
 		t.Parallel()
 		protection, err := bans.NewProtection([]string{"203.0.113.0/24"})
 		require.NoError(t, err)
-		state := admissionState{active: []bans.Record{{Decision: decisions.Decision{IP: "192.0.2.9"}}}}
+		state := admissionState{active: []model.Record{{Decision: model.Decision{IP: "192.0.2.9"}}}}
 		require.NoError(t, ValidateAdmission(t.Context(), state, bans.Policy{Protection: protection}, time.Now()))
 	})
 }

@@ -14,8 +14,7 @@ import (
 	"github.com/containeroo/notifykit/response"
 	"github.com/containeroo/notifykit/templates"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -44,7 +43,7 @@ type Provider struct {
 }
 
 // Apply posts the serialized decision and accepts only a successful response.
-func (p Provider) Apply(ctx context.Context, d decisions.Decision) error {
+func (p Provider) Apply(ctx context.Context, d model.Decision) error {
 	if !d.State.Valid() {
 		return fmt.Errorf("invalid decision state %q", d.State)
 	}
@@ -102,18 +101,18 @@ func (p Provider) ValidateTemplate() error {
 		return nil
 	}
 
-	decision := decisions.Decision{
+	decision := model.Decision{
 		ID:        "startup-check",
 		Revision:  1,
 		IP:        "203.0.113.1",
-		State:     decisionstate.StateBanned,
+		State:     model.DecisionBanned,
 		ExpiresAt: time.Unix(0, 0).UTC(),
 	}
 	if _, err := p.renderBody(decision); err != nil {
 		return fmt.Errorf("banned state: %w", err)
 	}
 
-	decision.State = decisionstate.StateUnbanned
+	decision.State = model.DecisionUnbanned
 	if _, err := p.renderBody(decision); err != nil {
 		return fmt.Errorf("unbanned state: %w", err)
 	}
@@ -124,13 +123,13 @@ func (p Provider) ValidateTemplate() error {
 // templateData combines decision fields and destination variables.
 type templateData struct {
 	// Decision exposes the original decision fields at the template root.
-	decisions.Decision
+	model.Decision
 	// Vars contains only variables explicitly configured for this body template.
 	Vars map[string]string `json:"-"`
 }
 
 // renderBody either preserves the canonical decision JSON or renders the configured template.
-func (p Provider) renderBody(decision decisions.Decision) ([]byte, error) {
+func (p Provider) renderBody(decision model.Decision) ([]byte, error) {
 	if p.Template == nil {
 		return json.Marshal(decision)
 	}

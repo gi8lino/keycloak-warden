@@ -10,8 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Revision is an immutable decision change, including sources at the time of change.
@@ -23,7 +22,7 @@ type Revision struct {
 	// Revision is the monotonically increasing decision version.
 	Revision int64 `json:"revision"`
 	// State is the desired blocking state recorded at this revision.
-	State decisionstate.State `json:"state"`
+	State model.DecisionState `json:"state"`
 	// Cause identifies the workflow that created this revision.
 	Cause string `json:"cause"`
 	// ExpiresAt is the deadline recorded for this decision revision.
@@ -31,7 +30,7 @@ type Revision struct {
 	// ChangedAt is when the transaction committed this revision.
 	ChangedAt time.Time `json:"changedAt"`
 	// Sources contains the reasons that were active at this revision.
-	Sources []Source `json:"sources"`
+	Sources []model.Source `json:"sources"`
 }
 
 // RevisionPage is one bounded page of effective decision changes.
@@ -55,11 +54,11 @@ type DeliveryOverview struct {
 	// Revision identifies the current desired decision version.
 	Revision int64 `json:"revision"`
 	// DesiredState is the latest state requested by Warden.
-	DesiredState decisionstate.State `json:"desiredState"`
+	DesiredState model.DecisionState `json:"desiredState"`
 	// Destination is the configured target identifier.
 	Destination string `json:"destination"`
 	// Status is the current revision delivery lifecycle.
-	Status deliverystate.Status `json:"status"`
+	Status model.DeliveryStatus `json:"status"`
 	// AcknowledgedRevision is the last accepted version, or zero when absent.
 	AcknowledgedRevision int64 `json:"acknowledgedRevision"`
 	// AttemptCount is the number of completed current-revision attempts.
@@ -91,7 +90,7 @@ type RevisionFilter struct {
 	// IP optionally restricts results to one exact canonical address.
 	IP string
 	// State optionally restricts results to banned or unbanned events.
-	State decisionstate.State
+	State model.DecisionState
 	// ThroughSequence pins this page to the first response's journal boundary.
 	ThroughSequence int64
 }
@@ -101,7 +100,7 @@ type DeliveryFilter struct {
 	// Page selects a one-based page; zero defaults to page one.
 	Page int
 	// Status optionally restricts results to one delivery lifecycle state.
-	Status deliverystate.Status
+	Status model.DeliveryStatus
 	// Destination optionally restricts results to one configured target.
 	Destination string
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Next loads the oldest pending target using its latest desired decision revision.
@@ -29,7 +29,7 @@ WHERE q.acknowledged < d.revision
     AND (d.state = ? OR d.expires > ?)
 ORDER BY q.retry_at, d.expires, q.destination
 LIMIT 1
-`, now.UnixMilli(), now.UnixMilli(), decisionstate.StateUnbanned, now.UnixMilli()).Scan(
+`, now.UnixMilli(), now.UnixMilli(), model.DecisionUnbanned, now.UnixMilli()).Scan(
 		&decision.ID,
 		&decision.Revision,
 		&decision.IP,

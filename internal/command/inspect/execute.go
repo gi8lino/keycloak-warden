@@ -5,14 +5,15 @@ import (
 	"fmt"
 
 	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // inspection presents revision history under deliveries in CLI output.
 type inspection struct {
 	// Decision is the latest desired state.
-	Decision client.Decision `json:"decision" yaml:"decision"`
+	Decision model.Decision `json:"decision" yaml:"decision"`
 	// Sources are the currently active ban sources.
-	Sources []client.Source `json:"sources" yaml:"sources"`
+	Sources []model.Source `json:"sources" yaml:"sources"`
 	// Deliveries groups attempts by revision, or shows acknowledgements from older servers.
 	Deliveries any `json:"deliveries" yaml:"deliveries"`
 	// HistoryPage is the one-based page returned for a single-page inspection.
@@ -22,7 +23,7 @@ type inspection struct {
 }
 
 // inspectRecord uses detailed history when the server provides it.
-func inspectRecord(record client.Record) inspection {
+func inspectRecord(record model.Record) inspection {
 	view := inspection{
 		Decision:        record.Decision,
 		Sources:         record.Sources,
@@ -31,7 +32,7 @@ func inspectRecord(record client.Record) inspection {
 		HistoryNextPage: record.HistoryNextPage,
 	}
 	if record.HistoryPage != 0 || record.DeliveryHistory != nil {
-		view.Deliveries = append([]client.Delivery{}, record.DeliveryHistory...)
+		view.Deliveries = append([]model.Delivery{}, record.DeliveryHistory...)
 	}
 	return view
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/sqlite"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestBulkBanListing(t *testing.T) {
@@ -49,8 +50,8 @@ func TestBulkBanListing(t *testing.T) {
 		assert.Equal(t, second.Decision.ID, views[1].Decision.ID)
 		assert.Equal(t, third.Decision.ID, views[2].Decision.ID)
 		require.Len(t, views[1].Sources, 2)
-		assert.Equal(t, bans.SourceAutomatic, views[1].Sources[0].Kind)
-		assert.Equal(t, bans.SourceManual, views[1].Sources[1].Kind)
+		assert.Equal(t, model.SourceAutomatic, views[1].Sources[0].Kind)
+		assert.Equal(t, model.SourceManual, views[1].Sources[1].Kind)
 		assert.Equal(t, "second", views[1].Sources[1].Reason)
 		for _, view := range views {
 			require.Len(t, view.Deliveries, 2)

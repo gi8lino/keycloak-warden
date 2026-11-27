@@ -16,12 +16,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/command/output"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v4"
+
+	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/internal/command/output"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestRun(t *testing.T) {
@@ -569,13 +570,13 @@ func TestInspectMultiple(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", "id-two", "id-one", "--application-url", server.URL, "--admin-token", "admin-secret"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []bans.Record
+		var views []model.Record
 		require.NoError(t, yaml.Load(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
 		assert.Equal(t, "id-two", views[0].Decision.ID)
 		assert.Equal(t, "id-one", views[1].Decision.ID)
 		require.Len(t, views[0].Sources, 1)
-		assert.Equal(t, bans.SourceManual, views[0].Sources[0].Kind)
+		assert.Equal(t, model.SourceManual, views[0].Sources[0].Kind)
 	})
 
 	t.Run("JSON always returns an array, including for one ID", func(t *testing.T) {
@@ -585,7 +586,7 @@ func TestInspectMultiple(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", "id-one", "--application-url", server.URL, "--admin-token", "admin-secret", "--output", "json"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []bans.Record
+		var views []model.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 1)
 		assert.Equal(t, "id-one", views[0].Decision.ID)
@@ -601,7 +602,7 @@ func TestInspectMultiple(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"--output", "json", "inspect", "id-two", "id-one", "--application-url", server.URL, "--admin-token", "admin-secret"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []bans.Record
+		var views []model.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
 		assert.Equal(t, "id-two", views[0].Decision.ID)
@@ -616,7 +617,7 @@ func TestInspectMultiple(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"inspect", "id-one", "id-two", "--application-url", server.URL, "--admin-token", "admin-secret", "--output", "yaml"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []bans.Record
+		var views []model.Record
 		require.NoError(t, yaml.Load(stdout.Bytes(), &views))
 		require.Len(t, views, 2)
 		assert.Equal(t, "id-one", views[0].Decision.ID)
@@ -662,7 +663,7 @@ func TestListActiveHTTP(t *testing.T) {
 		var stdout, stderr bytes.Buffer
 		err := Run(t.Context(), []string{"list-active", "--application-url", server.URL, "--admin-token", "admin-secret", "-o", "json"}, "test", &stdout, &stderr)
 		require.NoError(t, err, stderr.String())
-		var views []bans.Record
+		var views []model.Record
 		require.NoError(t, json.Unmarshal(stdout.Bytes(), &views))
 		require.Len(t, views, 1)
 		assert.Equal(t, "id-one", views[0].Decision.ID)

@@ -11,8 +11,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -32,8 +31,8 @@ const (
 
 // OverviewQueries exposes cross-decision history and reconciliation status.
 type OverviewQueries interface {
-	RevisionsThrough(context.Context, int, string, decisionstate.State, int64) (overview.RevisionPage, error)
-	Deliveries(context.Context, int, deliverystate.Status, string) (overview.DeliveryPage, error)
+	RevisionsThrough(context.Context, int, string, model.DecisionState, int64) (overview.RevisionPage, error)
+	Deliveries(context.Context, int, model.DeliveryStatus, string) (overview.DeliveryPage, error)
 }
 
 // DecisionHistory returns a bounded journal of effective ban and release revisions.
@@ -54,7 +53,7 @@ func DecisionHistory(service OverviewQueries, logger *slog.Logger) http.HandlerF
 			through = parsed
 		}
 
-		list, err := service.RevisionsThrough(r.Context(), page, values.Get(ipParam), decisionstate.State(values.Get(stateParam)), through)
+		list, err := service.RevisionsThrough(r.Context(), page, values.Get(ipParam), model.DecisionState(values.Get(stateParam)), through)
 		if writeOverviewError(w, logger, err) {
 			return
 		}
@@ -71,7 +70,7 @@ func DeliveryOverview(service OverviewQueries, logger *slog.Logger) http.Handler
 			return
 		}
 
-		list, err := service.Deliveries(r.Context(), page, deliverystate.Status(values.Get(statusParam)), values.Get(destinationParam))
+		list, err := service.Deliveries(r.Context(), page, model.DeliveryStatus(values.Get(statusParam)), values.Get(destinationParam))
 		if writeOverviewError(w, logger, err) {
 			return
 		}

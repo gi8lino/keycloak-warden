@@ -9,8 +9,7 @@ import (
 	"uuid"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // EnsureDecision creates a stable UUIDv7 identity before attaching ban sources.
@@ -19,12 +18,12 @@ func (t *transaction) EnsureDecision(ctx context.Context, ip string) error {
 INSERT INTO decisions (ip, id, revision, state, expires)
 VALUES (?, ?, 0, ?, 0)
 ON CONFLICT (ip) DO NOTHING
-`, ip, uuid.NewV7().String(), decisionstate.StateUnbanned)
+`, ip, uuid.NewV7().String(), model.DecisionUnbanned)
 	return err
 }
 
 // Decision reads the materialized current state for a given IP.
-func (t *transaction) Decision(ctx context.Context, ip string) (decisions.Decision, error) {
+func (t *transaction) Decision(ctx context.Context, ip string) (model.Decision, error) {
 	return readDecisionByIP(ctx, t.tx, ip)
 }
 
@@ -32,8 +31,8 @@ func (t *transaction) Decision(ctx context.Context, ip string) (decisions.Decisi
 // Unchanged revisions can still synchronize destination ownership.
 func (t *transaction) SaveDecision(
 	ctx context.Context,
-	previous, decision decisions.Decision,
-	sources []bans.Source,
+	previous, decision model.Decision,
+	sources []model.Source,
 	cause bans.ChangeCause,
 	changed bool,
 	targets []string,
@@ -50,7 +49,7 @@ WHERE ip = ?
 		}
 		// Record the source snapshot used for this revision.
 		if sources == nil {
-			sources = []bans.Source{}
+			sources = []model.Source{}
 		}
 		snapshot, err := json.Marshal(sources)
 		if err != nil {
@@ -69,7 +68,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?)
 	if _, err := t.tx.ExecContext(ctx, `
 DELETE FROM deliveries
 WHERE ip = ? AND acknowledged = ? AND ? = 1
-`, decision.IP, previous.Revision, previous.State == decisionstate.StateUnbanned); err != nil {
+`, decision.IP, previous.Revision, previous.State == model.DecisionUnbanned); err != nil {
 		return err
 	}
 
@@ -86,14 +85,14 @@ ON CONFLICT (ip, destination) DO NOTHING
 }
 
 // readDecisionByIP loads the current materialized decision within the transaction.
-func readDecisionByIP(ctx context.Context, tx *sql.Tx, ip string) (decisions.Decision, error) {
-	var result decisions.Decision
+func readDecisionByIP(ctx context.Context, tx *sql.Tx, ip string) (model.Decision, error) {
+	var result model.Decision
 	var expires int64
 	err := tx.QueryRowContext(ctx, `
 SELECT id, revision, state, expires FROM decisions WHERE ip = ?
 `, ip).Scan(&result.ID, &result.Revision, &result.State, &expires)
 	if err != nil {
-		return decisions.Decision{}, err
+		return model.Decision{}, err
 	}
 	result.IP = ip
 	result.ExpiresAt = time.UnixMilli(expires).UTC()
@@ -101,10 +100,10 @@ SELECT id, revision, state, expires FROM decisions WHERE ip = ?
 }
 
 // DecisionByID reads the current decision identified by its stable ID.
-func (t *transaction) DecisionByID(ctx context.Context, id string) (decisions.Decision, error) {
+func (t *transaction) DecisionByID(ctx context.Context, id string) (model.Decision, error) {
 	decision, err := readDecision(ctx, t.tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return decisions.Decision{}, bans.ErrNotFound
+		return model.Decision{}, bans.ErrNotFound
 	}
 	return decision, err
 }

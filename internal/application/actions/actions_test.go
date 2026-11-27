@@ -15,8 +15,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // blockingExpirer waits for cancellation to test the worker's shutdown ordering.
@@ -28,7 +27,7 @@ type blockingExpirer struct {
 }
 
 // Expire blocks until cancellation so Close must wait for it to return.
-func (q *blockingExpirer) Expire(ctx context.Context, _ time.Time) ([]decisions.Decision, error) {
+func (q *blockingExpirer) Expire(ctx context.Context, _ time.Time) ([]model.Decision, error) {
 	close(q.started)
 	<-ctx.Done()
 	close(q.stopped)
@@ -144,11 +143,11 @@ func (q *scriptedQueue) NextDeadline(context.Context) (time.Time, error) {
 // scriptedExpirer provides released decisions to the worker without persistence.
 type scriptedExpirer struct {
 	// expired contains the single batch of released decisions returned by the fake.
-	expired []decisions.Decision
+	expired []model.Decision
 }
 
 // Expire returns a single batch of committed releases.
-func (e *scriptedExpirer) Expire(context.Context, time.Time) ([]decisions.Decision, error) {
+func (e *scriptedExpirer) Expire(context.Context, time.Time) ([]model.Decision, error) {
 	released := e.expired
 	e.expired = nil
 	return released, nil
@@ -181,7 +180,7 @@ type acceptProvider struct {
 }
 
 // Apply records delivery and accepts the decision.
-func (p *acceptProvider) Apply(context.Context, decisions.Decision) error {
+func (p *acceptProvider) Apply(context.Context, model.Decision) error {
 	p.applied++
 	return nil
 }
@@ -193,8 +192,8 @@ func TestDrainReady(t *testing.T) {
 		t.Parallel()
 
 		q := &scriptedQueue{jobs: []*Job{
-			{Decision: decisions.Decision{ID: "one"}, Destination: "target"},
-			{Decision: decisions.Decision{ID: "two"}, Destination: "target"},
+			{Decision: model.Decision{ID: "one"}, Destination: "target"},
+			{Decision: model.Decision{ID: "two"}, Destination: "target"},
 		}}
 		provider := &acceptProvider{}
 		logger := slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -209,8 +208,8 @@ func TestDrainReady(t *testing.T) {
 
 		q := &scriptedQueue{
 			jobs: []*Job{
-				{Decision: decisions.Decision{ID: "one"}, Destination: "webhook.receiver"},
-				{Decision: decisions.Decision{ID: "two"}, Destination: "cloudflare.edge"},
+				{Decision: model.Decision{ID: "one"}, Destination: "webhook.receiver"},
+				{Decision: model.Decision{ID: "two"}, Destination: "cloudflare.edge"},
 			},
 		}
 		destinations := map[string]Target{
@@ -227,7 +226,7 @@ func TestDrainReady(t *testing.T) {
 	t.Run("respects expired deadline", func(t *testing.T) {
 		t.Parallel()
 
-		q := &scriptedQueue{jobs: []*Job{{Decision: decisions.Decision{ID: "one"}, Destination: "target"}}}
+		q := &scriptedQueue{jobs: []*Job{{Decision: model.Decision{ID: "one"}, Destination: "target"}}}
 		provider := &acceptProvider{}
 		require.NoError(t, drainReady(t.Context(), q, map[string]Target{"target": {Provider: provider, MaxAttempts: DefaultMaxAttempts}}, DefaultRetryPolicy(), slog.Default(), time.Now().Add(-time.Second)))
 
@@ -290,7 +289,7 @@ func TestWaitUntilNoDeadline(t *testing.T) {
 type failingProvider struct{}
 
 // Apply returns a retryable delivery error.
-func (failingProvider) Apply(context.Context, decisions.Decision) error {
+func (failingProvider) Apply(context.Context, model.Decision) error {
 	return errors.New("receiver unavailable")
 }
 
@@ -298,7 +297,7 @@ func TestDispatchLogging(t *testing.T) {
 	t.Parallel()
 
 	job := Job{
-		Decision:    decisions.Decision{ID: "decision", IP: "203.0.113.5", Revision: 14, State: decisionstate.StateBanned},
+		Decision:    model.Decision{ID: "decision", IP: "203.0.113.5", Revision: 14, State: model.DecisionBanned},
 		Destination: "webhook.receiver",
 	}
 
@@ -355,8 +354,8 @@ func TestExpiryLogging(t *testing.T) {
 	var logs bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	q := &scriptedQueue{}
-	expirer := &scriptedExpirer{expired: []decisions.Decision{{
-		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: decisionstate.StateUnbanned,
+	expirer := &scriptedExpirer{expired: []model.Decision{{
+		ID: "expired-id", IP: "203.0.113.10", Revision: 3, State: model.DecisionUnbanned,
 	}}}
 
 	_, err := processReady(t.Context(), q, expirer, nil, DefaultRetryPolicy(), logger)
@@ -379,8 +378,8 @@ func TestProcessReadyUsesExpirer(t *testing.T) {
 		t.Parallel()
 
 		q := &scriptedQueue{}
-		expirer := &scriptedExpirer{expired: []decisions.Decision{{
-			ID: "release", State: decisionstate.StateUnbanned,
+		expirer := &scriptedExpirer{expired: []model.Decision{{
+			ID: "release", State: model.DecisionUnbanned,
 		}}}
 
 		_, err := processReady(t.Context(), q, expirer, nil, DefaultRetryPolicy(), slog.Default())
@@ -397,16 +396,16 @@ func TestStartUsesRetryPolicy(t *testing.T) {
 		queue := &scriptedQueue{
 			jobs: []*Job{
 				{
-					Decision:    decisions.Decision{ID: "one"},
+					Decision:    model.Decision{ID: "one"},
 					Destination: "target",
 				},
 				{
-					Decision:      decisions.Decision{ID: "two"},
+					Decision:      model.Decision{ID: "two"},
 					Destination:   "target",
 					PreviousDelay: 3 * time.Second,
 				},
 				{
-					Decision:      decisions.Decision{ID: "three"},
+					Decision:      model.Decision{ID: "three"},
 					Destination:   "target",
 					PreviousDelay: 6 * time.Second,
 				},

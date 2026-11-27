@@ -5,13 +5,12 @@ import (
 	"database/sql"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // readDecision reads one persisted decision within the caller's transaction.
-func readDecision(ctx context.Context, tx *sql.Tx, id string) (decisions.Decision, error) {
-	var decision decisions.Decision
+func readDecision(ctx context.Context, tx *sql.Tx, id string) (model.Decision, error) {
+	var decision model.Decision
 	var expires int64
 	err := tx.QueryRowContext(ctx, `
 SELECT id, revision, ip, state, expires
@@ -25,14 +24,14 @@ WHERE id = ?
 		&expires,
 	)
 	if err != nil {
-		return decisions.Decision{}, err
+		return model.Decision{}, err
 	}
 	decision.ExpiresAt = time.UnixMilli(expires).UTC()
 	return decision, nil
 }
 
 // readDeliveries reads acknowledgements for one address in destination order.
-func readDeliveries(ctx context.Context, tx *sql.Tx, ip string) ([]decisions.Acknowledgement, error) {
+func readDeliveries(ctx context.Context, tx *sql.Tx, ip string) ([]model.Acknowledgement, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT destination, acknowledged
 FROM deliveries
@@ -43,9 +42,9 @@ ORDER BY destination
 		return nil, err
 	}
 
-	deliveries := []decisions.Acknowledgement{}
+	deliveries := []model.Acknowledgement{}
 	for rows.Next() {
-		var ack decisions.Acknowledgement
+		var ack model.Acknowledgement
 		if err := rows.Scan(&ack.Destination, &ack.Revision); err != nil {
 			_ = rows.Close()
 			return nil, err
@@ -63,7 +62,7 @@ ORDER BY destination
 }
 
 // readBanSources reads unexpired automatic and manual sources in kind order.
-func readBanSources(ctx context.Context, tx *sql.Tx, ip string, now time.Time) ([]bans.Source, error) {
+func readBanSources(ctx context.Context, tx *sql.Tx, ip string, now time.Time) ([]model.Source, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT kind, expires, reason
 FROM ban_sources
@@ -74,9 +73,9 @@ ORDER BY kind
 		return nil, err
 	}
 
-	sources := []bans.Source{}
+	sources := []model.Source{}
 	for rows.Next() {
-		var source bans.Source
+		var source model.Source
 		var until int64
 		if err := rows.Scan(&source.Kind, &until, &source.Reason); err != nil {
 			_ = rows.Close()

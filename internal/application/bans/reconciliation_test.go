@@ -8,26 +8,25 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // policyTx captures storage primitives requested by the domain reconciliation.
 type policyTx struct {
 	// prior is the materialized state before reconciliation.
-	prior decisions.Decision
+	prior model.Decision
 	// currentSources contains the sources returned to reconciliation policy.
-	currentSources []Source
+	currentSources []model.Source
 	// oldSource is the previous source when one exists.
-	oldSource Source
+	oldSource model.Source
 	// oldSourceExists indicates an existing source renewal.
 	oldSourceExists bool
 	// written is the source supplied by the application.
-	written Source
+	written model.Source
 	// ensured records whether an identity was requested.
 	ensured bool
 	// saved records the reconciled decision.
-	saved decisions.Decision
+	saved model.Decision
 	// savedChanged records whether persistence was asked to revise state.
 	savedChanged bool
 	// savedTargets are destination identifiers supplied for delivery.
@@ -41,29 +40,29 @@ func (p *policyTx) EnsureDecision(context.Context, string) error {
 }
 
 // Source returns the existing source and whether it exists.
-func (p *policyTx) Source(context.Context, string, SourceKind) (Source, bool, error) {
+func (p *policyTx) Source(context.Context, string, model.SourceKind) (model.Source, bool, error) {
 	return p.oldSource, p.oldSourceExists, nil
 }
 
 // PutSource captures the source chosen by application policy.
-func (p *policyTx) PutSource(_ context.Context, _ string, source Source) error {
+func (p *policyTx) PutSource(_ context.Context, _ string, source model.Source) error {
 	p.written = source
-	p.currentSources = []Source{source}
+	p.currentSources = []model.Source{source}
 	return nil
 }
 
 // Decision returns the previously persisted state.
-func (p *policyTx) Decision(context.Context, string) (decisions.Decision, error) {
+func (p *policyTx) Decision(context.Context, string) (model.Decision, error) {
 	return p.prior, nil
 }
 
 // Sources returns the currently active fake sources.
-func (p *policyTx) Sources(context.Context, string, time.Time) ([]Source, error) {
+func (p *policyTx) Sources(context.Context, string, time.Time) ([]model.Source, error) {
 	return p.currentSources, nil
 }
 
 // SaveDecision captures the reconciled state and its delivery destinations.
-func (p *policyTx) SaveDecision(_ context.Context, _, next decisions.Decision, _ []Source, _ ChangeCause, changed bool, targets []string) error {
+func (p *policyTx) SaveDecision(_ context.Context, _, next model.Decision, _ []model.Source, _ ChangeCause, changed bool, targets []string) error {
 	p.saved = next
 	p.savedChanged = changed
 	p.savedTargets = append([]string(nil), targets...)
@@ -78,11 +77,11 @@ func TestExtendSource(t *testing.T) {
 
 		now := time.Now()
 		tx := &policyTx{
-			oldSource:       Source{Kind: SourceManual, ExpiresAt: now.Add(time.Hour)},
+			oldSource:       model.Source{Kind: model.SourceManual, ExpiresAt: now.Add(time.Hour)},
 			oldSourceExists: true,
 		}
-		err := ExtendSource(t.Context(), tx, "203.0.113.1", Source{
-			Kind: SourceManual, ExpiresAt: now.Add(time.Minute), Reason: "renewal",
+		err := ExtendSource(t.Context(), tx, "203.0.113.1", model.Source{
+			Kind: model.SourceManual, ExpiresAt: now.Add(time.Minute), Reason: "renewal",
 		})
 
 		require.NoError(t, err)
@@ -96,8 +95,8 @@ func TestExtendSource(t *testing.T) {
 
 		until := time.Now().Add(time.Hour)
 		tx := &policyTx{}
-		err := ExtendSource(t.Context(), tx, "203.0.113.2", Source{
-			Kind: SourceAutomatic, ExpiresAt: until,
+		err := ExtendSource(t.Context(), tx, "203.0.113.2", model.Source{
+			Kind: model.SourceAutomatic, ExpiresAt: until,
 		})
 
 		require.NoError(t, err)
@@ -113,17 +112,17 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 		t.Parallel()
 
 		now := time.Now()
-		previous := decisions.Decision{ID: "id", IP: "203.0.113.3", State: decisionstate.StateUnbanned, Revision: 1}
+		previous := model.Decision{ID: "id", IP: "203.0.113.3", State: model.DecisionUnbanned, Revision: 1}
 		tx := &policyTx{
 			prior:          previous,
-			currentSources: []Source{{Kind: SourceManual, ExpiresAt: now.Add(time.Hour)}},
+			currentSources: []model.Source{{Kind: model.SourceManual, ExpiresAt: now.Add(time.Hour)}},
 		}
 		next, changed, err := ReconcileDecision(t.Context(), tx, previous.IP, now, []string{"cloudflare.edge"})
 
 		require.NoError(t, err)
 		assert.True(t, changed)
 		assert.EqualValues(t, 2, next.Revision)
-		assert.Equal(t, decisionstate.StateBanned, next.State)
+		assert.Equal(t, model.DecisionBanned, next.State)
 		assert.Equal(t, next, tx.saved)
 		assert.Equal(t, []string{"cloudflare.edge"}, tx.savedTargets)
 	})
@@ -132,13 +131,13 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 		t.Parallel()
 
 		now := time.Now()
-		previous := decisions.Decision{
-			ID: "id", IP: "203.0.113.4", State: decisionstate.StateBanned,
+		previous := model.Decision{
+			ID: "id", IP: "203.0.113.4", State: model.DecisionBanned,
 			Revision: 4, ExpiresAt: now.Add(time.Hour),
 		}
 		tx := &policyTx{
 			prior:          previous,
-			currentSources: []Source{{Kind: SourceManual, ExpiresAt: previous.ExpiresAt}},
+			currentSources: []model.Source{{Kind: model.SourceManual, ExpiresAt: previous.ExpiresAt}},
 		}
 		next, changed, err := ReconcileDecision(t.Context(), tx, previous.IP, now, nil)
 
@@ -153,7 +152,7 @@ func TestReconcileDecisionTransaction(t *testing.T) {
 }
 
 // DecisionByID returns an active decision for workflow tests.
-func (p *policyTx) DecisionByID(context.Context, string) (decisions.Decision, error) {
+func (p *policyTx) DecisionByID(context.Context, string) (model.Decision, error) {
 	return p.prior, nil
 }
 
@@ -175,6 +174,6 @@ func (p *policyTx) ExpiredSourceIPs(context.Context, time.Time) ([]string, error
 func (p *policyTx) DeleteExpiredSources(context.Context, time.Time) error { return nil }
 
 // Record returns the latest decision from the test transaction.
-func (p *policyTx) Record(context.Context, string, time.Time) (Record, error) {
-	return Record{Decision: p.saved}, nil
+func (p *policyTx) Record(context.Context, string, time.Time) (model.Record, error) {
+	return model.Record{Decision: p.saved}, nil
 }

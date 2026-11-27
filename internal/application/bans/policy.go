@@ -3,8 +3,7 @@ package bans
 import (
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // ExtendExpiry keeps the later deadline when an independent ban source is renewed.
@@ -17,10 +16,10 @@ func ExtendExpiry(existing, requested time.Time) time.Time {
 
 // Reconcile derives effective ban state and revises it only when delivered fields change.
 func Reconcile(
-	previous decisions.Decision,
-	sources []Source,
+	previous model.Decision,
+	sources []model.Source,
 	now time.Time,
-) (decisions.Decision, bool) {
+) (model.Decision, bool) {
 	next := previous
 	var until time.Time
 	for _, source := range sources {
@@ -31,9 +30,9 @@ func Reconcile(
 
 	if until.IsZero() {
 		// Preserve the last expiry for historical inspection after release.
-		next.State = decisionstate.StateUnbanned
+		next.State = model.DecisionUnbanned
 	} else {
-		next.State = decisionstate.StateBanned
+		next.State = model.DecisionBanned
 		next.ExpiresAt = until.UTC()
 	}
 
@@ -46,7 +45,7 @@ func Reconcile(
 }
 
 // hasChanged reports whether the externally delivered fields of a decision differ.
-func hasChanged(previous, next decisions.Decision) bool {
+func hasChanged(previous, next model.Decision) bool {
 	return next.State != previous.State ||
 		!next.ExpiresAt.Equal(previous.ExpiresAt)
 }

@@ -11,14 +11,15 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	httpresponse "github.com/gi8lino/keycloak-warden/internal/http/response"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // BanAdministration exposes validated administrative ban operations independently of HTTP.
 type BanAdministration interface {
-	BanManual(context.Context, bans.ManualBanRequest, time.Time) (bans.Record, error)
-	Release(context.Context, string, time.Time) (bans.Record, error)
-	ListActive(context.Context, time.Time) ([]bans.Record, error)
-	GetDecisionPage(context.Context, string, time.Time, int, int64) (bans.Record, error)
+	BanManual(context.Context, model.ManualBanRequest, time.Time) (model.Record, error)
+	Release(context.Context, string, time.Time) (model.Record, error)
+	ListActive(context.Context, time.Time) ([]model.Record, error)
+	GetDecisionPage(context.Context, string, time.Time, int, int64) (model.Record, error)
 }
 
 // createBanPayload contains the fields decoded independently for each administrative request.
@@ -45,7 +46,7 @@ func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc 
 			return
 		}
 
-		record, err := service.BanManual(r.Context(), bans.ManualBanRequest{
+		record, err := service.BanManual(r.Context(), model.ManualBanRequest{
 			IP:       payload.IP,
 			Duration: duration,
 			Reason:   payload.Reason,

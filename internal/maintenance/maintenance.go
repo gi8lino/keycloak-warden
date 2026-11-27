@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -103,7 +103,7 @@ type TaskStatus struct {
 // Status is a safe snapshot of the maintenance worker and its scheduled tasks.
 type Status struct {
 	// State is idle, processing, or stopped.
-	State workerstate.State `json:"state" yaml:"state"`
+	State model.WorkerState `json:"state" yaml:"state"`
 	// StartedAt records when the maintenance worker was started.
 	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
 	// Prune reports the last observation cleanup attempt.
@@ -184,13 +184,13 @@ func (r *Runner) Snapshot() Status {
 	r.statusMu.Lock()
 	defer r.statusMu.Unlock()
 
-	state := workerstate.StateIdle
+	state := model.WorkerIdle
 	select {
 	case <-r.done:
-		state = workerstate.StateStopped
+		state = model.WorkerStopped
 	default:
 		if r.pruneStatus.Running || r.optimizeStatus.Running {
-			state = workerstate.StateProcessing
+			state = model.WorkerProcessing
 		}
 	}
 

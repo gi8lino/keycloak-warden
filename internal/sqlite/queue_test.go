@@ -16,8 +16,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // TestFinishIgnoresStaleDeliveryFailure ensures old delivery failures cannot delay new revisions.
@@ -51,10 +50,10 @@ func TestFinishIgnoresStaleDeliveryFailure(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, record.DeliveryHistory, 2)
 	old := record.DeliveryHistory[1]
-	assert.Equal(t, deliverystate.StatusSuperseded, old.Status)
+	assert.Equal(t, model.DeliverySuperseded, old.Status)
 	assert.Equal(t, second.Decision.Revision, old.SupersededByRevision)
 	require.Len(t, old.Attempts, 1)
-	assert.Equal(t, deliverystate.OutcomeFailed, old.Attempts[0].Outcome)
+	assert.Equal(t, model.AttemptFailed, old.Attempts[0].Outcome)
 	assert.Nil(t, old.NextAttemptAt)
 }
 
@@ -74,7 +73,7 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, retry.DeliveryHistory, 1)
 	delivery := retry.DeliveryHistory[0]
-	assert.Equal(t, deliverystate.StatusRetrying, delivery.Status)
+	assert.Equal(t, model.DeliveryRetrying, delivery.Status)
 	require.NotNil(t, delivery.NextAttemptAt)
 	next := *delivery.NextAttemptAt
 	require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, next, 0))
@@ -86,8 +85,8 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, result.DeliveryHistory, 1)
 	delivery = result.DeliveryHistory[0]
-	assert.Equal(t, deliverystate.StatusDelivered, delivery.Status)
-	assert.Equal(t, decisionstate.StateBanned, delivery.DesiredState)
+	assert.Equal(t, model.DeliveryDelivered, delivery.Status)
+	assert.Equal(t, model.DecisionBanned, delivery.DesiredState)
 	assert.Equal(t, &next, delivery.AcknowledgedAt)
 	assert.Nil(t, delivery.NextAttemptAt)
 	require.Len(t, delivery.Attempts, 2)
@@ -95,7 +94,7 @@ func TestDeliveryAttemptsSurviveRetryAndRestart(t *testing.T) {
 	assert.Equal(t, now, delivery.Attempts[0].At)
 	assert.Equal(t, "not_authed", delivery.Attempts[0].Error)
 	assert.EqualValues(t, 2, delivery.Attempts[1].Number)
-	assert.Equal(t, deliverystate.OutcomeSucceeded, delivery.Attempts[1].Outcome)
+	assert.Equal(t, model.AttemptSucceeded, delivery.Attempts[1].Outcome)
 	assert.Empty(t, delivery.Attempts[1].Error)
 }
 
@@ -208,7 +207,7 @@ func TestDestinationBackoff(t *testing.T) {
 	job, err = store.Next(ctx, now)
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+	assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
 	require.NoError(t, store.Finish(ctx, *job, nil, 10, now, 0))
 
 	// The other pending release gets a fresh first retry after the destination recovers.
@@ -235,8 +234,8 @@ func TestWorkerSchedule(t *testing.T) {
 		require.NoError(t, err)
 		rollback := errors.New("rollback")
 		err = store.TransactObservation(ctx, func(tx ingestion.Transaction) error {
-			err := bans.ExtendSource(ctx, tx, "203.0.113.2", bans.Source{
-				Kind: bans.SourceAutomatic, ExpiresAt: now.Add(time.Hour),
+			err := bans.ExtendSource(ctx, tx, "203.0.113.2", model.Source{
+				Kind: model.SourceAutomatic, ExpiresAt: now.Add(time.Hour),
 			})
 			if err == nil {
 				_, _, err = bans.ReconcileDecision(ctx, tx, "203.0.113.2", now, []string{"receiver"})
@@ -286,7 +285,7 @@ func TestWorkerSchedule(t *testing.T) {
 		job, err = store.Next(ctx, due)
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+		assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
 		require.NoError(t, store.Finish(ctx, *job, nil, actions.DefaultMaxAttempts, due, 0))
 		due, err = store.NextDeadline(ctx)
 		require.NoError(t, err)
@@ -319,7 +318,7 @@ func TestAttemptBudget(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, inspected.DeliveryHistory, 1)
 	delivery := inspected.DeliveryHistory[0]
-	assert.Equal(t, deliverystate.StatusExhausted, delivery.Status)
+	assert.Equal(t, model.DeliveryExhausted, delivery.Status)
 	assert.Nil(t, delivery.NextAttemptAt)
 	assert.Len(t, delivery.Attempts, 3)
 	due, err := store.NextDeadline(ctx)
@@ -339,7 +338,7 @@ func TestAttemptBudget(t *testing.T) {
 	job, err = store.Next(ctx, now.Add(5*time.Minute))
 	require.NoError(t, err)
 	require.NotNil(t, job)
-	assert.Equal(t, decisionstate.StateUnbanned, job.Decision.State)
+	assert.Equal(t, model.DecisionUnbanned, job.Decision.State)
 }
 
 // TestFinishIgnoresStaleDeliverySuccess verifies that a completed older call
@@ -372,10 +371,10 @@ func TestFinishIgnoresStaleDeliverySuccess(t *testing.T) {
 	record, err := store.GetDecision(ctx, first.Decision.ID, now)
 	require.NoError(t, err)
 	require.Len(t, record.DeliveryHistory, 2)
-	assert.Equal(t, deliverystate.StatusPending, record.DeliveryHistory[0].Status)
-	assert.Equal(t, deliverystate.StatusSuperseded, record.DeliveryHistory[1].Status)
+	assert.Equal(t, model.DeliveryPending, record.DeliveryHistory[0].Status)
+	assert.Equal(t, model.DeliverySuperseded, record.DeliveryHistory[1].Status)
 	require.Len(t, record.DeliveryHistory[1].Attempts, 1)
-	assert.Equal(t, deliverystate.OutcomeSucceeded, record.DeliveryHistory[1].Attempts[0].Outcome)
+	assert.Equal(t, model.AttemptSucceeded, record.DeliveryHistory[1].Attempts[0].Outcome)
 }
 
 // TestRapidBanReleaseBanWithInflightDelivery ensures a late completion cannot
@@ -396,11 +395,11 @@ func TestRapidBanReleaseBanWithInflightDelivery(t *testing.T) {
 
 	released, err := bans.ReleaseAllSources(ctx, store, first.Decision.ID, now.Add(time.Second), []string{"edge"})
 	require.NoError(t, err)
-	assert.Equal(t, decisionstate.StateUnbanned, released.Decision.State)
+	assert.Equal(t, model.DecisionUnbanned, released.Decision.State)
 
 	newBan, err := bans.ApplyManualBan(ctx, store, "203.0.113.68", now.Add(2*time.Hour), "second", now.Add(2*time.Second), []string{"edge"})
 	require.NoError(t, err)
-	assert.Equal(t, decisionstate.StateBanned, newBan.Decision.State)
+	assert.Equal(t, model.DecisionBanned, newBan.Decision.State)
 	assert.Greater(t, newBan.Decision.Revision, released.Decision.Revision)
 
 	require.NoError(t, store.Finish(ctx, *inFlight, nil, actions.DefaultMaxAttempts, now.Add(3*time.Second), 0))
@@ -409,15 +408,15 @@ func TestRapidBanReleaseBanWithInflightDelivery(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, next)
 	assert.Equal(t, newBan.Decision.Revision, next.Decision.Revision)
-	assert.Equal(t, decisionstate.StateBanned, next.Decision.State)
+	assert.Equal(t, model.DecisionBanned, next.Decision.State)
 
 	record, err := store.GetDecision(ctx, first.Decision.ID, now.Add(3*time.Second))
 	require.NoError(t, err)
 	require.Len(t, record.DeliveryHistory, 3)
-	assert.Equal(t, deliverystate.StatusPending, record.DeliveryHistory[0].Status)
-	assert.Equal(t, deliverystate.StatusSuperseded, record.DeliveryHistory[1].Status)
-	assert.Equal(t, deliverystate.StatusSuperseded, record.DeliveryHistory[2].Status)
-	assert.Equal(t, deliverystate.OutcomeSucceeded, record.DeliveryHistory[2].Attempts[0].Outcome)
+	assert.Equal(t, model.DeliveryPending, record.DeliveryHistory[0].Status)
+	assert.Equal(t, model.DeliverySuperseded, record.DeliveryHistory[1].Status)
+	assert.Equal(t, model.DeliverySuperseded, record.DeliveryHistory[2].Status)
+	assert.Equal(t, model.AttemptSucceeded, record.DeliveryHistory[2].Attempts[0].Outcome)
 }
 
 // TestDeliveryHistoryPaging checks direct one-based SQLite paging without
@@ -459,7 +458,7 @@ func TestDeliveryHistoryPaging(t *testing.T) {
 	require.Len(t, second.DeliveryHistory, bans.HistoryPageSize)
 
 	seen := make(map[string]bool)
-	for _, page := range []bans.Record{first, second, third} {
+	for _, page := range []model.Record{first, second, third} {
 		for _, item := range page.DeliveryHistory {
 			key := fmt.Sprintf("%d/%s", item.Revision, item.Destination)
 			assert.False(t, seen[key], "history must not repeat entries across pages")

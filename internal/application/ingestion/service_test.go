@@ -11,10 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // fakeRepository captures ingestion transactions for service tests.
@@ -75,34 +74,34 @@ func (tx *fakeTx) EnsureDecision(context.Context, string) error {
 }
 
 // Source reports that the automatic source is not yet stored.
-func (tx *fakeTx) Source(context.Context, string, bans.SourceKind) (bans.Source, bool, error) {
-	return bans.Source{}, false, nil
+func (tx *fakeTx) Source(context.Context, string, model.SourceKind) (model.Source, bool, error) {
+	return model.Source{}, false, nil
 }
 
 // PutSource records the source selected by the detection policy.
-func (tx *fakeTx) PutSource(_ context.Context, _ string, source bans.Source) error {
+func (tx *fakeTx) PutSource(_ context.Context, _ string, source model.Source) error {
 	tx.until = source.ExpiresAt
 	return nil
 }
 
 // Decision returns the desired state before applying this observation.
-func (tx *fakeTx) Decision(_ context.Context, ip string) (decisions.Decision, error) {
+func (tx *fakeTx) Decision(_ context.Context, ip string) (model.Decision, error) {
 	if tx.unchanged {
-		return decisions.Decision{
-			ID: "decision", IP: ip, State: decisionstate.StateBanned,
+		return model.Decision{
+			ID: "decision", IP: ip, State: model.DecisionBanned,
 			ExpiresAt: tx.until,
 		}, nil
 	}
-	return decisions.Decision{ID: "decision", IP: ip, State: decisionstate.StateUnbanned}, nil
+	return model.Decision{ID: "decision", IP: ip, State: model.DecisionUnbanned}, nil
 }
 
 // Sources exposes the new automatic source to application reconciliation.
-func (tx *fakeTx) Sources(context.Context, string, time.Time) ([]bans.Source, error) {
-	return []bans.Source{{Kind: bans.SourceAutomatic, ExpiresAt: tx.until}}, nil
+func (tx *fakeTx) Sources(context.Context, string, time.Time) ([]model.Source, error) {
+	return []model.Source{{Kind: model.SourceAutomatic, ExpiresAt: tx.until}}, nil
 }
 
 // SaveDecision records destination identifiers from the application.
-func (tx *fakeTx) SaveDecision(_ context.Context, _, _ decisions.Decision, _ []bans.Source, _ bans.ChangeCause, _ bool, targets []string) error {
+func (tx *fakeTx) SaveDecision(_ context.Context, _, _ model.Decision, _ []model.Source, _ bans.ChangeCause, _ bool, targets []string) error {
 	tx.targets = append([]string(nil), targets...)
 	return nil
 }
@@ -144,7 +143,7 @@ func validEvent() events.Envelope {
 }
 
 // processEvent isolates the repository and policy for each independently parallel subtest.
-func processEvent(t *testing.T, event events.Envelope, count int, inserted bool) (*decisions.Decision, *fakeRepository, *fakeTx, error) {
+func processEvent(t *testing.T, event events.Envelope, count int, inserted bool) (*model.Decision, *fakeRepository, *fakeTx, error) {
 	t.Helper()
 	tx := &fakeTx{inserted: inserted, count: count}
 	repo := &fakeRepository{tx: tx}

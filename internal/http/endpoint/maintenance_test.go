@@ -14,7 +14,7 @@ import (
 
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
 	"github.com/gi8lino/keycloak-warden/internal/maintenance"
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // scriptedMaintenance implements maintenance operations for HTTP adapter tests.
@@ -27,7 +27,7 @@ type scriptedMaintenance struct {
 
 // Snapshot returns a known successful status.
 func (s *scriptedMaintenance) Snapshot() maintenance.Status {
-	return maintenance.Status{State: workerstate.StateIdle, PruneInterval: "1h0m0s"}
+	return maintenance.Status{State: model.WorkerIdle, PruneInterval: "1h0m0s"}
 }
 
 // Trigger records one requested maintenance operation.

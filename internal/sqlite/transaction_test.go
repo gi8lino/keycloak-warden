@@ -16,6 +16,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestTransactObservation(t *testing.T) {
@@ -105,8 +106,8 @@ func TestTransactionLifecycle(t *testing.T) {
 			if err := tx.EnsureDecision(ctx, ip); err != nil {
 				return err
 			}
-			return tx.PutSource(ctx, ip, bans.Source{
-				Kind:      bans.SourceAutomatic,
+			return tx.PutSource(ctx, ip, model.Source{
+				Kind:      model.SourceAutomatic,
 				ExpiresAt: now.Add(time.Hour),
 			})
 		})
@@ -150,8 +151,8 @@ func TestTransactionLifecycle(t *testing.T) {
 			if err := tx.EnsureDecision(ctx, ip); err != nil {
 				return err
 			}
-			if err := tx.PutSource(ctx, ip, bans.Source{
-				Kind:      bans.SourceManual,
+			if err := tx.PutSource(ctx, ip, model.Source{
+				Kind:      model.SourceManual,
 				ExpiresAt: now.Add(time.Hour),
 				Reason:    "investigation",
 			}); err != nil {

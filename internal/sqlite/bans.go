@@ -7,15 +7,14 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Store fulfills the application's atomic ban administration contract.
 var _ bans.Store = (*Store)(nil)
 
 // ListActive returns all currently active effective bans, with source and delivery details.
-func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Record, error) {
+func (s *Store) ListActive(ctx context.Context, now time.Time) ([]model.Record, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
 		return nil, err
@@ -30,7 +29,7 @@ func (s *Store) ListActive(ctx context.Context, now time.Time) ([]bans.Record, e
 }
 
 // listBans reads active decisions, sources and acknowledgements in one consistent snapshot.
-func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]bans.Record, error) {
+func listBans(ctx context.Context, tx *sql.Tx, now time.Time) ([]model.Record, error) {
 	list, byIP, err := readActiveBans(ctx, tx, now)
 	if err != nil || len(list) == 0 {
 		return list, err
@@ -50,23 +49,23 @@ func readActiveBans(
 	ctx context.Context,
 	tx *sql.Tx,
 	now time.Time,
-) (list []bans.Record, byIP map[string]int, err error) {
+) (list []model.Record, byIP map[string]int, err error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT id, revision, ip, state, expires
 FROM decisions
 WHERE state = ? AND expires > ?
 ORDER BY ip
-`, decisionstate.StateBanned, now.UnixMilli())
+`, model.DecisionBanned, now.UnixMilli())
 	if err != nil {
 		return nil, nil, err
 	}
 
-	list = []bans.Record{}
+	list = []model.Record{}
 	byIP = make(map[string]int)
 	for rows.Next() {
-		record := bans.Record{
-			Sources:    []bans.Source{},
-			Deliveries: []decisions.Acknowledgement{},
+		record := model.Record{
+			Sources:    []model.Source{},
+			Deliveries: []model.Acknowledgement{},
 		}
 		var expires int64
 		if err := rows.Scan(
@@ -94,7 +93,7 @@ ORDER BY ip
 func appendActiveSources(
 	ctx context.Context,
 	tx *sql.Tx,
-	list []bans.Record,
+	list []model.Record,
 	byIP map[string]int,
 	now time.Time,
 ) error {
@@ -104,14 +103,14 @@ FROM ban_sources AS s
 JOIN decisions AS d ON d.ip = s.ip
 WHERE d.state = ? AND d.expires > ? AND s.expires > ?
 ORDER BY s.ip, s.kind
-`, decisionstate.StateBanned, now.UnixMilli(), now.UnixMilli())
+`, model.DecisionBanned, now.UnixMilli(), now.UnixMilli())
 	if err != nil {
 		return err
 	}
 
 	for rows.Next() {
 		var ip string
-		var source bans.Source
+		var source model.Source
 		var expires int64
 		if err := rows.Scan(&ip, &source.Kind, &expires, &source.Reason); err != nil {
 			_ = rows.Close()
@@ -131,7 +130,7 @@ ORDER BY s.ip, s.kind
 func appendActiveDeliveries(
 	ctx context.Context,
 	tx *sql.Tx,
-	list []bans.Record,
+	list []model.Record,
 	byIP map[string]int,
 	now time.Time,
 ) error {
@@ -141,14 +140,14 @@ FROM deliveries AS q
 JOIN decisions AS d ON d.ip = q.ip
 WHERE d.state = ? AND d.expires > ?
 ORDER BY q.ip, q.destination
-`, decisionstate.StateBanned, now.UnixMilli())
+`, model.DecisionBanned, now.UnixMilli())
 	if err != nil {
 		return err
 	}
 
 	for rows.Next() {
 		var ip string
-		var ack decisions.Acknowledgement
+		var ack model.Acknowledgement
 		if err := rows.Scan(&ip, &ack.Destination, &ack.Revision); err != nil {
 			_ = rows.Close()
 			return err
@@ -163,10 +162,10 @@ ORDER BY q.ip, q.destination
 }
 
 // GetDecision returns the persisted decision and the newest bounded history page.
-func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (bans.Record, error) {
+func (s *Store) GetDecision(ctx context.Context, id string, now time.Time) (model.Record, error) {
 	bounds, err := bans.NewHistoryPage(1, 0)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 	return s.GetDecisionPage(ctx, id, now, bounds)
 }
@@ -177,15 +176,15 @@ func (s *Store) GetDecisionPage(
 	id string,
 	now time.Time,
 	page bans.HistoryPage,
-) (bans.Record, error) {
+) (model.Record, error) {
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
 	record, err := readBan(ctx, tx, id, now)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 	if page.ThroughRevision == 0 {
 		page.ThroughRevision = record.Decision.Revision
@@ -193,7 +192,7 @@ func (s *Store) GetDecisionPage(
 	var hasMore bool
 	record.DeliveryHistory, hasMore, err = readDeliveryHistory(ctx, tx, record.Decision.IP, page)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 	record.HistoryPage = page.Number
 	if hasMore {
@@ -203,36 +202,36 @@ func (s *Store) GetDecisionPage(
 }
 
 // readBan loads a decision, its active sources and deliveries from one transaction.
-func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (bans.Record, error) {
+func readBan(ctx context.Context, tx *sql.Tx, id string, now time.Time) (model.Record, error) {
 	decision, err := readDecision(ctx, tx, id)
 	if errors.Is(err, sql.ErrNoRows) {
-		return bans.Record{}, bans.ErrNotFound
+		return model.Record{}, bans.ErrNotFound
 	}
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 
 	sources, err := readBanSources(ctx, tx, decision.IP, now)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 
 	current, err := readCurrentDeliveries(ctx, tx, decision.IP, decision.Revision)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 
 	changes, err := readSourceChanges(ctx, tx, decision.IP)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 
 	deliveries, err := readDeliveries(ctx, tx, decision.IP)
 	if err != nil {
-		return bans.Record{}, err
+		return model.Record{}, err
 	}
 
-	return bans.Record{
+	return model.Record{
 		Decision:          decision,
 		Sources:           sources,
 		SourceChanges:     changes,

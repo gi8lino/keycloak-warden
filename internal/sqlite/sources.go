@@ -6,28 +6,28 @@ import (
 	"errors"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // Source reads a ban source, including expired sources.
-func (t *transaction) Source(ctx context.Context, ip string, kind bans.SourceKind) (bans.Source, bool, error) {
-	source := bans.Source{Kind: kind}
+func (t *transaction) Source(ctx context.Context, ip string, kind model.SourceKind) (model.Source, bool, error) {
+	source := model.Source{Kind: kind}
 	var expires int64
 	err := t.tx.QueryRowContext(ctx, `
 SELECT expires, reason FROM ban_sources WHERE ip = ? AND kind = ?
 `, ip, kind).Scan(&expires, &source.Reason)
 	if errors.Is(err, sql.ErrNoRows) {
-		return bans.Source{}, false, nil
+		return model.Source{}, false, nil
 	}
 	if err != nil {
-		return bans.Source{}, false, err
+		return model.Source{}, false, err
 	}
 	source.ExpiresAt = time.UnixMilli(expires).UTC()
 	return source, true, nil
 }
 
 // PutSource inserts or updates a ban source.
-func (t *transaction) PutSource(ctx context.Context, ip string, source bans.Source) error {
+func (t *transaction) PutSource(ctx context.Context, ip string, source model.Source) error {
 	_, err := t.tx.ExecContext(ctx, `
 INSERT INTO ban_sources (ip, kind, expires, reason)
 VALUES (?, ?, ?, ?)
@@ -42,7 +42,7 @@ ON CONFLICT (ip, kind) DO UPDATE SET
 }
 
 // Sources returns active persisted reasons for the supplied IP and time.
-func (t *transaction) Sources(ctx context.Context, ip string, now time.Time) ([]bans.Source, error) {
+func (t *transaction) Sources(ctx context.Context, ip string, now time.Time) ([]model.Source, error) {
 	return readBanSources(ctx, t.tx, ip, now)
 }
 
@@ -99,6 +99,6 @@ DELETE FROM ban_sources WHERE expires <= ?
 }
 
 // Record returns a consistent decision view from this transaction.
-func (t *transaction) Record(ctx context.Context, id string, now time.Time) (bans.Record, error) {
+func (t *transaction) Record(ctx context.Context, id string, now time.Time) (model.Record, error) {
 	return readBan(ctx, t.tx, id, now)
 }

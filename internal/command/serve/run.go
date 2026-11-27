@@ -13,7 +13,6 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
-	"github.com/gi8lino/keycloak-warden/internal/application/workers"
 	"github.com/gi8lino/keycloak-warden/internal/bootstrap"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/http/server"
@@ -150,7 +149,7 @@ func Run(parent context.Context, options Options) error {
 		Retry:          retryService,
 		Operations:     operations,
 		Maintenance:    maintenanceRunner,
-		Workers:        workers.NewService(runner, maintenanceRunner, store),
+		Workers:        overview.NewWorkerService(runner, maintenanceRunner, store),
 		Logger:         logger,
 		Processor:      processor,
 		Readiness:      store,

@@ -11,7 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestMaintenance(t *testing.T) {
@@ -33,7 +33,7 @@ func TestMaintenance(t *testing.T) {
 
 		status, err := client.MaintenanceStatus(t.Context())
 		require.NoError(t, err)
-		assert.Equal(t, workerstate.StateIdle, status.State)
+		assert.Equal(t, model.WorkerIdle, status.State)
 		assert.Equal(t, time.Date(2026, 11, 25, 8, 0, 0, 0, time.UTC), status.StartedAt)
 		assert.Equal(t, "1h0m0s", status.PruneInterval)
 	})

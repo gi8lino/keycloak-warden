@@ -1,4 +1,4 @@
-package decisions
+package model
 
 // Acknowledgement identifies the last successfully delivered decision revision.
 type Acknowledgement struct {

@@ -4,12 +4,12 @@ import (
 	"context"
 	"database/sql"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // readCurrentDeliveries loads all current-revision destination statuses independently
 // from the bounded, historical attempt timeline, in the decision read transaction.
-func readCurrentDeliveries(ctx context.Context, tx *sql.Tx, ip string, revision int64) ([]decisions.Delivery, error) {
+func readCurrentDeliveries(ctx context.Context, tx *sql.Tx, ip string, revision int64) ([]model.Delivery, error) {
 	rows, err := tx.QueryContext(ctx, `
 SELECT h.destination, h.revision, h.desired_state, h.status, h.acknowledged_at,
        CASE WHEN h.status = 'retrying' THEN MAX(COALESCE(q.retry_at, 0), COALESCE(b.retry_at, 0)) END
@@ -24,9 +24,9 @@ ORDER BY h.destination
 	}
 	defer rows.Close() //nolint:errcheck
 
-	current := []decisions.Delivery{}
+	current := []model.Delivery{}
 	for rows.Next() {
-		var row decisions.Delivery
+		var row model.Delivery
 		var acknowledgedAt, retryAt sql.NullInt64
 		if err := rows.Scan(&row.Destination, &row.Revision, &row.DesiredState, &row.Status, &acknowledgedAt, &retryAt); err != nil {
 			return nil, err

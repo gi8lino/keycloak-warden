@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // providerStub supplies a deterministic successful or failed action result.
@@ -18,7 +18,7 @@ type providerStub struct {
 }
 
 // Apply returns the configured delivery outcome.
-func (p providerStub) Apply(context.Context, decisions.Decision) error { return p.err }
+func (p providerStub) Apply(context.Context, model.Decision) error { return p.err }
 
 func TestInstrumentProvider(t *testing.T) {
 	t.Parallel()
@@ -28,7 +28,7 @@ func TestInstrumentProvider(t *testing.T) {
 
 		registry := NewRegistry(true, "test")
 		wrapped := registry.InstrumentProvider("edge", providerStub{})
-		require.NoError(t, wrapped.Apply(t.Context(), decisions.Decision{}))
+		require.NoError(t, wrapped.Apply(t.Context(), model.Decision{}))
 
 		output := scrape(t, registry)
 		assert.Contains(t, output, `warden_delivery_attempts_total{destination="edge",outcome="success"} 1`)
@@ -40,7 +40,7 @@ func TestInstrumentProvider(t *testing.T) {
 
 		registry := NewRegistry(true, "test")
 		wrapped := registry.InstrumentProvider("ops", providerStub{err: errors.New("failed")})
-		require.Error(t, wrapped.Apply(t.Context(), decisions.Decision{}))
+		require.Error(t, wrapped.Apply(t.Context(), model.Decision{}))
 
 		output := scrape(t, registry)
 		assert.Contains(t, output, `warden_delivery_attempts_total{destination="ops",outcome="error"} 1`)

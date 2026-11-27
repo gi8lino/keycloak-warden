@@ -13,7 +13,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestBanAdmission(t *testing.T) {
@@ -38,7 +38,7 @@ func TestBanAdmission(t *testing.T) {
 		assert.Nil(t, result.Decision)
 		admin, err := bans.NewAdminServiceWithPolicy(store, []string{"edge"}, policy)
 		require.NoError(t, err)
-		_, err = admin.BanManual(ctx, bans.ManualBanRequest{IP: event.IP, Duration: time.Hour, Reason: "test"}, now)
+		_, err = admin.BanManual(ctx, model.ManualBanRequest{IP: event.IP, Duration: time.Hour, Reason: "test"}, now)
 		require.ErrorIs(t, err, bans.ErrProtected)
 		active, err := store.ListActive(ctx, now)
 		require.NoError(t, err)
@@ -77,7 +77,7 @@ func TestBanAdmission(t *testing.T) {
 		assert.Equal(t, 2, observations.Items[0].Failures)
 		admin, err := bans.NewAdminServiceWithPolicy(store, nil, policy)
 		require.NoError(t, err)
-		_, err = admin.BanManual(ctx, bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour, Reason: "test"}, now)
+		_, err = admin.BanManual(ctx, model.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour, Reason: "test"}, now)
 		require.ErrorIs(t, err, bans.ErrObserveOnly)
 		active, err := store.ListActive(ctx, now)
 		require.NoError(t, err)
@@ -140,7 +140,7 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		require.NoError(t, store.ReconcileAttemptLimit(ctx, "edge", 2))
 		current, err := store.GetDecision(ctx, released.Decision.ID, now.Add(11*time.Second))
 		require.NoError(t, err)
-		assert.Equal(t, deliverystate.StatusRetrying, current.CurrentDeliveries[0].Status)
+		assert.Equal(t, model.DeliveryRetrying, current.CurrentDeliveries[0].Status)
 		job, err = store.Next(ctx, now.Add(22*time.Second))
 		require.NoError(t, err)
 		require.NotNil(t, job)
@@ -151,7 +151,7 @@ func TestExplicitDeliveryRetry(t *testing.T) {
 		require.Len(t, current.DeliveryHistory[0].Attempts, 3)
 		assert.EqualValues(t, 1, current.DeliveryHistory[0].Attempts[0].Number)
 		assert.EqualValues(t, 3, current.DeliveryHistory[0].Attempts[2].Number)
-		assert.Equal(t, deliverystate.StatusDelivered, current.CurrentDeliveries[0].Status)
+		assert.Equal(t, model.DeliveryDelivered, current.CurrentDeliveries[0].Status)
 		operations, err = overview.NewOperations(store)
 		require.NoError(t, err)
 		timeline, err := operations.Timeline(ctx, released.Decision.ID, 1)

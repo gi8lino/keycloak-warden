@@ -3,17 +3,17 @@ package sqlite_test
 import (
 	"database/sql"
 	"errors"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
 	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	_ "modernc.org/sqlite"
 
+	"github.com/gi8lino/keycloak-warden/internal/application/actions"
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestReconcileAttemptLimit(t *testing.T) {
@@ -37,7 +37,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, deliverystate.StatusRetrying, view.DeliveryHistory[0].Status)
+		assert.Equal(t, model.DeliveryRetrying, view.DeliveryHistory[0].Status)
 
 		err = store.ReconcileAttemptLimit(ctx, "webhook.receiver", 1)
 		require.NoError(t, err)
@@ -45,7 +45,7 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err = store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, deliverystate.StatusExhausted, view.DeliveryHistory[0].Status)
+		assert.Equal(t, model.DeliveryExhausted, view.DeliveryHistory[0].Status)
 		assert.Len(t, view.DeliveryHistory[0].Attempts, 1)
 		assert.Nil(t, view.DeliveryHistory[0].NextAttemptAt)
 	})
@@ -68,14 +68,14 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, deliverystate.StatusExhausted, view.DeliveryHistory[0].Status)
+		assert.Equal(t, model.DeliveryExhausted, view.DeliveryHistory[0].Status)
 
 		require.NoError(t, store.ReconcileAttemptLimit(ctx, "webhook.receiver", 2))
 
 		view, err = store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 1)
-		assert.Equal(t, deliverystate.StatusRetrying, view.DeliveryHistory[0].Status)
+		assert.Equal(t, model.DeliveryRetrying, view.DeliveryHistory[0].Status)
 		assert.Len(t, view.DeliveryHistory[0].Attempts, 1)
 		assert.NotNil(t, view.DeliveryHistory[0].NextAttemptAt)
 	})
@@ -102,8 +102,8 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		view, err := store.GetDecision(ctx, record.Decision.ID, now)
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 2)
-		assert.Equal(t, deliverystate.StatusPending, view.DeliveryHistory[0].Status)
-		assert.Equal(t, deliverystate.StatusSuperseded, view.DeliveryHistory[1].Status)
+		assert.Equal(t, model.DeliveryPending, view.DeliveryHistory[0].Status)
+		assert.Equal(t, model.DeliverySuperseded, view.DeliveryHistory[1].Status)
 	})
 
 	t.Run("reconciles only the named destination", func(t *testing.T) {
@@ -134,9 +134,9 @@ func TestReconcileAttemptLimit(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, view.DeliveryHistory, 2)
 		assert.Equal(t, "webhook.receiver", view.DeliveryHistory[0].Destination)
-		assert.Equal(t, deliverystate.StatusRetrying, view.DeliveryHistory[0].Status)
+		assert.Equal(t, model.DeliveryRetrying, view.DeliveryHistory[0].Status)
 		assert.Equal(t, "webhook.teams", view.DeliveryHistory[1].Destination)
-		assert.Equal(t, deliverystate.StatusExhausted, view.DeliveryHistory[1].Status)
+		assert.Equal(t, model.DeliveryExhausted, view.DeliveryHistory[1].Status)
 	})
 
 	t.Run("rejects invalid limit without changing the database", func(t *testing.T) {
@@ -197,5 +197,5 @@ func TestDeliveryStatusConstraint(t *testing.T) {
 	record, err := store.GetDecision(t.Context(), created.Decision.ID, now)
 	require.NoError(t, err)
 	require.Len(t, record.DeliveryHistory, 1)
-	assert.Equal(t, deliverystate.StatusPending, record.DeliveryHistory[0].Status)
+	assert.Equal(t, model.DeliveryPending, record.DeliveryHistory[0].Status)
 }

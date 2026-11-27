@@ -6,16 +6,14 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/application/overview"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-	"github.com/gi8lino/keycloak-warden/pkg/deliverystate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 var _ overview.Store = (*Store)(nil)
 
 // ListRevisions pages over immutable decision changes, newest first.
-func (s *Store) ListRevisions(ctx context.Context, bounds overview.Query, ip string, state decisionstate.State) (overview.RevisionPage, error) {
+func (s *Store) ListRevisions(ctx context.Context, bounds overview.Query, ip string, state model.DecisionState) (overview.RevisionPage, error) {
 	result := overview.RevisionPage{Items: []overview.Revision{}, Page: bounds.Page}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {
@@ -60,7 +58,7 @@ LIMIT ? OFFSET ?
 			return result, err
 		}
 		if item.Sources == nil {
-			item.Sources = []bans.Source{}
+			item.Sources = []model.Source{}
 		}
 		result.Items = append(result.Items, item)
 	}
@@ -76,7 +74,7 @@ LIMIT ? OFFSET ?
 
 // ListDeliveries pages over the latest revision for each decision/destination.
 // History survives after a release even when a destination was fully acknowledged.
-func (s *Store) ListDeliveries(ctx context.Context, bounds overview.Query, status deliverystate.Status, destination string) (overview.DeliveryPage, error) {
+func (s *Store) ListDeliveries(ctx context.Context, bounds overview.Query, status model.DeliveryStatus, destination string) (overview.DeliveryPage, error) {
 	result := overview.DeliveryPage{Items: []overview.Delivery{}, Page: bounds.Page}
 	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{ReadOnly: true})
 	if err != nil {

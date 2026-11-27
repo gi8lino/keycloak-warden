@@ -1,11 +1,6 @@
-// Package decisions defines the desired security state shared by storage and delivery.
-package decisions
+package model
 
-import (
-	"time"
-
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
-)
+import "time"
 
 // Decision describes the latest desired state for one address.
 type Decision struct {
@@ -16,7 +11,7 @@ type Decision struct {
 	// IP is the canonical address to block or release.
 	IP string `json:"ipAddress" yaml:"ipAddress"`
 	// State is the desired block or release operation.
-	State decisionstate.State `json:"state" yaml:"state"`
+	State DecisionState `json:"state" yaml:"state"`
 	// ExpiresAt is the deadline for the desired block.
 	ExpiresAt time.Time `json:"expiresAt" yaml:"expiresAt"`
 }

@@ -13,11 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/config"
 	"github.com/gi8lino/keycloak-warden/internal/providers/cloudflare"
 	"github.com/gi8lino/keycloak-warden/internal/providers/webhook"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 func TestDestinations(t *testing.T) {
@@ -580,13 +579,13 @@ func TestWebhookBodyTemplate(t *testing.T) {
 		require.True(t, ok)
 		require.NotNil(t, provider.Template)
 
-		body, err := provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
+		body, err := provider.Template.Render(model.Decision{IP: "203.0.113.42"})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
 
 		// Templates are compiled at startup, not re-read on delivery.
 		require.NoError(t, os.WriteFile(path, []byte(`{"text":"changed"}`), 0o600))
-		body, err = provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
+		body, err = provider.Template.Render(model.Decision{IP: "203.0.113.42"})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
 	})
@@ -606,7 +605,7 @@ func TestWebhookBodyTemplate(t *testing.T) {
 
 		provider := providers["webhook.slack"].Provider.(webhook.Provider)
 		require.NotNil(t, provider.Template)
-		body, err := provider.Template.Render(decisions.Decision{IP: "203.0.113.42"})
+		body, err := provider.Template.Render(model.Decision{IP: "203.0.113.42"})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"text":"203.0.113.42"}`, string(body))
 	})
@@ -756,7 +755,7 @@ func TestWebhookTemplateVars(t *testing.T) {
 		}})
 		require.NoError(t, err)
 		t.Setenv("WARDEN_TEST_CHANNEL", "changed")
-		require.NoError(t, providers["webhook.slack"].Provider.Apply(t.Context(), decisions.Decision{State: decisionstate.StateBanned, IP: "192.0.2.1"}))
+		require.NoError(t, providers["webhook.slack"].Provider.Apply(t.Context(), model.Decision{State: model.DecisionBanned, IP: "192.0.2.1"}))
 		assert.Equal(t, channel, <-received)
 	})
 

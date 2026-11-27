@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gi8lino/keycloak-warden/internal/ipaddress"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 const (
@@ -37,11 +38,11 @@ var (
 type Store interface {
 	Writer
 	// ListActive returns currently effective blocks.
-	ListActive(context.Context, time.Time) ([]Record, error)
+	ListActive(context.Context, time.Time) ([]model.Record, error)
 	// GetDecision returns the decision, including released historical decisions.
-	GetDecision(context.Context, string, time.Time) (Record, error)
+	GetDecision(context.Context, string, time.Time) (model.Record, error)
 	// GetDecisionPage retrieves one bounded, numbered history page.
-	GetDecisionPage(context.Context, string, time.Time, HistoryPage) (Record, error)
+	GetDecisionPage(context.Context, string, time.Time, HistoryPage) (model.Record, error)
 }
 
 // AdminService coordinates validated administrative ban operations independently of HTTP and SQLite.
@@ -72,23 +73,23 @@ func NewAdminServiceWithPolicy(store Store, targets []string, policy Policy) (*A
 }
 
 // BanManual validates the request and adds or extends only its manual source.
-func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, now time.Time) (Record, error) {
+func (s *AdminService) BanManual(ctx context.Context, request model.ManualBanRequest, now time.Time) (model.Record, error) {
 	ip, reason, err := validateManualBanRequest(request)
 	if err != nil {
-		return Record{}, err
+		return model.Record{}, err
 	}
 
 	if s.policy.Protection.Contains(netip.MustParseAddr(ip)) {
-		return Record{}, ErrProtected
+		return model.Record{}, ErrProtected
 	}
 	if s.policy.ObserveOnly {
-		return Record{}, ErrObserveOnly
+		return model.Record{}, ErrObserveOnly
 	}
 	return ApplyManualBan(ctx, s.store, ip, now.Add(request.Duration), reason, now, s.targets)
 }
 
 // validateManualBanRequest validates and normalizes a manual ban request.
-func validateManualBanRequest(request ManualBanRequest) (canonicalIP, reason string, err error) {
+func validateManualBanRequest(request model.ManualBanRequest) (canonicalIP, reason string, err error) {
 	ip, err := ipaddress.ParseUnicast(strings.TrimSpace(request.IP))
 	if err != nil {
 		return "", "", fmt.Errorf("%w: ipAddress must be a single unicast address", ErrInvalid)
@@ -117,23 +118,23 @@ func validReason(reason string, max int) bool {
 }
 
 // Release clears all active sources and resets detection for the specified decision.
-func (s *AdminService) Release(ctx context.Context, id string, now time.Time) (Record, error) {
+func (s *AdminService) Release(ctx context.Context, id string, now time.Time) (model.Record, error) {
 	if strings.TrimSpace(id) == "" {
-		return Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
+		return model.Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 
 	return ReleaseAllSources(ctx, s.store, id, now, s.targets)
 }
 
 // ListActive returns effective blocks with their automatic and manual sources.
-func (s *AdminService) ListActive(ctx context.Context, now time.Time) ([]Record, error) {
+func (s *AdminService) ListActive(ctx context.Context, now time.Time) ([]model.Record, error) {
 	return s.store.ListActive(ctx, now)
 }
 
 // GetDecision returns the decision and sources identified by a stable decision ID.
-func (s *AdminService) GetDecision(ctx context.Context, id string, now time.Time) (Record, error) {
+func (s *AdminService) GetDecision(ctx context.Context, id string, now time.Time) (model.Record, error) {
 	if strings.TrimSpace(id) == "" {
-		return Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
+		return model.Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 
 	return s.store.GetDecision(ctx, id, now)
@@ -146,13 +147,13 @@ func (s *AdminService) GetDecisionPage(
 	now time.Time,
 	page int,
 	throughRevision int64,
-) (Record, error) {
+) (model.Record, error) {
 	if strings.TrimSpace(id) == "" {
-		return Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
+		return model.Record{}, fmt.Errorf("%w: decision ID is required", ErrInvalid)
 	}
 	bounds, err := NewHistoryPage(page, throughRevision)
 	if err != nil {
-		return Record{}, err
+		return model.Record{}, err
 	}
 	return s.store.GetDecisionPage(ctx, id, now, bounds)
 }

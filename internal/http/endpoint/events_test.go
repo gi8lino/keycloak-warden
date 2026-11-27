@@ -12,18 +12,16 @@ import (
 	"time"
 
 	httpkitmiddleware "github.com/containeroo/httpkit/middleware"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/decisions"
 	"github.com/gi8lino/keycloak-warden/internal/application/events"
 	"github.com/gi8lino/keycloak-warden/internal/application/ingestion"
 	"github.com/gi8lino/keycloak-warden/internal/http/endpoint"
 	"github.com/gi8lino/keycloak-warden/internal/http/middleware"
 	"github.com/gi8lino/keycloak-warden/internal/metrics"
 	"github.com/gi8lino/keycloak-warden/internal/signing"
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // capture receives authenticated envelopes and keeps their original source details.
@@ -31,7 +29,7 @@ type capture struct {
 	// events collects normalized inputs received by the test processor.
 	events []events.Envelope
 	// decision is the simulated result of a detection threshold being reached.
-	decision *decisions.Decision
+	decision *model.Decision
 	// result defines a non-changing detection outcome for event log tests.
 	result ingestion.Result
 	// err simulates invalid or unavailable event processing.
@@ -167,11 +165,11 @@ func TestEventsRealmTelemetry(t *testing.T) {
 		var logs bytes.Buffer
 		logger := slog.New(slog.NewJSONHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		registry := metrics.NewRegistry(true, "test")
-		processor := &capture{decision: &decisions.Decision{
+		processor := &capture{decision: &model.Decision{
 			ID:       "decision",
 			IP:       "203.0.113.5",
 			Revision: 14,
-			State:    decisionstate.StateBanned,
+			State:    model.DecisionBanned,
 		}}
 		handler := httpkitmiddleware.Chain(endpoint.Events(processor, logger, registry), middleware.AuthenticateSnitch("key"))
 

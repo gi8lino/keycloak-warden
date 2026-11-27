@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/gi8lino/keycloak-warden/pkg/workerstate"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // TestSnapshotWorkerLifecycle verifies lifecycle and task state share one snapshot.
@@ -28,7 +28,7 @@ func TestSnapshotWorkerLifecycle(t *testing.T) {
 
 		status := runner.Snapshot()
 
-		assert.Equal(t, workerstate.StateIdle, status.State)
+		assert.Equal(t, model.WorkerIdle, status.State)
 		assert.Equal(t, started, status.StartedAt)
 		assert.Equal(t, "1h0m0s", status.PruneInterval)
 		assert.Equal(t, "24h0m0s", status.OptimizeInterval)
@@ -43,7 +43,7 @@ func TestSnapshotWorkerLifecycle(t *testing.T) {
 
 		status := runner.Snapshot()
 
-		assert.Equal(t, workerstate.StateProcessing, status.State)
+		assert.Equal(t, model.WorkerProcessing, status.State)
 		assert.True(t, status.Prune.Running)
 		assert.False(t, status.Optimize.Running)
 	})
@@ -56,7 +56,7 @@ func TestSnapshotWorkerLifecycle(t *testing.T) {
 
 		status := runner.Snapshot()
 
-		assert.Equal(t, workerstate.StateProcessing, status.State)
+		assert.Equal(t, model.WorkerProcessing, status.State)
 		assert.True(t, status.Optimize.Running)
 	})
 
@@ -68,6 +68,6 @@ func TestSnapshotWorkerLifecycle(t *testing.T) {
 
 		status := runner.Snapshot()
 
-		assert.Equal(t, workerstate.StateStopped, status.State)
+		assert.Equal(t, model.WorkerStopped, status.State)
 	})
 }

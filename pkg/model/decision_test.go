@@ -1,4 +1,4 @@
-package decisions
+package model
 
 import (
 	"encoding/json"
@@ -6,12 +6,10 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-
-	"github.com/gi8lino/keycloak-warden/pkg/decisionstate"
 )
 
 // assertDecisionJSONState verifies that each state round trips without legacy fields.
-func assertDecisionJSONState(t *testing.T, state decisionstate.State) {
+func assertDecisionJSONState(t *testing.T, state DecisionState) {
 	t.Helper()
 
 	encoded, err := json.Marshal(Decision{ID: "stable", State: state})
@@ -31,12 +29,12 @@ func TestDecisionJSONState(t *testing.T) {
 	t.Run("banned", func(t *testing.T) {
 		t.Parallel()
 
-		assertDecisionJSONState(t, decisionstate.StateBanned)
+		assertDecisionJSONState(t, DecisionBanned)
 	})
 
 	t.Run("unbanned", func(t *testing.T) {
 		t.Parallel()
 
-		assertDecisionJSONState(t, decisionstate.StateUnbanned)
+		assertDecisionJSONState(t, DecisionUnbanned)
 	})
 }

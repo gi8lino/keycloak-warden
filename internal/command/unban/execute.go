@@ -7,6 +7,7 @@ import (
 	"github.com/gi8lino/keycloak-warden/internal/application/bans"
 	"github.com/gi8lino/keycloak-warden/internal/command/output"
 	"github.com/gi8lino/keycloak-warden/pkg/client"
+	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
 // execute releases each matching decision and records individual API failures.
@@ -61,7 +62,7 @@ func execute(
 }
 
 // decisionIDsByIP indexes active decisions for CLI address-based unban requests.
-func decisionIDsByIP(records []client.Record) map[string]string {
+func decisionIDsByIP(records []model.Record) map[string]string {
 	ids := make(map[string]string, len(records))
 	for _, record := range records {
 		ids[record.Decision.IP] = record.Decision.ID
