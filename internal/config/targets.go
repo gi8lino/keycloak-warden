@@ -14,7 +14,7 @@ import (
 
 // Validate checks configured targets without requiring a destination to be present.
 func (targets Enforcements) Validate() error {
-	if err := targets.Delivery.validate("enforcements"); err != nil {
+	if err := targets.validate("enforcements"); err != nil {
 		return err
 	}
 	for _, name := range slices.Sorted(maps.Keys(targets.Cloudflare)) {
