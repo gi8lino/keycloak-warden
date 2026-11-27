@@ -75,7 +75,7 @@ type scriptedAdministration struct {
 	// err is returned from all operations to test HTTP error mapping.
 	err error
 	// requested captures the submitted manual-ban payload.
-	requested model.ManualBanRequest
+	requested bans.ManualBanRequest
 	// id captures the decision selected for retrieval or release.
 	id string
 	// page records the requested history page.
@@ -87,7 +87,7 @@ type scriptedAdministration struct {
 }
 
 // BanManual captures the request and returns the scripted outcome.
-func (s *scriptedAdministration) BanManual(_ context.Context, request model.ManualBanRequest, _ time.Time) (model.Record, error) {
+func (s *scriptedAdministration) BanManual(_ context.Context, request bans.ManualBanRequest, _ time.Time) (model.Record, error) {
 	s.calls++
 	s.requested = request
 	return s.record, s.err
@@ -132,7 +132,7 @@ func TestCreateBan(t *testing.T) {
 
 		assert.Equal(t, http.StatusOK, response.Code)
 		assert.Equal(t, 1, service.calls)
-		assert.Equal(t, model.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "investigation"}, service.requested)
+		assert.Equal(t, bans.ManualBanRequest{IP: "203.0.113.10", Duration: time.Hour, Reason: "investigation"}, service.requested)
 		var result model.Record
 		require.NoError(t, json.Unmarshal(response.Body.Bytes(), &result))
 		assert.Equal(t, "decision-id", result.Decision.ID)

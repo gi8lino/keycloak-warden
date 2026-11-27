@@ -29,7 +29,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		created, err := service.BanManual(
 			ctx,
-			model.ManualBanRequest{
+			bans.ManualBanRequest{
 				IP:       "::ffff:203.0.113.7",
 				Duration: time.Minute,
 				Reason:   "operator investigation",
@@ -56,7 +56,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 		assert.Equal(t, created.Decision.ID, views[0].Decision.ID)
 
 		// An extension must not inadvertently shorten an active manual ban.
-		updated, err := service.BanManual(ctx, model.ManualBanRequest{
+		updated, err := service.BanManual(ctx, bans.ManualBanRequest{
 			IP:       "203.0.113.7",
 			Duration: 10 * time.Second,
 			Reason:   "still investigating",
@@ -105,7 +105,7 @@ func TestStoreApplyManualBan(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, auto)
-		manual, err := service.BanManual(ctx, model.ManualBanRequest{
+		manual, err := service.BanManual(ctx, bans.ManualBanRequest{
 			IP:       auto.IP,
 			Duration: time.Hour,
 			Reason:   "long ban",
@@ -147,7 +147,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, auto)
 
-		manual, err := service.BanManual(ctx, model.ManualBanRequest{
+		manual, err := service.BanManual(ctx, bans.ManualBanRequest{
 			IP:       auto.IP,
 			Duration: time.Hour,
 			Reason:   "Incident",
@@ -239,7 +239,7 @@ func TestStoreReleaseAllSources(t *testing.T) {
 
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		created, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP:       "203.0.113.10",
 			Duration: time.Hour,
 			Reason:   "Incident",
@@ -273,7 +273,7 @@ func TestStoreListActive(t *testing.T) {
 		_, err = processDecision(ingestion, t.Context(), failed("second"), now)
 
 		require.NoError(t, err)
-		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP:       "203.0.113.1",
 			Duration: time.Hour,
 			Reason:   "manual review",
@@ -301,7 +301,7 @@ func TestRetiredDestination(t *testing.T) {
 
 	require.NoError(t, err)
 	now := time.Now()
-	request := model.ManualBanRequest{
+	request := bans.ManualBanRequest{
 		IP:       "203.0.113.40",
 		Duration: time.Hour,
 		Reason:   "incident",
@@ -346,7 +346,7 @@ func TestIdempotentManualBan(t *testing.T) {
 	require.NoError(t, err)
 
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	request := model.ManualBanRequest{
+	request := bans.ManualBanRequest{
 		IP:       "203.0.113.8",
 		Duration: time.Hour,
 		Reason:   "incident",
@@ -401,7 +401,7 @@ func TestExpiringShorterSourceIsNoOp(t *testing.T) {
 	_, err = processDecision(ingestion, t.Context(), failed("second"), now)
 	require.NoError(t, err)
 
-	manual, err := service.BanManual(t.Context(), model.ManualBanRequest{
+	manual, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 		IP:       "203.0.113.1",
 		Duration: time.Hour,
 		Reason:   "extended review",

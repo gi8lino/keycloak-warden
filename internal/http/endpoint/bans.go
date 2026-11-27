@@ -14,9 +14,9 @@ import (
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
-// BanAdministration exposes validated administrative ban operations independently of HTTP.
+// BanAdministration manages administrative ban operations.
 type BanAdministration interface {
-	BanManual(context.Context, model.ManualBanRequest, time.Time) (model.Record, error)
+	BanManual(context.Context, bans.ManualBanRequest, time.Time) (model.Record, error)
 	Release(context.Context, string, time.Time) (model.Record, error)
 	ListActive(context.Context, time.Time) ([]model.Record, error)
 	GetDecisionPage(context.Context, string, time.Time, int, int64) (model.Record, error)
@@ -36,7 +36,7 @@ func CreateBan(service BanAdministration, logger *slog.Logger) http.HandlerFunc 
 			return
 		}
 
-		record, err := service.BanManual(r.Context(), model.ManualBanRequest{
+		record, err := service.BanManual(r.Context(), bans.ManualBanRequest{
 			IP:       payload.IP,
 			Duration: duration,
 			Reason:   payload.Reason,

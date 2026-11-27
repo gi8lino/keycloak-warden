@@ -38,7 +38,7 @@ func TestDecisionIDsUseUUIDv7(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		record, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		record, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP:       "203.0.113.50",
 			Duration: time.Hour,
 			Reason:   "incident",

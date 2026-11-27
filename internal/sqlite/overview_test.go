@@ -31,7 +31,7 @@ func TestRevisionJournal(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		ban, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP: "203.0.113.40", Duration: time.Hour, Reason: "manual investigation",
 		}, now)
 		require.NoError(t, err)
@@ -64,9 +64,9 @@ func TestRevisionJournal(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC()
-		first, err := service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.41", Duration: time.Hour, Reason: "first"}, now)
+		first, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.41", Duration: time.Hour, Reason: "first"}, now)
 		require.NoError(t, err)
-		second, err := service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.41", Duration: time.Minute, Reason: "reason updated"}, now)
+		second, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.41", Duration: time.Minute, Reason: "reason updated"}, now)
 		require.NoError(t, err)
 		assert.Equal(t, first.Decision.Revision, second.Decision.Revision)
 		page, err := viewer.Revisions(t.Context(), 1, "203.0.113.41", "")
@@ -90,7 +90,7 @@ func TestDeliveryOverview(t *testing.T) {
 		require.NoError(t, err)
 
 		now := time.Now().UTC().Truncate(time.Millisecond)
-		ban, err := service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.42", Duration: time.Hour, Reason: "test"}, now)
+		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.42", Duration: time.Hour, Reason: "test"}, now)
 		require.NoError(t, err)
 		_, err = service.Release(t.Context(), ban.Decision.ID, now.Add(time.Second))
 		require.NoError(t, err)
@@ -122,9 +122,9 @@ func TestDeliveryOverview(t *testing.T) {
 		viewer, err := overview.NewService(store)
 		require.NoError(t, err)
 		now := time.Now().UTC()
-		_, err = service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.43", Duration: time.Hour, Reason: "first"}, now)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.43", Duration: time.Hour, Reason: "first"}, now)
 		require.NoError(t, err)
-		_, err = service.BanManual(t.Context(), model.ManualBanRequest{IP: "203.0.113.43", Duration: 2 * time.Hour, Reason: "extended"}, now)
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{IP: "203.0.113.43", Duration: 2 * time.Hour, Reason: "extended"}, now)
 		require.NoError(t, err)
 		page, err := viewer.Deliveries(t.Context(), 1, "", "edge")
 		require.NoError(t, err)
@@ -182,7 +182,7 @@ func TestRevisionJournalPagination(t *testing.T) {
 		// Seed one decision with a series of real revisions. These are fixture
 		// operations, not generated test cases; the test remains one explicit subtest.
 		for i := 0; i < 21; i++ {
-			_, err := service.BanManual(t.Context(), model.ManualBanRequest{
+			_, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 				IP: "203.0.113.60", Duration: time.Duration(i+1) * time.Hour, Reason: "extension",
 			}, now)
 			require.NoError(t, err)
@@ -213,11 +213,11 @@ func TestSourceChangeJournal(t *testing.T) {
 		require.NoError(t, err)
 		now := time.Now().UTC().Truncate(time.Millisecond)
 
-		created, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP: "203.0.113.119", Duration: time.Hour, Reason: "first",
 		}, now)
 		require.NoError(t, err)
-		updated, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		updated, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP: "203.0.113.119", Duration: time.Minute, Reason: "second",
 		}, now)
 		require.NoError(t, err)
@@ -246,7 +246,7 @@ func TestSourceChangeJournal(t *testing.T) {
 		service, err := bans.NewAdminService(store, []string{"edge"})
 		require.NoError(t, err)
 		now := time.Now().UTC()
-		created, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		created, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP: "203.0.113.120", Duration: time.Hour, Reason: "original",
 		}, now)
 		require.NoError(t, err)
@@ -283,7 +283,7 @@ func TestCurrentDeliveriesNotLimitedByHistoryPage(t *testing.T) {
 		service, err := bans.NewAdminService(store, targets)
 		require.NoError(t, err)
 
-		ban, err := service.BanManual(t.Context(), model.ManualBanRequest{
+		ban, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP: "203.0.113.121", Duration: time.Hour, Reason: "current status",
 		}, time.Now().UTC())
 		require.NoError(t, err)
@@ -313,7 +313,7 @@ func TestRevisionJournalStablePagination(t *testing.T) {
 		now := time.Now().UTC()
 
 		for i := 0; i < 21; i++ {
-			_, err := service.BanManual(t.Context(), model.ManualBanRequest{
+			_, err := service.BanManual(t.Context(), bans.ManualBanRequest{
 				IP: "203.0.113.66", Duration: time.Duration(i+1) * time.Hour, Reason: "extension",
 			}, now)
 			require.NoError(t, err)
@@ -324,7 +324,7 @@ func TestRevisionJournalStablePagination(t *testing.T) {
 		require.Len(t, first.Items, 20)
 		assert.Positive(t, first.ThroughSequence)
 
-		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP: "203.0.113.66", Duration: 22 * time.Hour, Reason: "new revision",
 		}, now)
 		require.NoError(t, err)

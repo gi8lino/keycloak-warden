@@ -7,12 +7,23 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
-// Ban requests one operator-initiated ban from the running application server.
-func (c *Client) Ban(ctx context.Context, request model.ManualBanRequest) (model.Record, error) {
+// ManualBanRequest specifies a manual ban or extension.
+type ManualBanRequest struct {
+	// IP identifies the address to ban.
+	IP string
+	// Duration is the requested ban duration.
+	Duration time.Duration
+	// Reason describes why the ban was requested.
+	Reason string
+}
+
+// Ban creates or extends a manual ban.
+func (c *Client) Ban(ctx context.Context, request ManualBanRequest) (model.Record, error) {
 	return c.doBanRequest(ctx, http.MethodPost, "/bans", model.CreateBanRequest{
 		IP:       request.IP,
 		Duration: request.Duration.String(),

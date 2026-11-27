@@ -139,7 +139,7 @@ func TestNewAdminService(t *testing.T) {
 func TestAdminServiceBanManual(t *testing.T) {
 	t.Parallel()
 
-	invalid := func(t *testing.T, request model.ManualBanRequest) {
+	invalid := func(t *testing.T, request bans.ManualBanRequest) {
 		t.Helper()
 		store := &fakeStore{}
 		service, err := bans.NewAdminService(store, nil)
@@ -154,7 +154,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects invalid address", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, model.ManualBanRequest{
+		invalid(t, bans.ManualBanRequest{
 			IP:       "not-an-address",
 			Duration: time.Hour,
 			Reason:   "incident",
@@ -164,7 +164,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects unspecified address", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, model.ManualBanRequest{
+		invalid(t, bans.ManualBanRequest{
 			IP:       "0.0.0.0",
 			Duration: time.Hour,
 			Reason:   "incident",
@@ -174,19 +174,19 @@ func TestAdminServiceBanManual(t *testing.T) {
 	t.Run("rejects missing reason", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, model.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour})
+		invalid(t, bans.ManualBanRequest{IP: "203.0.113.1", Duration: time.Hour})
 	})
 
 	t.Run("rejects zero duration", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, model.ManualBanRequest{IP: "203.0.113.1", Reason: "incident"})
+		invalid(t, bans.ManualBanRequest{IP: "203.0.113.1", Reason: "incident"})
 	})
 
 	t.Run("rejects duration above maximum", func(t *testing.T) {
 		t.Parallel()
 
-		invalid(t, model.ManualBanRequest{
+		invalid(t, bans.ManualBanRequest{
 			IP:       "203.0.113.1",
 			Duration: 31 * 24 * time.Hour,
 			Reason:   "incident",
@@ -201,7 +201,7 @@ func TestAdminServiceBanManual(t *testing.T) {
 
 		require.NoError(t, err)
 		now := time.Now()
-		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP:       "::ffff:203.0.113.1",
 			Duration: time.Hour,
 			Reason:   " incident ",
@@ -298,7 +298,7 @@ func TestAdminServiceTargets(t *testing.T) {
 		require.NoError(t, err)
 
 		targets[0] = "modified"
-		_, err = service.BanManual(t.Context(), model.ManualBanRequest{
+		_, err = service.BanManual(t.Context(), bans.ManualBanRequest{
 			IP:       "203.0.113.1",
 			Duration: time.Hour,
 			Reason:   "investigation",

@@ -39,7 +39,7 @@ func processDecision(processor *ingestion.Service, ctx context.Context, envelope
 type noOpBanAdministration struct{}
 
 // BanManual returns an empty ban for authentication tests.
-func (noOpBanAdministration) BanManual(context.Context, model.ManualBanRequest, time.Time) (model.Record, error) {
+func (noOpBanAdministration) BanManual(context.Context, bans.ManualBanRequest, time.Time) (model.Record, error) {
 	return model.Record{}, nil
 }
 

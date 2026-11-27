@@ -1,7 +1,5 @@
 package model
 
-import "time"
-
 // CreateBanRequest is the JSON body for a manual ban.
 type CreateBanRequest struct {
 	// IP is the address requested by the operator.
@@ -28,14 +26,4 @@ type RetryRequest struct {
 type RetryResponse struct {
 	// Queued indicates that the retry was accepted.
 	Queued bool `json:"queued"`
-}
-
-// ManualBanRequest specifies a new or extended operator-requested block.
-type ManualBanRequest struct {
-	// IP is the reported client address, provided by the operator.
-	IP string
-	// Duration specifies how long the requested manual block should last.
-	Duration time.Duration
-	// Reason records the operator explanation for the requested block.
-	Reason string
 }

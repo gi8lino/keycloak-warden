@@ -70,7 +70,7 @@ func TestBan(t *testing.T) {
 		api, err := New(server.URL, "secret")
 		require.NoError(t, err)
 
-		result, err := api.Ban(t.Context(), model.ManualBanRequest{
+		result, err := api.Ban(t.Context(), ManualBanRequest{
 			IP:       "203.0.113.42",
 			Duration: 15 * time.Minute,
 			Reason:   "Investigation",

@@ -45,7 +45,17 @@ type Store interface {
 	GetDecisionPage(context.Context, string, time.Time, HistoryPage) (model.Record, error)
 }
 
-// AdminService coordinates validated administrative ban operations independently of HTTP and SQLite.
+// ManualBanRequest specifies a manual ban or extension.
+type ManualBanRequest struct {
+	// IP identifies the address to ban.
+	IP string
+	// Duration is the requested ban duration.
+	Duration time.Duration
+	// Reason describes why the ban was requested.
+	Reason string
+}
+
+// AdminService manages manual bans and releases.
 type AdminService struct {
 	// store provides transactional persistence for administrative operations.
 	store Store
@@ -73,7 +83,7 @@ func NewAdminServiceWithPolicy(store Store, targets []string, policy Policy) (*A
 }
 
 // BanManual validates the request and adds or extends only its manual source.
-func (s *AdminService) BanManual(ctx context.Context, request model.ManualBanRequest, now time.Time) (model.Record, error) {
+func (s *AdminService) BanManual(ctx context.Context, request ManualBanRequest, now time.Time) (model.Record, error) {
 	ip, reason, err := validateManualBanRequest(request)
 	if err != nil {
 		return model.Record{}, err
@@ -89,7 +99,7 @@ func (s *AdminService) BanManual(ctx context.Context, request model.ManualBanReq
 }
 
 // validateManualBanRequest validates and normalizes a manual ban request.
-func validateManualBanRequest(request model.ManualBanRequest) (canonicalIP, reason string, err error) {
+func validateManualBanRequest(request ManualBanRequest) (canonicalIP, reason string, err error) {
 	ip, err := ipaddress.ParseUnicast(strings.TrimSpace(request.IP))
 	if err != nil {
 		return "", "", fmt.Errorf("%w: ipAddress must be a single unicast address", ErrInvalid)
