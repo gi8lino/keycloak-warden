@@ -4,8 +4,6 @@ import (
 	"context"
 	"time"
 
-	"github.com/gi8lino/keycloak-warden/internal/application/actions"
-	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 	"github.com/gi8lino/keycloak-warden/pkg/model"
 )
 
@@ -17,20 +15,32 @@ type WorkerStore interface {
 	NextDeadline(context.Context) (time.Time, error)
 }
 
+// ActionSnapshot supplies read-only action worker lifecycle information.
+type ActionSnapshot interface {
+	// Snapshot returns the current action worker state.
+	Snapshot() model.RuntimeStatus
+}
+
+// MaintenanceSnapshot supplies read-only maintenance worker information.
+type MaintenanceSnapshot interface {
+	// Snapshot returns the current maintenance scheduler state.
+	Snapshot() model.Maintenance
+}
+
 // WorkerService collects worker lifecycle and queue statistics.
 type WorkerService struct {
-	// actions is the action worker lifecycle owner.
-	actions *actions.Runner
-	// maintenance is the maintenance worker lifecycle owner.
-	maintenance *maintenance.Runner
+	// actions observes the action worker lifecycle.
+	actions ActionSnapshot
+	// maintenance observes the maintenance scheduler.
+	maintenance MaintenanceSnapshot
 	// store is the persistent work queue.
 	store WorkerStore
 }
 
 // NewWorkerService creates a worker status service.
 func NewWorkerService(
-	actionRunner *actions.Runner,
-	maintenanceRunner *maintenance.Runner,
+	actionRunner ActionSnapshot,
+	maintenanceRunner MaintenanceSnapshot,
 	store WorkerStore,
 ) *WorkerService {
 	return &WorkerService{

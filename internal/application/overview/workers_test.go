@@ -165,3 +165,33 @@ func TestWorkerSnapshot(t *testing.T) {
 		assert.Equal(t, model.Workers{}, status)
 	})
 }
+
+// actionSnapshotStub supplies lifecycle state without starting an action worker.
+type actionSnapshotStub struct {
+	// status is the observable lifecycle snapshot.
+	status model.RuntimeStatus
+}
+
+// Snapshot returns the configured lifecycle state.
+func (s actionSnapshotStub) Snapshot() model.RuntimeStatus { return s.status }
+
+// maintenanceSnapshotStub supplies scheduler state without owning a scheduler.
+type maintenanceSnapshotStub struct {
+	// status is the observable maintenance snapshot.
+	status model.Maintenance
+}
+
+// Snapshot returns the configured scheduler state.
+func (s maintenanceSnapshotStub) Snapshot() model.Maintenance { return s.status }
+
+func TestWorkerSnapshotInterfaces(t *testing.T) {
+	t.Parallel()
+	started := time.Date(2026, 11, 27, 10, 0, 0, 0, time.UTC)
+	action := model.RuntimeStatus{State: model.WorkerIdle, StartedAt: started}
+	maintenance := model.Maintenance{State: model.WorkerProcessing, StartedAt: started}
+	service := NewWorkerService(actionSnapshotStub{status: action}, maintenanceSnapshotStub{status: maintenance}, fakeQueue{})
+	result, err := service.Snapshot(t.Context())
+	require.NoError(t, err)
+	assert.Equal(t, action, result.Actions.RuntimeStatus)
+	assert.Equal(t, maintenance, result.Maintenance)
+}

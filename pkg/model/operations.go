@@ -25,13 +25,13 @@ type TimelineEvent struct {
 	// At is the recorded event timestamp.
 	At time.Time `json:"at"`
 	// Kind distinguishes source, decision, attempt and retry records.
-	Kind string `json:"kind"`
+	Kind TimelineKind `json:"kind"`
 	// Action identifies the recorded transition or outcome.
 	Action string `json:"action"`
 	// SourceKind identifies the affected source for source mutations.
-	SourceKind string `json:"sourceKind,omitempty"`
+	SourceKind SourceKind `json:"sourceKind,omitempty"`
 	// State identifies the desired state for a decision revision.
-	State string `json:"state,omitempty"`
+	State DecisionState `json:"state,omitempty"`
 	// Revision is the decision revision when known.
 	Revision int64 `json:"revision,omitempty"`
 	// Destination identifies the delivery target when applicable.
