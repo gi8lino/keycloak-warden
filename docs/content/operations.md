@@ -50,7 +50,7 @@ Warden runs SQLite `PRAGMA optimize` when opening its database and periodically 
 ```sh
 warden serve \
   --config=warden.yaml \
-  --prune-interval=1h \
+  --prune-interval=24h \
   --optimize-interval=24h
 ```
 

@@ -14,7 +14,7 @@ import (
 
 const (
 	// DefaultPruneInterval is the interval between observation cleanup runs.
-	DefaultPruneInterval = time.Hour
+	DefaultPruneInterval = 24 * time.Hour
 	// DefaultOptimizeInterval runs periodic SQLite planner optimization daily.
 	DefaultOptimizeInterval = 24 * time.Hour
 	// MinInterval is the shortest supported operational maintenance interval.

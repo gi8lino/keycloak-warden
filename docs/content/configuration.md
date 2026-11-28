@@ -173,7 +173,7 @@ warden serve \
   --snitch-secret="$SNITCH_SECRET" \
   --admin-token="$WARDEN_ADMIN_TOKEN" \
   --metrics \
-  --prune-interval=1h \
+  --prune-interval=24h \
   --optimize-interval=24h
 ```
 
@@ -193,7 +193,7 @@ warden serve \
 | `--access-log`                | Off              | HTTP access logs                                  |
 | `--debug`                     | Off              | Diagnostic logging                                |
 | `--log-format`                | `json`           | `json` or `text`                                  |
-| `--prune-interval`            | `1h`             | Observation cleanup frequency                     |
+| `--prune-interval`            | `24h`            | Database pruning frequency                        |
 | `--optimize-interval`         | `24h`            | SQLite query-planner optimization frequency       |
 
 Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables, replacing hyphens with underscores. For example, `WARDEN__SNITCH_SECRET` and `WARDEN__OPTIMIZE_INTERVAL`.
