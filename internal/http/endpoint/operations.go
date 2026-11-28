@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"time"
 
@@ -82,20 +83,10 @@ func DecisionTimeline(service OperationalQueries, logger *slog.Logger) http.Hand
 // Incidents returns recorded named rule threshold hits.
 func Incidents(service OperationalQueries, logger *slog.Logger) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		values := r.URL.Query()
-		var before int64
-		if raw := values.Get("before-id"); raw != "" {
-			var err error
-			before, err = strconv.ParseInt(raw, 10, 64)
-			if err != nil || before <= 0 {
-				httpresponse.Problem(w, http.StatusBadRequest, "Invalid incident cursor.")
-				return
-			}
-		}
-		query := overview.IncidentQuery{
-			BeforeID: before,
-			Rule:     values.Get("rule"),
-			Kind:     values.Get("kind"),
+		query, err := parseIncidentQuery(r.URL.RawQuery)
+		if err != nil {
+			httpresponse.Problem(w, http.StatusBadRequest, "Invalid incident query.")
+			return
 		}
 		result, err := service.Incidents(r.Context(), query)
 		if writeOverviewError(w, logger, err) {
@@ -103,4 +94,33 @@ func Incidents(service OperationalQueries, logger *slog.Logger) http.HandlerFunc
 		}
 		httpresponse.Respond(w, http.StatusOK, result)
 	}
+}
+
+// parseIncidentQuery rejects ambiguous transport input before application validation.
+func parseIncidentQuery(raw string) (overview.IncidentQuery, error) {
+	values, err := url.ParseQuery(raw)
+	if err != nil {
+		return overview.IncidentQuery{}, err
+	}
+
+	query := overview.IncidentQuery{}
+	for key, entries := range values {
+		if len(entries) != 1 {
+			return overview.IncidentQuery{}, errors.New("duplicate incident selector")
+		}
+		switch key {
+		case "before-id":
+			query.BeforeID, err = strconv.ParseInt(entries[0], 10, 64)
+			if err != nil || query.BeforeID < 1 {
+				return overview.IncidentQuery{}, errors.New("invalid incident cursor")
+			}
+		case "rule":
+			query.Rule = entries[0]
+		case "kind":
+			query.Kind = entries[0]
+		default:
+			return overview.IncidentQuery{}, errors.New("unsupported incident selector")
+		}
+	}
+	return query, nil
 }
