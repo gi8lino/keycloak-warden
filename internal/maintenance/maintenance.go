@@ -1,4 +1,4 @@
-// Package maintenance schedules SQLite observation cleanup and query-planner optimization.
+// Package maintenance schedules SQLite pruning and query-planner optimization.
 package maintenance
 
 import (
@@ -13,7 +13,7 @@ import (
 )
 
 const (
-	// DefaultPruneInterval is the interval between observation cleanup runs.
+	// DefaultPruneInterval is the interval between database pruning runs.
 	DefaultPruneInterval = 24 * time.Hour
 	// DefaultOptimizeInterval runs periodic SQLite planner optimization daily.
 	DefaultOptimizeInterval = 24 * time.Hour
@@ -23,6 +23,12 @@ const (
 	MaxInterval = 365 * 24 * time.Hour
 	// MinObservationRetention preserves a full day of event observations.
 	MinObservationRetention = 24 * time.Hour
+	// DefaultIncidentRetention keeps incident history for thirty days.
+	DefaultIncidentRetention = 30 * 24 * time.Hour
+	// MinIncidentRetention is the shortest supported incident retention.
+	MinIncidentRetention = 24 * time.Hour
+	// MaxIncidentRetention is the longest supported incident retention.
+	MaxIncidentRetention = 365 * 24 * time.Hour
 	// retryInterval avoids rapid retries when SQLite maintenance encounters an error.
 	retryInterval = 5 * time.Second
 )
@@ -38,7 +44,7 @@ var (
 type Operation string
 
 const (
-	// OperationPrune deletes expired failure observations.
+	// OperationPrune deletes expired observations, incidents and terminal notifications.
 	OperationPrune Operation = "prune"
 	// OperationOptimize refreshes SQLite query-planner statistics.
 	OperationOptimize Operation = "optimize"
@@ -56,7 +62,7 @@ const (
 
 // Schedule configures the independent database maintenance intervals.
 type Schedule struct {
-	// PruneInterval controls how often old login observations are deleted.
+	// PruneInterval controls how often expired records are deleted.
 	PruneInterval time.Duration
 	// OptimizeInterval controls how often SQLite query-planner statistics are refreshed.
 	OptimizeInterval time.Duration
@@ -84,13 +90,21 @@ func validMaintenanceInterval(interval time.Duration) bool {
 type Retention struct {
 	// Observations controls the lifetime of counting data.
 	Observations time.Duration
-	// Incidents controls the lifetime of incident history.
+	// Incidents controls the lifetime of incident history and terminal notification deliveries.
 	Incidents time.Duration
+}
+
+// ValidateIncidentRetention rejects incident retention outside the supported range.
+func ValidateIncidentRetention(retention time.Duration) error {
+	if retention < MinIncidentRetention || retention > MaxIncidentRetention {
+		return fmt.Errorf("incident-retention must be between %s and %s", MinIncidentRetention, MaxIncidentRetention)
+	}
+	return nil
 }
 
 // Store provides the independent SQLite maintenance operations.
 type Store interface {
-	// Prune deletes observations at or before the application-supplied cutoff.
+	// Prune deletes expired records using the observation and incident cutoffs.
 	Prune(context.Context, time.Time, time.Time) error
 	// Optimize refreshes SQLite's query-planner statistics.
 	Optimize(context.Context) error
@@ -108,7 +122,7 @@ type Runner struct {
 	startedAt time.Time
 	// schedule configures normal recurrence.
 	schedule Schedule
-	// retention determines how long detection observations remain available.
+	// retention determines how long observations, incidents and terminal notifications remain available.
 	retention Retention
 	// logger records maintenance outcomes independently of HTTP access logging.
 	logger *slog.Logger
@@ -116,7 +130,7 @@ type Runner struct {
 	executeMu sync.Mutex
 	// statusMu protects the most recent outcomes.
 	statusMu sync.Mutex
-	// pruneStatus is the observation cleanup status.
+	// pruneStatus is the database pruning status.
 	pruneStatus model.TaskStatus
 	// optimizeStatus is the planner optimization status.
 	optimizeStatus model.TaskStatus
@@ -175,12 +189,14 @@ func (r *Runner) Snapshot() model.Maintenance {
 	}
 
 	return model.Maintenance{
-		State:            state,
-		StartedAt:        r.startedAt,
-		Prune:            r.pruneStatus,
-		Optimize:         r.optimizeStatus,
-		PruneInterval:    r.schedule.PruneInterval.String(),
-		OptimizeInterval: r.schedule.OptimizeInterval.String(),
+		State:                state,
+		StartedAt:            r.startedAt,
+		Prune:                r.pruneStatus,
+		Optimize:             r.optimizeStatus,
+		PruneInterval:        r.schedule.PruneInterval.String(),
+		OptimizeInterval:     r.schedule.OptimizeInterval.String(),
+		ObservationRetention: r.retention.Observations.String(),
+		IncidentRetention:    r.retention.Incidents.String(),
 	}
 }
 

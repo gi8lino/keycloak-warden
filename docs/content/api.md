@@ -171,11 +171,11 @@ Use [CLI](cli.md) for supported manual operations and [Configuration](configurat
 
 Authenticated administrator requests (the same bearer token as `/bans`) can inspect and trigger housekeeping:
 
-- `GET /maintenance` — worker lifecycle (`state`, `startedAt`) and in-process pruning/optimization task status, including last attempts and results.
-- `POST /maintenance/prune` — remove expired failure observations using Warden's configured retention rule.
+- `GET /maintenance` — worker lifecycle (`state`, `startedAt`) and in-process pruning/optimization task status, including last attempts and results, configured intervals (`pruneInterval`, `optimizeInterval`), and effective retention (`observationRetention`, `incidentRetention`) as Go duration strings.
+- `POST /maintenance/prune` — remove expired observations, incidents, and terminal notification deliveries using Warden's retention settings.
 - `POST /maintenance/optimize` — invoke SQLite `PRAGMA optimize` (not a full `VACUUM`).
 
-Manual operations run synchronously, return updated status, and are serialized with scheduled maintenance. A concurrent request returns `409 Conflict`; failures return a safe error response. These operations do not remove bans, decisions, delivery acknowledgements, or live observations. No request bodies or arbitrary SQL are accepted.
+Manual operations run synchronously, return updated status, and are serialized with scheduled maintenance. A concurrent request returns `409 Conflict`; failures return a safe error response. These operations do not remove bans, decisions, enforcement delivery acknowledgements, pending notifications, or live observations. No request bodies or arbitrary SQL are accepted.
 
 Example:
 
@@ -213,7 +213,7 @@ Health is based on current persisted delivery status, not a provider connectivit
 
 ## Detection incidents
 
-`GET /incidents` returns named rule threshold hits, newest first, with `items` and optional `nextBeforeId`. Pass that cursor as `before-id` to retrieve the next page; optional `rule` and `kind` filters must remain the same across pages. It requires the administrative bearer token and uses the application route prefix. Each item includes the incident ID, rule name, triggering event identity and metadata (`eventKind` is `user` or `admin`; `eventType` is present only for user events), producer and processing timestamps, count, threshold, aggregation context (`groupBy`, `groupKey`, `identityRealm`, `distinct`, `window`), optional `banUntil` and longest requested `effectiveBanUntil`, optional resulting decision ID/revision, and `observeOnly`. The expiry is the requested rule expiry, not an external delivery acknowledgement. This endpoint is not a complete administrative audit log: only qualifying named rules record incidents. Incidents expire under the independent `incident-retention` policy.
+`GET /incidents` returns named rule threshold hits, newest first, with `items` and optional `nextBeforeId`. Pass that cursor as `before-id` to retrieve the next page; optional `rule` and `kind` filters must remain the same across pages. It requires the administrative bearer token and uses the application route prefix. Each item includes the incident ID, rule name, triggering event identity and metadata (`eventKind` is `user` or `admin`; `eventType` is present only for user events), producer and processing timestamps, count, threshold, aggregation context (`groupBy`, `groupKey`, `identityRealm`, `distinct`, `window`), optional `banUntil` and longest requested `effectiveBanUntil`, optional resulting decision ID/revision, and `observeOnly`. The expiry is the requested rule expiry, not an external delivery acknowledgement. This endpoint is not a complete administrative audit log: only qualifying named rules record incidents. Incidents expire under the independent `--incident-retention` policy.
 
 ## Incident notifications
 

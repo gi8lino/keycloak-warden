@@ -58,7 +58,7 @@ type Workers struct {
 	Enforcement EnforcementWorker `json:"enforcement" yaml:"enforcement"`
 	// Notifications reports independent incident delivery activity.
 	Notifications NotificationWorker `json:"notifications" yaml:"notifications"`
-	// Maintenance handles periodic observation cleanup and SQLite optimization.
+	// Maintenance handles periodic database pruning and SQLite optimization.
 	Maintenance Maintenance `json:"maintenance" yaml:"maintenance"`
 }
 
@@ -80,7 +80,7 @@ type Maintenance struct {
 	State WorkerState `json:"state" yaml:"state"`
 	// StartedAt records when the maintenance worker was started.
 	StartedAt time.Time `json:"startedAt" yaml:"startedAt"`
-	// Prune reports the last observation cleanup attempt.
+	// Prune reports the last database pruning attempt.
 	Prune TaskStatus `json:"prune" yaml:"prune"`
 	// Optimize reports the last SQLite optimization attempt.
 	Optimize TaskStatus `json:"optimize" yaml:"optimize"`
@@ -88,4 +88,8 @@ type Maintenance struct {
 	PruneInterval string `json:"pruneInterval" yaml:"pruneInterval"`
 	// OptimizeInterval describes the configured recurring optimization interval.
 	OptimizeInterval string `json:"optimizeInterval" yaml:"optimizeInterval"`
+	// ObservationRetention describes the effective lifetime of detection counting data.
+	ObservationRetention string `json:"observationRetention" yaml:"observationRetention"`
+	// IncidentRetention describes the configured lifetime of incident history and terminal notifications.
+	IncidentRetention string `json:"incidentRetention" yaml:"incidentRetention"`
 }

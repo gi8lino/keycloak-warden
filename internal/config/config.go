@@ -2,7 +2,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -52,8 +51,6 @@ type Config struct {
 	ProtectedIPs []string `yaml:"protected-ips"`
 	// Rules configures named detection rules.
 	Rules detection.Rules `yaml:"rules"`
-	// IncidentRetention controls how long incident history is kept; zero uses 30 days.
-	IncidentRetention time.Duration `yaml:"incident-retention"`
 	// Enforcements groups named destinations by provider.
 	Enforcements Enforcements `yaml:"enforcements"`
 	// Notifications groups incident destinations and their retry settings.
@@ -62,9 +59,6 @@ type Config struct {
 
 // Validate checks the detection rules, protected addresses and structural target configuration.
 func (cfg Config) Validate() error {
-	if cfg.IncidentRetention != 0 && (cfg.IncidentRetention < 24*time.Hour || cfg.IncidentRetention > 365*24*time.Hour) {
-		return errors.New("incident-retention must be between 24h and 8760h")
-	}
 	if err := cfg.Rules.Validate(); err != nil {
 		return fmt.Errorf("detection rules: %w", err)
 	}
@@ -84,12 +78,4 @@ func (cfg Config) ObservationWindow() time.Duration {
 		window = max(window, rule.Aggregation.Window)
 	}
 	return window
-}
-
-// IncidentHistoryRetention returns the effective incident retention duration.
-func (cfg Config) IncidentHistoryRetention() time.Duration {
-	if cfg.IncidentRetention == 0 {
-		return 30 * 24 * time.Hour
-	}
-	return cfg.IncidentRetention
 }

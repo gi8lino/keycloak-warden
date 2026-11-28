@@ -45,6 +45,18 @@ func TestRun(t *testing.T) {
 		require.ErrorIs(t, statErr, os.ErrNotExist)
 	})
 
+	t.Run("rejects invalid incident retention before opening a database", func(t *testing.T) {
+		t.Parallel()
+
+		options := testOptions(t)
+		options.IncidentRetention = time.Hour
+
+		err := Run(t.Context(), options)
+		require.ErrorContains(t, err, "incident-retention")
+		_, statErr := os.Stat(options.Database)
+		require.ErrorIs(t, statErr, os.ErrNotExist)
+	})
+
 	t.Run("rejects invalid retry policy before opening a database", func(t *testing.T) {
 		t.Parallel()
 
@@ -120,6 +132,7 @@ func testOptions(t *testing.T) Options {
 			PruneInterval:    time.Hour,
 			OptimizeInterval: 24 * time.Hour,
 		},
-		Version: "test",
+		IncidentRetention: maintenance.DefaultIncidentRetention,
+		Version:           "test",
 	}
 }

@@ -163,6 +163,13 @@ enforcements:
 		require.ErrorContains(t, err, "invalid Warden YAML")
 	})
 
+	t.Run("rejects incident retention in YAML", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := Load(writeConfig(t, "incident-retention: 720h\n"))
+		require.ErrorContains(t, err, "invalid Warden YAML")
+	})
+
 	t.Run("rejects duplicate keys", func(t *testing.T) {
 		t.Parallel()
 

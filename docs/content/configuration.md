@@ -81,7 +81,7 @@ notifications:
 
 Without `body-template`, notification webhooks send the canonical incident JSON described in [API](api.md). The same `url`, `headers`, `body-template`, `template-vars`, `response`, and `max-attempts` fields apply to enforcement webhooks. Templates expose the typed payload under `.Payload` and resolved variables under `.Vars`. For Slack or Teams, use one of the six templates in `deploy/kubernetes/templates/`; use the incident variants for notification webhooks and the ban variants for enforcement webhooks. Slack Bot API needs a channel template variable and a response rule requiring `/ok` to equal `true`. Teams ban templates use MessageCard; incident templates use an Adaptive Card envelope. Verify endpoint format compatibility.
 
-The notification worker persists retries separately from enforcement, using the shared YAML delivery settings above (defaults shown). Each destination is processed in occurrence order; a delayed retry does not prevent another destination from becoming eligible. Jobs are queued atomically with incidents, survive restart and retain their snapshot even when the incident itself is pruned. Completed and exhausted jobs are pruned according to `incident-retention`, measured from completion. Exhausted jobs remain terminal unless explicitly retried through the administrative API; changing attempt limits does not automatically replay them. A retry preserves prior attempts and requires the original destination identity. Delivery is at-least-once until acknowledged or exhausted: receivers may see duplicates after an ambiguous network result or interrupted shutdown.
+The notification worker persists retries separately from enforcement, using the shared YAML delivery settings above (defaults shown). Each destination is processed in occurrence order; a delayed retry does not prevent another destination from becoming eligible. Jobs are queued atomically with incidents, survive restart and retain their snapshot even when the incident itself is pruned. Completed and exhausted jobs are pruned according to `--incident-retention`, measured from completion. Exhausted jobs remain terminal unless explicitly retried through the administrative API; changing attempt limits does not automatically replay them. A retry preserves prior attempts and requires the original destination identity. Delivery is at-least-once until acknowledged or exhausted: receivers may see duplicates after an ambiguous network result or interrupted shutdown.
 
 Observe-only mode still sends notifications. A notification describes an incident and any requested or hypothetical ban, not proof that enforcement succeeded. Manual bans, unbans and ban renewals do not produce incident notifications. Removing or changing a notification destination's endpoint or template routing variables is blocked while it owns pending jobs. Remove the rule reference first, allow the queue to drain, then remove the destination. Credential rotation is independent; template content and header-based routing changes remain the operator's responsibility.
 
@@ -174,10 +174,11 @@ warden serve \
   --admin-token="$WARDEN_ADMIN_TOKEN" \
   --metrics \
   --prune-interval=24h \
-  --optimize-interval=24h
+  --optimize-interval=24h \
+  --incident-retention=720h
 ```
 
-{code highlight="4-7,9-10" note="4-5:Separate listeners for ingestion and management endpoints." note="6:Required shared HMAC secret for incoming Snitch events." note="7:Optional bearer token enabling the manual-ban HTTP API." note="9-10:Independent pruning and optimization schedules; neither changes data retention." reference-position="right" reference-color="blue" line-numbers="true"}
+{code highlight="4-7,9-11" note="4-5:Separate listeners for ingestion and management endpoints." note="6:Required shared HMAC secret for incoming Snitch events." note="7:Optional bearer token enabling the manual-ban HTTP API." note="9-10:Independent pruning and optimization schedules." note="11:Incident and terminal notification retention." reference-position="right" reference-color="blue" line-numbers="true"}
 
 | Flag                          | Default          | Purpose                                           |
 | ----------------------------- | ---------------- | ------------------------------------------------- |
@@ -195,6 +196,7 @@ warden serve \
 | `--log-format`                | `json`           | `json` or `text`                                  |
 | `--prune-interval`            | `24h`            | Database pruning frequency                        |
 | `--optimize-interval`         | `24h`            | SQLite query-planner optimization frequency       |
+| `--incident-retention`        | `720h`           | Incident and terminal notification retention      |
 
 Flags can also be configured through `WARDEN__<FLAG_NAME>` environment variables, replacing hyphens with underscores. For example, `WARDEN__SNITCH_SECRET` and `WARDEN__OPTIMIZE_INTERVAL`.
 
@@ -202,7 +204,7 @@ Listener addresses are parsed as TCP addresses, including when an explicit admin
 
 Each of `enforcements` and `notifications` independently accepts `retry-initial-delay` (default `10s`) and `retry-max-delay` (default `5m`) in YAML. Omitted or zero values use the defaults. Effective delays must be positive whole milliseconds, with maximum at least initial. Equal values give a constant pause. Enforcement backs off per destination; notification retries retain their own persisted state. Changing settings requires a restart and affects future calculated delays, not already persisted deadlines. Each section also has an independent `max-attempts` default of 3.
 
-The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** the observation retention duration.
+The two maintenance intervals must be between `5m` and `8760h`. Intervals determine how frequently maintenance runs, **not** how long records are retained. `--incident-retention` (`WARDEN__INCIDENT_RETENTION`) accepts `24h` through `8760h` and defaults to `720h` (30 days). It controls incident history and completed or exhausted notification deliveries, measured from incident recording or delivery completion respectively. Pending notification deliveries are preserved. Counting observations retain at least 24 hours or the longest detection window, whichever is longer. Remove any old `incident-retention` YAML key; it is no longer supported. Lowering the retention can permanently delete history during startup pruning or subsequent maintenance.
 
 Administrative CLI commands (`ban`, `unban`, `list-active`, `inspect`, and `maintenance` subcommands) also accept `--request-timeout` (default `10s`), `--maintenance-timeout` (default `35s`), and `--max-response-bytes` (default `1048576`). These flags configure only the outgoing administrative HTTP client, not Warden's server request limits or outbound webhook destinations. Their corresponding environment variables are `WARDEN__REQUEST_TIMEOUT`, `WARDEN__MAINTENANCE_TIMEOUT`, and `WARDEN__MAX_RESPONSE_BYTES`. Both timeouts must be positive; the response limit must also be less than `MaxInt64`.
 
@@ -237,4 +239,4 @@ In Kubernetes, set `WARDEN__OBSERVE_ONLY` to `"true"` in the Warden container en
 
 Observe-only mode allows Warden to evaluate all configured detection rules without creating ban sources, enforcement decisions, or delivery jobs. Manual bans are rejected with HTTP 409. Targets may be omitted; configured enforcement structures are still validated, but enforcement credentials are not resolved and enforcement providers are not constructed. Notifications remain enabled and their credentials are resolved. Warden refuses to start in this mode if the database contains active bans or destination-owned work, including exhausted releases. Reconcile and release those first, or use an isolated database for rule tuning.
 
-Each threshold crossing (and every matching event for threshold-one rules) records the hypothetical automatic ban in incident history. Later events above threshold may qualify for renewal without producing another incident. These records are never replayed as enforcement jobs. Incident history uses `incident-retention` (default `720h`, range `24h`–`8760h`). Recent failure counts themselves remain in the sliding detection window, so a fresh event after switching back can trigger a real ban. The authenticated `GET /incidents` endpoint exposes the recorded outcomes through `observeOnly`, `banUntil` and `effectiveBanUntil`.
+Each threshold crossing (and every matching event for threshold-one rules) records the hypothetical automatic ban in incident history. Later events above threshold may qualify for renewal without producing another incident. These records are never replayed as enforcement jobs. Incident history uses `--incident-retention` (default `720h`, range `24h`–`8760h`). Recent failure counts themselves remain in the sliding detection window, so a fresh event after switching back can trigger a real ban. The authenticated `GET /incidents` endpoint exposes the recorded outcomes through `observeOnly`, `banUntil` and `effectiveBanUntil`.

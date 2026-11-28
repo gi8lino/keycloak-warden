@@ -45,18 +45,19 @@ The endpoint is observational only. A healthy worker can coexist with exhausted 
 
 ## SQLite maintenance
 
-Warden runs SQLite `PRAGMA optimize` when opening its database and periodically afterward. It also prunes stale failed-login observations. The two schedules are independent:
+Warden runs SQLite `PRAGMA optimize` when opening its database and periodically afterward. It also prunes expired observations, incidents and terminal notification deliveries. The two schedules are independent:
 
 ```sh
 warden serve \
   --config=warden.yaml \
   --prune-interval=24h \
-  --optimize-interval=24h
+  --optimize-interval=24h \
+  --incident-retention=720h
 ```
 
-The corresponding environment variables are `WARDEN__PRUNE_INTERVAL` and `WARDEN__OPTIMIZE_INTERVAL`. Both intervals must be between `5m` and `8760h`.
+The corresponding environment variables are `WARDEN__PRUNE_INTERVAL`, `WARDEN__OPTIMIZE_INTERVAL`, and `WARDEN__INCIDENT_RETENTION`. Both maintenance intervals default to `24h` and must be between `5m` and `8760h`. Incident retention must be between `24h` and `8760h`.
 
-Pruning runs at startup and then on schedule. Counting observations are retained for at least 24 hours or the longest configured detection window, whichever is longer. Incidents, including hypothetical bans, use `incident-retention` (default 30 days). Optimization does **not** run a full `VACUUM`; SQLite reuses freed pages, and its automatic WAL checkpointing remains enabled.
+Pruning runs at startup and then on schedule. Counting observations are retained for at least 24 hours or the longest configured detection window, whichever is longer. Incidents, including hypothetical bans, use `--incident-retention` (default 30 days). Completed and exhausted notifications use the same retention from delivery completion. Pending notifications are not pruned. Reducing retention can permanently delete history on startup; back up the database first if that history is needed. Records can remain until the next successful prune. The maintenance status API reports effective incident and observation retention. Optimization does **not** run a full `VACUUM`; SQLite reuses freed pages, and its automatic WAL checkpointing remains enabled.
 
 Manual maintenance is available through the authenticated application API (`GET /maintenance`, `POST /maintenance/prune`, and `POST /maintenance/optimize`). Scheduled tasks continue unchanged, and operations are serialized to avoid overlapping housekeeping. These actions do not delete ban decisions or run `VACUUM`.
 

@@ -28,6 +28,24 @@ func TestWorkersJSON(t *testing.T) {
 		assert.Equal(t, "1h0m0s", workers.Maintenance.PruneInterval)
 	})
 
+	t.Run("serializes effective retention", func(t *testing.T) {
+		t.Parallel()
+
+		status := Maintenance{
+			ObservationRetention: "24h0m0s",
+			IncidentRetention:    "168h0m0s",
+		}
+		encoded, err := json.Marshal(status)
+		require.NoError(t, err)
+		assert.Contains(t, string(encoded), `"observationRetention":"24h0m0s"`)
+		assert.Contains(t, string(encoded), `"incidentRetention":"168h0m0s"`)
+
+		var decoded Maintenance
+		require.NoError(t, json.Unmarshal(encoded, &decoded))
+		assert.Equal(t, status.ObservationRetention, decoded.ObservationRetention)
+		assert.Equal(t, status.IncidentRetention, decoded.IncidentRetention)
+	})
+
 	t.Run("encodes embedded action fields at the top level", func(t *testing.T) {
 		t.Parallel()
 

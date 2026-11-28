@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/containeroo/httpkit/grace"
 
@@ -41,6 +42,8 @@ type Options struct {
 	MetricsEnabled bool
 	// Maintenance configures observation pruning and SQLite optimization.
 	Maintenance maintenance.Schedule
+	// IncidentRetention controls the lifetime of incident history and terminal notification deliveries.
+	IncidentRetention time.Duration
 	// Version labels the running build in metrics.
 	Version string
 }
@@ -50,7 +53,13 @@ func (o Options) Validate() error {
 	if err := o.Config.Validate(); err != nil {
 		return err
 	}
-	return o.Maintenance.Validate()
+	if err := o.Maintenance.Validate(); err != nil {
+		return err
+	}
+	if err := maintenance.ValidateIncidentRetention(o.IncidentRetention); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Run prepares the server dependencies and owns the database lifecycle.

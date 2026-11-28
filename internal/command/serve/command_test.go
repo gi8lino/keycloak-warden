@@ -9,12 +9,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/containeroo/tinyflags"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/gi8lino/keycloak-warden/internal/command/appflags"
+	"github.com/gi8lino/keycloak-warden/internal/maintenance"
 )
 
 // startupLogs executes the registered command against an occupied port and captures all startup logs.
@@ -250,6 +252,42 @@ func TestServeFlagValidation(t *testing.T) {
 		require.NoError(t, parse("--snitch-secret", "secret", "--prune-interval=15m", "--optimize-interval=6h"))
 	})
 
+	t.Run("accepts minimum incident retention", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, parse("--snitch-secret", "secret", "--incident-retention=24h"))
+	})
+
+	t.Run("accepts maximum incident retention", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, parse("--snitch-secret", "secret", "--incident-retention=8760h"))
+	})
+
+	t.Run("rejects zero incident retention", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--incident-retention=0s"), "incident-retention")
+	})
+
+	t.Run("rejects negative incident retention", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--incident-retention=-24h"), "incident-retention")
+	})
+
+	t.Run("rejects retention shorter than one day", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--incident-retention=23h"), "incident-retention")
+	})
+
+	t.Run("rejects retention longer than one year", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, parse("--snitch-secret", "secret", "--incident-retention=8761h"), "incident-retention")
+	})
+
 	t.Run("rejects retry delay flags", func(t *testing.T) {
 		t.Parallel()
 
@@ -320,6 +358,35 @@ func TestMaintenanceIntervalEnvironment(t *testing.T) {
 
 	_, err := root.ParseRunner([]string{"serve"})
 	require.NoError(t, err)
+}
+
+func TestIncidentRetention(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uses default retention", func(t *testing.T) {
+		t.Parallel()
+
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(startupLog(t)), &record))
+		assert.Equal(t, maintenance.DefaultIncidentRetention.String(), record["incident_retention"])
+	})
+
+	t.Run("uses configured retention", func(t *testing.T) {
+		t.Parallel()
+
+		var record map[string]any
+		require.NoError(t, json.Unmarshal([]byte(startupLog(t, "--incident-retention=48h")), &record))
+		assert.Equal(t, (48 * time.Hour).String(), record["incident_retention"])
+	})
+}
+
+// TestIncidentRetentionEnvironment changes process-wide environment and cannot run in parallel.
+func TestIncidentRetentionEnvironment(t *testing.T) {
+	t.Setenv("WARDEN__INCIDENT_RETENTION", "168h")
+
+	var record map[string]any
+	require.NoError(t, json.Unmarshal([]byte(startupLog(t)), &record))
+	assert.Equal(t, (168 * time.Hour).String(), record["incident_retention"])
 }
 
 // observeOnlyConfig is a valid detection rule without action destinations.

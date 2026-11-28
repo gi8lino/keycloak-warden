@@ -1,5 +1,3 @@
-incident-retention: 720h
-
 protected-ips:
   - 192.0.2.10
   - 198.51.100.0/24

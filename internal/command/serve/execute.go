@@ -73,7 +73,7 @@ func execute(
 
 	maintenanceRunner := maintenance.Start(ctx, store, options.Maintenance, maintenance.Retention{
 		Observations: max(maintenance.MinObservationRetention, options.Config.ObservationWindow()),
-		Incidents:    options.Config.IncidentHistoryRetention(),
+		Incidents:    options.IncidentRetention,
 	}, logger)
 	defer maintenanceRunner.Close()
 

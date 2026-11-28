@@ -22,6 +22,8 @@ type fakeStore struct {
 	pruneCalls atomic.Int32
 	// lastCutoffMillis records the cutoff supplied by maintenance.
 	lastCutoffMillis atomic.Int64
+	// lastIncidentCutoffMillis records the incident cutoff supplied by maintenance.
+	lastIncidentCutoffMillis atomic.Int64
 	// optimizeCalls counts planner optimization attempts.
 	optimizeCalls atomic.Int32
 	// pruneFailure causes the first cleanup attempt to fail.
@@ -31,8 +33,9 @@ type fakeStore struct {
 }
 
 // Prune records a cleanup attempt and optionally injects a transient failure.
-func (s *fakeStore) Prune(_ context.Context, cutoff, _ time.Time) error {
+func (s *fakeStore) Prune(_ context.Context, cutoff, incidentCutoff time.Time) error {
 	s.lastCutoffMillis.Store(cutoff.UnixMilli())
+	s.lastIncidentCutoffMillis.Store(incidentCutoff.UnixMilli())
 	attempt := s.pruneCalls.Add(1)
 	if s.pruneFailure && attempt == 1 {
 		return errors.New("prune failed")
@@ -101,6 +104,46 @@ func TestScheduleValidate(t *testing.T) {
 		}
 		err := sched.Validate()
 		require.ErrorContains(t, err, "prune-interval")
+	})
+}
+
+func TestValidateIncidentRetention(t *testing.T) {
+	t.Parallel()
+
+	t.Run("accepts minimum", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, ValidateIncidentRetention(MinIncidentRetention))
+	})
+
+	t.Run("accepts default", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, ValidateIncidentRetention(DefaultIncidentRetention))
+	})
+
+	t.Run("accepts maximum", func(t *testing.T) {
+		t.Parallel()
+
+		require.NoError(t, ValidateIncidentRetention(MaxIncidentRetention))
+	})
+
+	t.Run("rejects zero", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, ValidateIncidentRetention(0), "incident-retention")
+	})
+
+	t.Run("rejects below minimum", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, ValidateIncidentRetention(MinIncidentRetention-time.Second), "incident-retention")
+	})
+
+	t.Run("rejects above maximum", func(t *testing.T) {
+		t.Parallel()
+
+		require.ErrorContains(t, ValidateIncidentRetention(MaxIncidentRetention+time.Second), "incident-retention")
 	})
 }
 
@@ -199,6 +242,8 @@ func TestPruneRetention(t *testing.T) {
 		require.NoError(t, err)
 		cutoff := time.UnixMilli(store.lastCutoffMillis.Load())
 		assert.WithinDuration(t, now.Add(-48*time.Hour), cutoff, time.Second)
+		incidentCutoff := time.UnixMilli(store.lastIncidentCutoffMillis.Load())
+		assert.WithinDuration(t, now.Add(-30*time.Hour), incidentCutoff, time.Second)
 	})
 }
 
@@ -367,6 +412,10 @@ func TestSnapshotWorkerLifecycle(t *testing.T) {
 		runner := &Runner{
 			startedAt: started,
 			done:      make(chan struct{}),
+			retention: Retention{
+				Observations: MinObservationRetention,
+				Incidents:    DefaultIncidentRetention,
+			},
 			schedule: Schedule{
 				PruneInterval:    time.Hour,
 				OptimizeInterval: 24 * time.Hour,
@@ -379,6 +428,8 @@ func TestSnapshotWorkerLifecycle(t *testing.T) {
 		assert.Equal(t, started, status.StartedAt)
 		assert.Equal(t, "1h0m0s", status.PruneInterval)
 		assert.Equal(t, "24h0m0s", status.OptimizeInterval)
+		assert.Equal(t, "24h0m0s", status.ObservationRetention)
+		assert.Equal(t, "720h0m0s", status.IncidentRetention)
 		assert.False(t, status.Prune.Running)
 	})
 

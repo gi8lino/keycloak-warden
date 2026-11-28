@@ -94,13 +94,18 @@ func Register(root *tinyflags.Command, flags *appflags.ServerFlags, stdout io.Wr
 		Section(appkitconfig.SectionLogging).
 		Value()
 
-	pruneInterval := command.Duration("prune-interval", maintenance.DefaultPruneInterval, "Interval between SQLite observation cleanup runs").
+	pruneInterval := command.Duration("prune-interval", maintenance.DefaultPruneInterval, "Interval between SQLite database pruning runs").
 		Validate(tinyflags.Between(maintenance.MinInterval, maintenance.MaxInterval)).
 		Section(sectionMaintenance).
 		Value()
 	optimizeInterval := command.Duration("optimize-interval", maintenance.DefaultOptimizeInterval, "Interval between SQLite query planner optimizations").
 		Section(sectionMaintenance).
 		Validate(tinyflags.Between(maintenance.MinInterval, maintenance.MaxInterval)).
+		Value()
+
+	incidentRetention := command.Duration("incident-retention", maintenance.DefaultIncidentRetention, "Retention of incidents and terminal notification deliveries").
+		Section(sectionMaintenance).
+		Validate(tinyflags.Between(maintenance.MinIncidentRetention, maintenance.MaxIncidentRetention)).
 		Value()
 
 	command.Run(func(ctx context.Context) error {
@@ -114,6 +119,7 @@ func Register(root *tinyflags.Command, flags *appflags.ServerFlags, stdout io.Wr
 			"event", "app_starting",
 			"version", version,
 			"observe_only", *observeOnly,
+			"incident_retention", (*incidentRetention).String(),
 			"retry_initial_delay", cfg.Enforcements.RetryPolicy().InitialDelay.String(),
 			"retry_max_delay", cfg.Enforcements.RetryPolicy().MaxDelay.String(),
 			"notification_retry_initial_delay", cfg.Notifications.RetryPolicy().InitialDelay.String(),
@@ -143,7 +149,8 @@ func Register(root *tinyflags.Command, flags *appflags.ServerFlags, stdout io.Wr
 				PruneInterval:    *pruneInterval,
 				OptimizeInterval: *optimizeInterval,
 			},
-			Version: version,
+			IncidentRetention: *incidentRetention,
+			Version:           version,
 		}); err != nil {
 			logger.Error(
 				"run server error",
